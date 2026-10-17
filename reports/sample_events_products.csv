@@ -1,0 +1,10 @@
+﻿product_id,state,incomplete_reason
+T1,선택한 두 검사까지의 모의 흐름 완료,
+T2,등록,PRE_ASSEMBLY 미완료; MAIN_ASSEMBLY 미완료; LIGHT 미실시; LEAK 미실시
+T3,예비 조립,MAIN_ASSEMBLY 미완료; LIGHT 미실시; LEAK 미실시
+T4,검사 대기,LEAK 미실시
+T5,보류,LEAK FAIL
+T6,보류,LEAK FAIL
+T7,선택한 두 검사까지의 모의 흐름 완료,
+T8,예비 조립,MAIN_ASSEMBLY 미완료; LIGHT 미실시; LEAK 미실시
+T9,검사 대기,LIGHT 미실시; LEAK 미실시
