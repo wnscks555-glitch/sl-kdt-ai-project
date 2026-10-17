@@ -6,7 +6,8 @@
       "Bash(git status)",
       "Bash(py -m unittest:*)",
       "Bash(py -m src.main:*)",
-      "Write(handoff/reviews/**)"
+      "Write(handoff/reviews/**)",
+      "Edit(handoff/reviews/**)"
     ],
     "deny": [
       "Edit(src/**)",
