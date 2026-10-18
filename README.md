@@ -234,3 +234,85 @@ history 예: `LEAK: FAIL@5 → 요청@6 → PASS@7(재검사 1)`. 시도가 있�
 ### 이번 단계 제외 범위
 
 설비·로트, 대량 생성기, 요청 ID·시도 ID 열 추가, 재검사 설비 지정, 폐기 취소, 레시피별 다른 상한 정책은 포함하지 않습니다. 분기·병렬·순환 공정, 중간 검사 관문, 실행 중 레시피 변경, 등록 정정과 실제 측정·품질 판정도 제외합니다.
+
+## 설비 모드 (v2 3단계)
+
+검사마다 사용한 설비를 기록하고, 같은 설비의 허용된 최초 검사에서 FAIL이 몰리면 그 설비를 정지합니다. 제품의 검사 결과와 재검사·폐기 규칙은 그대로 적용합니다.
+
+### 켜는 법과 입력
+
+```powershell
+py -m src.main data/sample_events_equipment.csv --recipe recipes/lamp_models_retest.json --equipment recipes/equipment.json
+py -m unittest discover -s tests
+```
+
+`--equipment`는 `--recipe`와 함께만 사용합니다. 재검사 설정이 없는 `lamp_models.json`과도 함께 쓸 수 있습니다. `--equipment`가 없으면 기존 v1·1단계·2단계의 입력과 출력이 유지됩니다. 설비 파일은 자동 선택되지 않습니다.
+
+설비 모드의 CSV 헤더는 순서까지 다음 7열이어야 합니다. `equipment`는 `INSPECT`에서만 필수이며 등록·공정·재검사 요청에서는 비웁니다. `model`은 등록에만 쓰고, 재검사 요청에는 `inspection`만 씁니다.
+
+```csv
+seq,product_id,event,inspection,result,model,equipment
+1,a,REGISTER,,,A,
+2,a,P1,,,,
+3,a,P2,,,,
+4,a,P3,,,,
+5,a,INSPECT,LEAK,FAIL,,LEAK-2
+6,a,RETEST_REQUEST,LEAK,,,
+7,a,INSPECT,LEAK,PASS,,LEAK-1
+```
+
+설비 옵션 없이 7열 CSV를 쓰거나 설비 모드에 다른 헤더를 쓰면 종료 코드 2입니다. `--recipe` 없이 설비 옵션만 써도 코드 2입니다.
+
+### 설비 파일과 정지 기준의 출처·한계
+
+[recipes/equipment.json](recipes/equipment.json)은 모델과 무관하게 공유하는 설비 ID와 담당 검사, 정지 규칙을 정의합니다.
+
+```json
+{
+  "stop_rule": {"window": 3, "fails": 2},
+  "equipment": {
+    "LEAK-1": "LEAK",
+    "LEAK-2": "LEAK",
+    "LIGHT-1": "LIGHT",
+    "FINAL-1": "FINAL"
+  }
+}
+```
+
+허용된 **최초 검사 결과만** 설비별 입력 순서로 셉니다. 최근 최대 `window`건 중 FAIL이 `fails`건 이상이면 원인 행을 허용·기록한 직후 설비를 정지합니다. 재검사와 거절 행은 세지 않습니다. 기본값에서는 FAIL → PASS → FAIL의 세 번째 뒤 정지하며, FAIL → FAIL이면 두 번째 뒤 정지합니다. FAIL → PASS → PASS → FAIL은 최근 3건 중 FAIL이 하나여서 가동을 유지합니다. `seq`가 중복·감소해도 물리적인 처리 순서를 따릅니다. 정지는 실행이 끝날 때까지 유지합니다.
+
+이 기준은 Western Electric 관리도 규칙의 “연속 3점 중 2점” 패턴을 PASS/FAIL에 맞게 단순화한 **교육용 가상 규칙**입니다. [NIST의 WECO 규칙 설명](https://www.itl.nist.gov/div898/handbook/pmc/section3/pmc32.htm)은 측정값이 중심선 같은 쪽의 2σ 경계를 넘는 패턴을 다룹니다(확인: 2026-10-18). 여기서는 측정값·평균·σ·관리한계를 계산하지 않습니다. **원래 통계 규칙과 동일하지 않으며, 업계 공통 설비 정지 기준이나 SL 실제 기준으로 검증된 숫자가 아닙니다.** 설비 고장을 확정하지도 않습니다.
+
+설비 ID는 `^[A-Z][A-Z0-9_-]*$` 형식이고 `equipment`는 비어 있지 않아야 합니다. 담당 검사는 레시피의 어느 모델에라도 있어야 합니다. 최상위 허용 키는 `stop_rule`, `equipment`, 정지 규칙 키는 `window`, `fails`뿐입니다. 두 수는 `1 ≤ fails ≤ window ≤ 20`의 정수여야 하며 bool·문자열·소수는 거절합니다. 누락·잘못된 구조·알 수 없는 키·ID·참조 오류를 위치와 함께 모두 표시합니다. 파일 읽기·인코딩·JSON 오류도 종료 코드 3이며 이벤트 처리와 보고서 생성 전에 중단합니다.
+
+### 설비 규칙과 상태 보존
+
+| 조건 | 판정 |
+| --- | --- |
+| 설비 목록에 없는 설비 | `RULE_EQUIP` 거절: `등록되지 않은 설비` |
+| 담당 검사와 다른 검사 | `RULE_EQUIP` 거절: `검사 종류가 다른 설비` |
+| 정지 설비의 최초 검사·재검사 | `RULE_EQUIP` 거절: `정지된 설비` |
+| INSPECT의 equipment 빈칸 | `RULE_PRESERVE` 거절 |
+| 다른 이벤트의 equipment 기입 | `RULE_PRESERVE` 거절 |
+| 허용된 최초 검사로 정지 임계치 도달 | 원인 행 허용, 제품에 결과 반영, 설비 정지 |
+
+판정 순서는 형식 → 등록·미등록 → 폐기 → 레시피 → 설비(등록·종류·정지) → 검사 시점 → 기존 최초·재검사 규칙입니다. 정지 설비에서 거절된 재검사는 열린 요청을 소진하지 않습니다. 그 요청으로 가동 중인 같은 종류의 다른 설비에서 재검사할 수 있습니다. **모든 거절은 전체 제품 상태·이력·요청·횟수·폐기 여부와 전체 설비 기록·정지 상태를 바꾸지 않습니다.**
+
+### 보고서와 고정 샘플
+
+기존 3종에 `reports/<입력파일명>_equipment.csv`가 추가됩니다. 터미널에는 레시피와 설비 파일 경로·원본 SHA-256 앞 12자리를 표시하고 설비별 최종 상태도 출력합니다.
+
+| 설비 보고서 열 | 의미 |
+| --- | --- |
+| `equipment`, `inspection` | 설비 파일에 적힌 순서의 설비 ID와 담당 검사 |
+| `counted_results`, `fail_count` | 허용된 최초 결과의 누적 건수와 그중 누적 FAIL 건수. 정지 판단용 최근 창과 별개 |
+| `state` | `가동` 또는 `정지` |
+| `stopped_at_seq` | 정지를 일으킨 입력의 seq. 가동이면 빈칸 |
+
+미사용 설비도 0건·가동으로 표시합니다. rows의 입력 예는 `INSPECT LEAK FAIL @LEAK-2`이고, 재검사 모드의 history 예는 `LEAK: FAIL@5[LEAK-2] → 요청@6 → PASS@7[LEAK-1](재검사 1)`입니다. 거절 결과는 history에 넣지 않습니다. 거절 집계는 기존 규칙 뒤에 `RULE_EQUIP`를 붙여, 재검사 모드는 8개·아니면 7개입니다. 파일 인코딩·저장 위치는 기존과 같고 같은 입력·설정·경로에서는 보고서 4종과 터미널 출력이 바이트 단위로 재현됩니다.
+
+[고정 샘플](data/sample_events_equipment.csv)은 T33–T39를 담은 94행(허용 87·거절 7), 제품 17개입니다. T33과 T35는 같은 최초 FAIL·요청·정지 이력을 공유하고, `BUFFER_` 제품의 허용 PASS로 공유 설비의 이전 창을 정리합니다. LEAK-2는 seq 25에서 누적 3건/FAIL 2건으로, LEAK-1은 seq 94에서 누적 12건/FAIL 5건으로 정지합니다. LIGHT-1·FINAL-1은 미사용·가동입니다. 거절은 `RULE_EQUIP 4`, `RULE_PRESERVE 2`, `RULE_INSP_PRE 1`이며 나머지 규칙은 0건입니다. `tests/test_equipment.py`에서 T33–T41, 모든 거절의 전체 상태 불변, 파일 오류, 기존 보고서 9개 보존과 출력 재현성을 검증합니다.
+
+### 이번 단계 제외 범위
+
+설비 재가동·점검 이벤트, 로트 ID, 공정 설비, 정지 원인 FAIL 제품의 자동 재검사 요청, 측정값·관리한계 계산은 포함하지 않습니다. 실제 설비 제어나 실제 제조 품질 판정을 수행하지 않습니다.
