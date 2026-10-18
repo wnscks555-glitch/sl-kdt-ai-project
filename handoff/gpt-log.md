@@ -3459,3 +3459,75 @@ No installed Python found!
 - `ce-compound mode:non-interactive` 판단: M1의 이유는 작은 코드 변경·회귀 사례·README로 복원할 수 있고 실행 검증은 미완료이며, H1은 미해결이다. **Documentation skipped — 별도로 보존할 검증된 비자명한 해결 지식 없음.**
 
 남은 일은 Python이 동작하는 환경에서 지정 전체 테스트를 실행하는 것과 H1의 사용자 정책 결정이다. 변경은 커밋하지 않은 상태로 루프 스크립트에 남긴다.
+
+## 수정 1 · 리뷰 007 H1 해결 (2026-10-18, T44·T51)
+
+이번 요청은 `tasks.md` 맨 위 수정 1과 `decisions.md` 마지막 「리뷰 005 H1」의 사용자 확정을 구현하는 작업이다. 착수 시 main/`baaa7cd`였고 작업 트리와 인덱스는 깨끗했다. 기존 명세가 구현·검증 범위를 충분히 정하므로 별도 계획 파일을 만들거나 사용자 소유 명세를 수정하지 않았다. `practical-work-operation`으로 보존·분업·통합을 조율하고, 승인된 main에서 작업했다.
+
+### 리뷰 항목별 처리
+
+| 항목 | 판단 | 이유·처리 |
+| --- | --- | --- |
+| 리뷰 007 H1 (리뷰 005–006 H1 재지적, T44) | **반영·해결** | 사용자 결정대로 제품마다 결함 여부를 2% 확률로 한 번 뽑고 결함품의 모든 최초·재검사 FAIL 확률을 설비와 무관하게 90%로 대체했다. 시드 42 실제 폐기는 4개이며 기존 T44 빈 검증을 포함한 불변식이 통과했다. 생성기 버전은 1.0.0→1.1.0. 다른 확률·시드·재검사 설비 선택·기대표는 그대로다. |
+| T51 및 meta 검사 | **반영** | meta에 `defective_count`와 중복 없는 `defective_products` 목록을 기록한다. CLI는 선택 항목인 목록의 배열·문자열·빈 ID·중복을 검사하며 잘못되면 모든 보고서 저장 전에 종료 2로 끝난다. 기존 meta는 계속 허용한다. CSV는 기존 7열이고 판정기에 결함 정보를 전달하지 않는다. |
+| 리뷰 007의 M1 해결 판정 | **유지** | 주입 오류 5종 키 제한과 기존 회귀는 그대로이며, 리뷰 007의 반례를 재실행해 유지됨을 확인했다. |
+| 리뷰 007 L1(JSON 중복 키), 리뷰 006 L1·리뷰 005 L1–L3 | **보류·기록 유지** | 이번 요청은 H1/수정 1만 대상으로 하므로 낮음 항목을 확대 구현하지 않았다. JSON 객체 중복 키를 마지막 값으로 읽는 기존 동작은 유지한다. |
+
+### 구현·산출물
+
+- `src/generate.py`, `recipes/generator.json`: 기존 모델 추첨을 먼저 끝내고 제품 REGISTER 전에 같은 `random.Random(seed)` 흐름에서 결함 여부를 뽑는다. 제품 흐름이 이어져도 같은 결함 여부를 유지한다. 정상품의 정상 설비 2%·LEAK-2 30%, FAIL마다 재검사 요청 70%, 오류 3%는 바꾸지 않았다.
+- `src/main.py`, `src/summary.py`: 결함 목록을 검증하고 summary의 `injection_comparison`에만 `defective_discarded/held/completed/other`와 `normal_discarded` 행을 추가했다. 판정·FPY·FAIL률·파레토·trace 계산은 결함 목록을 사용하지 않는다.
+- `tests/test_generate.py`, `tests/test_summary.py`: T51 회귀 4개 추가. 제품당 2%·검사당 90% 경계, 최초/두 재검사 반복 FAIL, 후속 검사 PASS, meta 수·목록·CSV 열, 손계산 상태 분포·정상품 폐기, 다른 summary 행 불변, meta의 null/문자열/객체/숫자·bool·중첩 배열/빈 ID/중복 및 유효 배열의 CLI 동작을 검사한다. 구버전 meta 경로는 기존 테스트를 그대로 사용한다.
+- `data/generated/gen_seed42.csv`, `.csv.meta.json`, `reports/gen_seed42_*.csv`를 다시 생성했다. `gen_seed42_rejections.csv`도 재생성했으며 내용이 기존과 같아 diff는 없다. README의 버전·가정·meta 형식·실제 결과·대표 trace 설명을 갱신했다.
+- 구현 커밋: `77a133d fix(T44,T51): model defective products and regenerate seed42 reports`. push·원격 설정 변경·패키지 설치는 하지 않았다.
+
+### 실제 실행과 검증
+
+이 환경의 `py --list-paths`는 `C:\Users\PC\anaconda3\python.exe`를 반환했다. 프로젝트 실행은 모두 `py`로 했고 Store `python` 별칭은 사용하지 않았다. `PYTHONIOENCODING=utf-8`은 실행 셸에만 지정했다.
+
+구현 전 기존 `test_t44_seed42_nonempty_completion_hold_discard_stop_and_five_errors`에서 `discarded`가 0이라 실패함을 재확인했다. 새 T51 테스트도 구현 전에 실행해 결함 속성/meta 키 부재, summary 행 부재, 잘못된 meta가 종료 0으로 처리되는 실패를 확인했다. 구현 후 집중 T51 4개와 기존 seed39/4개 생성 실패 회귀·T44 빈 검증이 모두 통과했다. 기존 테스트 기대값은 바꾸지 않았다.
+
+최종 명령과 출력 원문은 아래 파일에 보존했다(모두 종료 0).
+
+| 명령 | 원문 | 결과 |
+| --- | --- | --- |
+| `py -m src.generate --seed 42 --products 500 --out data/generated/gen_seed42.csv` | [t51-generate.txt](run-logs/t51-generate.txt) | 정상 행 4,018 + 오류 120 = 전체 4,138행, 결함품 6개 |
+| `py -m src.main data/generated/gen_seed42.csv --recipe recipes/lamp_models_retest.json --equipment recipes/equipment_generated.json --summary --trace GEN_0005` | [t51-summary-trace.txt](run-logs/t51-summary-trace.txt) | 보고서 4종·summary·trace 저장, 아래 실제 값 |
+| `py -m unittest discover -s tests` | [t51-all-tests.txt](run-logs/t51-all-tests.txt) | **105개 전부 통과**, 기존 T1–T41·T42–T50와 새 T51 포함 |
+| `py -m unittest handoff/reviews/probes/test_probe_007.py` | [t51-review007-probes.txt](run-logs/t51-review007-probes.txt) | **9개 전부 통과**. P1에서 기존 샘플 보고서 13개와 seed42 보고서 6개·CSV·meta 재생성 바이트 비교 통과 |
+
+최종 전체 테스트 출력:
+
+```text
+.........................................................................................................
+----------------------------------------------------------------------
+Ran 105 tests in 70.080s
+
+OK
+T44 seed=42 products=500 generation_seconds=0.121255 judgment_analysis_seconds=0.072295
+T44 seed=7 products=200 generation_seconds=0.064642 judgment_analysis_seconds=0.027439
+T44 seed=42 all_rows_deepcopy_invariant_seconds=40.904130
+T44 seed=7 all_rows_deepcopy_invariant_seconds=5.943210
+```
+
+| 시드 42 · 500개 실제 결과 | 값 |
+| --- | --- |
+| 완료 / 보류 / 폐기 | 487 / 9 / 4 |
+| 결함품 수 / 목록 길이 | 6 / 6 |
+| 결함품 폐기 / 보류 / 완료 / 그 밖 | 4 / 2 / 0 / 0 |
+| 정상품 폐기 | 0 |
+| FPY | 470/500 = 0.9400 |
+| 최초 FAIL / 재검사 포함 FAIL | 30/1,236 = 0.0243 / 38/1,261 = 0.0301 |
+| 정지 설비 | LEAK-2(seq 1571), FINAL-1(seq 3962) |
+| 입력 오류 5종 | 각각 주입 24·실제 거절 24 |
+
+500개 생성 0.121255초, 판정·분석 0.072295초, 모든 행 deepcopy 불변식 40.904130초는 위 테스트 내부에서 측정한 값이다. 전체 테스트는 70.080초다. 결함품 2%는 추출 확률이므로 정확히 10개를 보장하는 값이 아니다. 생성 확률은 가정이며 실제 설비 진단 근거가 아니다. 이번 수정의 T44·T51에 명세 이견은 없다.
+
+### 보존·간소화·리뷰·교훈 판단
+
+- 구현 diff의 `git diff --check` 통과. 실행 원문을 추가한 뒤 전체 커밋 diff의 검사는 `t51-summary-trace.txt`에만 터미널 빈 표 셀의 행 끝 공백을 보고한다. 원문 보존을 위해 그 공백을 삭제하지 않았다. 해당 원문 파일만 제외한 전체 diff 검사는 통과했다. 기준 `baaa7cd`와 비교해 `src/rules.py`, 기존 테스트 4개, `handoff/tasks.md`, `handoff/decisions.md`, `handoff/reviews/`, `CLAUDE.md`, `.claude/`에는 변경이 없다. 기존 T44를 포함한 기존 테스트 본문·기대값도 보존했다.
+- AST 비교로 기존 `test_generate.py` 테스트 9개·`test_summary.py` 테스트 19개의 본문이 전부 동일함을 확인했다. 생성 설정도 기존 키·값은 모두 동일하고 승인된 결함 확률 키 2개만 추가했다. 재생성 meta의 config SHA-256은 실제 설정 원본 바이트와 일치한다.
+- `ce-work mode:return-to-caller`: source=`handoff/tasks.md` 수정 1, native 구현, behavior_change=true, 검증 결과=complete, attempted/completed=T44·T51, blocker·settled decision conflict 없음. 외부 실행 엔진/별도 모델/외부 run id/plan checkpoint는 없고 `standalone_shipping_skipped=true`다. 주 에이전트가 모든 수정과 실제 실행·커밋을 통합했다.
+- `ce-simplify-code mode:pipeline`: reuse·quality·efficiency·test-value·comment 렌즈를 읽기 전용 네이티브 검토로 확인했다. 재사용 1건(기존 전체 폐기 집계에서 결함품 폐기를 빼 정상품 폐기를 계산)을 반영하고 확률 선택 조건문의 가독성을 정리했다. proof test 파일은 간소화로 바꾸지 않았으며, 이후 위 전체 테스트·반례를 재실행했다. 별도 lint/typecheck 설정은 없었다.
+- 정식 `ce-code-review mode:agent base:baaa7cd plan:handoff/tasks.md` 완료: **actionable findings 0, 요구 누락 0**. 필수 scope helper가 실행 코드 변경 36줄·small·full 강제 조건 없음으로 집계했고, 숨은 진실·확률 집계 오류의 가능성을 고려해 focused 깊이의 correctness 및 별도 네이티브 adversarial 검토를 수행했다. 실제 독립 집계도 4,138행·500제품·487/9/4 상태, 결함품 4/2/0/0·정상품 폐기 0, 참조 SHA 3개 일치를 확인했다. [리뷰 결과 원문](run-logs/t51-code-review.json). 리뷰의 원래 HEAD는 `baaa7cd`이고 검토 중 동일 내용이 `77a133d`로 커밋됐음을 receipt에 명시했다. 리뷰어는 제공된 테스트 원문을 재사용했으며 전체 테스트를 중복 실행했다고 주장하지 않는다. 외부 모델·서비스 전송은 없었고 full 깊이의 별도 보안·성능 등 모든 렌즈를 수행한 리뷰로 확대 해석하지 않는다.
+- `ce-compound mode:non-interactive` 판단: H1 원인과 채택 근거는 이미 사용자 결정·수정 명세에 있고 구현·회귀·README로 복원할 수 있다. 별도 해결 지식 문서를 만들 필요가 없다. **Documentation skipped — 기존 기록과 최종 코드·테스트·README에 없는 비자명한 검증 교훈 없음.**

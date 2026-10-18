@@ -1,0 +1,122 @@
+{
+  "status": "complete",
+  "verdict": "Ready to merge",
+  "scope": {
+    "base": "base:baaa7cd",
+    "branch": "main",
+    "head_sha": "baaa7cd3136816caf5723c616a606b8ee880a803",
+    "pr_url": null,
+    "files_changed": 14,
+    "scope_mode": "local-aligned",
+    "reviewed_files": [
+      "README.md",
+      "data/generated/gen_seed42.csv",
+      "data/generated/gen_seed42.csv.meta.json",
+      "recipes/generator.json",
+      "reports/gen_seed42_equipment.csv",
+      "reports/gen_seed42_products.csv",
+      "reports/gen_seed42_rows.csv",
+      "reports/gen_seed42_summary.csv",
+      "reports/gen_seed42_trace_GEN_0005.csv",
+      "src/generate.py",
+      "src/main.py",
+      "src/summary.py",
+      "tests/test_generate.py",
+      "tests/test_summary.py"
+    ],
+    "reviewed_tree_commit": "77a133d7de54183dc009a383afce883c1e3484a9",
+    "head_note": "Review dispatched against uncommitted implementation with HEAD baaa7cd; identical implementation content was committed as 77a133d during review. Later gpt-log/run-log completion is caller-owned and excluded from the original implementation diff."
+  },
+  "intent": "Implement the explicit defect-product assumption in handoff/tasks.md modification 1 and T51: sample one 2% flag per product using the existing RNG and use 90% FAIL on all its initial/retest inspections. Hidden truth stays in meta and injection_comparison; preserve T44 expectations, older rules/tests, other probabilities and seed; regenerate seed42 outputs with a version bump.",
+  "intent_confidence": "explicit",
+  "reviewers": [
+    "correctness",
+    "adversarial"
+  ],
+  "findings": [],
+  "actionable_findings": [],
+  "triage_groups": [],
+  "pre_existing_findings": [],
+  "requirements_completeness": {
+    "plan": "handoff/tasks.md",
+    "plan_source": "explicit",
+    "relevant_section": "v2 stage 4 modification 1 and T51; preservation and T44 invariants",
+    "requirements_checked": [
+      "one 2% defect draw per product in the same RNG flow",
+      "90% FAIL for every defective initial/retest result independent of equipment",
+      "normal-equipment probabilities, retest probability and seed unchanged",
+      "defect truth excluded from CSV and judging inputs; used only in metadata and injection_comparison",
+      "generator version 1.1.0 and seed42 artifacts regenerated",
+      "defective_products string-array, nonblank IDs and duplicate validation before report writes",
+      "T51 metadata/count/CSV/summary and invalid-meta regression coverage",
+      "T44 expectation and invariants unchanged with discarded branch exercised",
+      "rules.py, original four tests and protected user-owned documents unchanged",
+      "README current values match actual output"
+    ],
+    "satisfied": true,
+    "missing": [],
+    "unrequested_behavior_rules": [],
+    "implementation_units": [],
+    "workflow_completion_note": "Caller handles final H1 gpt-log entry and requested local commits; no push is part of this review."
+  },
+  "learnings": [],
+  "agent_native_gaps": [],
+  "deployment_notes": [],
+  "residual_risks": [],
+  "testing_gaps": [],
+  "peer": {
+    "outcome": "in-process-fallback",
+    "coverage": "Cross-model pass not run: active task scope prohibits external model/service code transfer. One separately dispatched native adversarial reviewer covered the lens; it is the same serving family and is not claimed as cross-model corroboration."
+  },
+  "coverage": {
+    "depth": "focused",
+    "depth_reason": "Helper measured 36 executable non-test changed lines, small size, no full floor. Stochastic distribution and hidden-truth composition can silently give wrong report values, so one independent adversarial read was required.",
+    "criteria_files": [
+      "AGENTS.md",
+      "CLAUDE.md"
+    ],
+    "criteria_kind": "instruction-file fallback; no CODING_STANDARDS.md governs the changed files",
+    "criteria_note": "Applicable Codex instructions and current user scope checked; CLAUDE reviewer-role-only probe-writing directives are not used to mutate protected reviews.",
+    "docs_root": "docs",
+    "declared_compound_packs_applied": false,
+    "learnings_corpus_present": false,
+    "not_assessed": [
+      "dedicated security/performance/testing/standards reviewer personas",
+      "learnings persona",
+      "agent-native gaps",
+      "deployment notes"
+    ],
+    "independence": "Cross-model pass not run: active task scope prohibits external model/service code transfer. One separately dispatched native adversarial reviewer covered the lens; it is the same serving family and is not claimed as cross-model corroboration.",
+    "validator_ran": false,
+    "untracked_excluded": [
+      "handoff/run-logs/t51-all-tests.txt",
+      "handoff/run-logs/t51-generate.txt",
+      "handoff/run-logs/t51-summary-trace.txt"
+    ],
+    "later_workflow_artifacts_excluded": [
+      "handoff/gpt-log.md",
+      "handoff/run-logs/t51-review007-probes.txt"
+    ],
+    "tests": {
+      "source": "caller execution logs read by both reviewers; no duplicate full-suite execution by this reviewer",
+      "full_suite": {
+        "command": "py -m unittest discover -s tests",
+        "tests": 105,
+        "result": "PASS",
+        "seconds": 70.08,
+        "log": "handoff/run-logs/t51-all-tests.txt"
+      },
+      "prior_review_probes": {
+        "command": "py -m unittest handoff/reviews/probes/test_probe_007.py",
+        "tests": 9,
+        "result": "PASS",
+        "seconds": 4.367,
+        "log": "handoff/run-logs/t51-review007-probes.txt"
+      },
+      "independent_readonly_aggregate_check": "Native adversarial reader confirmed 4138 rows, 500 registered, 487 complete/9 held/4 discarded, defective 4 discarded/2 held/0 complete/0 other, normal discarded 0, 120 rejected, all three SHA references correct; diff --check and protected-file diff check clean."
+    },
+    "helper_execution_note": "py invocation in this child shell emitted only Python; explicit already-installed C:/Users/PC/anaconda3/python.exe then exposed locale decoding error; process-local PYTHONUTF8=1 and PYTHONIOENCODING=utf-8 resolved it and bundled review-scope/run-log scripts completed without installing or changing global settings."
+  },
+  "artifact_path": "C:\\Users\\PC\\AppData\\Local\\Temp\\compound-engineering-PC\\ce-code-review\\20261018-220918-t51",
+  "run_id": "20261018-220918-t51"
+}

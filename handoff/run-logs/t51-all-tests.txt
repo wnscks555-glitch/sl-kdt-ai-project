@@ -1,0 +1,12 @@
+$ py -m unittest discover -s tests
+.........................................................................................................
+----------------------------------------------------------------------
+Ran 105 tests in 70.080s
+
+OK
+T44 seed=42 products=500 generation_seconds=0.121255 judgment_analysis_seconds=0.072295
+T44 seed=7 products=200 generation_seconds=0.064642 judgment_analysis_seconds=0.027439
+T44 seed=42 all_rows_deepcopy_invariant_seconds=40.904130
+T44 seed=7 all_rows_deepcopy_invariant_seconds=5.943210
+
+[exit code 0]

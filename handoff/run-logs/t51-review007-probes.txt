@@ -1,0 +1,9 @@
+$ py -m unittest handoff/reviews/probes/test_probe_007.py
+.........
+----------------------------------------------------------------------
+Ran 9 tests in 4.367s
+
+OK
+P8 duplicate key SEQ_SKIP injected_count: 5
+
+[exit code 0]
