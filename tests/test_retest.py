@@ -256,6 +256,37 @@ class RetestProcessTests(unittest.TestCase):
 
 
 class RetestReportTests(unittest.TestCase):
+    def test_sample_t23_to_t30_reports_match_fixed_input(self):
+        with tempfile.TemporaryDirectory() as directory:
+            result = run_cli(directory, ROOT / "data" / "sample_events_retest.csv", RECIPE)
+            self.assertEqual(result.returncode, 0, result.stderr)
+            generated = Path(directory) / "reports"
+            for suffix in ("rows", "products", "rejections"):
+                name = "sample_events_retest_" + suffix + ".csv"
+                self.assertEqual((generated / name).read_bytes(), (ROOT / "reports" / name).read_bytes())
+            with (generated / "sample_events_retest_products.csv").open(encoding="utf-8-sig", newline="") as source:
+                products = {row["product_id"]: row for row in csv.DictReader(source)}
+            self.assertEqual({key: row["state"] for key, row in products.items()}, {
+                "T23": "보류", "T24": "레시피 모의 흐름 완료", "T25": "보류",
+                "T26": "공정 진행 중(P3 완료)", "T27": "폐기",
+                "T28_NO_RESULT": "공정 진행 중(P3 완료)", "T28_PASS": "공정 진행 중(P3 완료)",
+                "T28_OPEN": "보류", "T28_MODEL_B": "공정 진행 중(P2 완료)",
+                "T28_FORMAT": "보류", "T29": "레시피 모의 흐름 완료", "T30": "검사 대기",
+            })
+            self.assertEqual(products["T27"]["incomplete_reason"], "LEAK 재검사 한도 2회 초과 FAIL로 폐기")
+            self.assertIn("LEAK FAIL(재검사 요청됨)", products["T23"]["incomplete_reason"])
+            self.assertIn("(재검사 2)", products["T26"]["history"])
+            self.assertEqual(products["T30"]["incomplete_reason"], "FINAL 미실시")
+            with (generated / "sample_events_retest_rows.csv").open(encoding="utf-8-sig", newline="") as source:
+                rows = list(csv.DictReader(source))
+            self.assertEqual(len(rows), 102)
+            self.assertEqual(sum(row["decision"] == "허용" for row in rows), 90)
+            with (generated / "sample_events_retest_rejections.csv").open(encoding="utf-8-sig", newline="") as source:
+                counts = {row["rule_id"]: int(row["rejection_count"]) for row in csv.DictReader(source)}
+            self.assertEqual(counts, {"RULE_RECIPE": 1, "RULE_SEQ": 0, "RULE_INSP_PRE": 0,
+                                      "RULE_NOT_DONE": 0, "RULE_FAIL_HOLD": 1,
+                                      "RULE_PRESERVE": 4, "RULE_RETEST": 6})
+
     def test_t32_stage_one_request_is_recipe_rejection_and_state_unchanged(self):
         process = RecipeProcess(load_recipe(STAGE_ONE).models)
         process.apply(dict(seq="1", product_id="a", event="REGISTER", inspection="", result="", model="A"))

@@ -1093,3 +1093,161 @@ Ran 53 tests in 6.019s
 OK
 ```
 종료 코드: 0
+
+## ④ 고정 샘플 데이터·보고서 (T23–T30, T32)
+
+- T23–T30을 제품별로 담은 고정 입력 102행과 CSV 보고서 3종 생성. 허용 90·거절 12, 등록 제품 12개(미등록 요청 제품은 생성하지 않음).
+- 예상 거절 집계: RULE_RECIPE 1 / RULE_SEQ 0 / RULE_INSP_PRE 0 / RULE_NOT_DONE 0 / RULE_FAIL_HOLD 1 / RULE_PRESERVE 4 / RULE_RETEST 6. 실제 결과와 일치.
+- 순수 데이터·생성 산출물 단계여서 테스트 선실패 관측은 생략. 저장된 보고서와 별도 디렉터리에서 재생성한 보고서의 바이트 비교, 예상 최종 상태·이유·이력·집계 테스트를 추가했다. 전체 54개 통과.
+
+명령: `py -m src.main data/sample_events_retest.csv --recipe recipes/lamp_models_retest.json`
+
+```text
+레시피: recipes/lamp_models_retest.json | SHA-256: 438229b58c9e
+[행별 판정]
+seq | product_id | 입력 | 적용 규칙 ID | 허용/거절 | 거절 이유 | 처리 후 상태
+1 | T23 | REGISTER | RULE_RECIPE | 허용 |  | 등록
+2 | T23 | P1 | RULE_SEQ | 허용 |  | 공정 진행 중(P1 완료)
+3 | T23 | P2 | RULE_SEQ | 허용 |  | 공정 진행 중(P2 완료)
+4 | T23 | P3 | RULE_SEQ | 허용 |  | 공정 진행 중(P3 완료)
+5 | T23 | INSPECT LEAK FAIL | RULE_FAIL_HOLD | 허용 |  | 보류
+6 | T23 | RETEST_REQUEST LEAK | RULE_RETEST | 허용 |  | 보류
+7 | T23 | P4 | RULE_FAIL_HOLD | 거절 | FAIL로 보류 중인 제품 | 보류
+8 | T24 | REGISTER | RULE_RECIPE | 허용 |  | 등록
+9 | T24 | P1 | RULE_SEQ | 허용 |  | 공정 진행 중(P1 완료)
+10 | T24 | P2 | RULE_SEQ | 허용 |  | 공정 진행 중(P2 완료)
+11 | T24 | P3 | RULE_SEQ | 허용 |  | 공정 진행 중(P3 완료)
+12 | T24 | INSPECT LEAK FAIL | RULE_FAIL_HOLD | 허용 |  | 보류
+13 | T24 | RETEST_REQUEST LEAK | RULE_RETEST | 허용 |  | 보류
+14 | T24 | INSPECT LEAK PASS | RULE_RETEST | 허용 |  | 공정 진행 중(P3 완료)
+15 | T24 | P4 | RULE_SEQ | 허용 |  | 공정 진행 중(P4 완료)
+16 | T24 | P5 | RULE_SEQ | 허용 |  | 검사 대기
+17 | T24 | INSPECT LIGHT PASS | RULE_NOT_DONE | 허용 |  | 검사 대기
+18 | T24 | INSPECT FINAL PASS | RULE_FAIL_HOLD | 허용 |  | 레시피 모의 흐름 완료
+19 | T25 | REGISTER | RULE_RECIPE | 허용 |  | 등록
+20 | T25 | P1 | RULE_SEQ | 허용 |  | 공정 진행 중(P1 완료)
+21 | T25 | P2 | RULE_SEQ | 허용 |  | 공정 진행 중(P2 완료)
+22 | T25 | P3 | RULE_SEQ | 허용 |  | 공정 진행 중(P3 완료)
+23 | T25 | INSPECT LEAK FAIL | RULE_FAIL_HOLD | 허용 |  | 보류
+24 | T25 | INSPECT LEAK PASS | RULE_PRESERVE | 거절 | LEAK 결과 이미 존재 | 보류
+25 | T26 | REGISTER | RULE_RECIPE | 허용 |  | 등록
+26 | T26 | P1 | RULE_SEQ | 허용 |  | 공정 진행 중(P1 완료)
+27 | T26 | P2 | RULE_SEQ | 허용 |  | 공정 진행 중(P2 완료)
+28 | T26 | P3 | RULE_SEQ | 허용 |  | 공정 진행 중(P3 완료)
+29 | T26 | INSPECT LEAK FAIL | RULE_FAIL_HOLD | 허용 |  | 보류
+30 | T26 | RETEST_REQUEST LEAK | RULE_RETEST | 허용 |  | 보류
+31 | T26 | INSPECT LEAK FAIL | RULE_RETEST | 허용 |  | 보류
+32 | T26 | INSPECT LEAK PASS | RULE_PRESERVE | 거절 | LEAK 결과 이미 존재 | 보류
+33 | T26 | RETEST_REQUEST LEAK | RULE_RETEST | 허용 |  | 보류
+34 | T26 | INSPECT LEAK PASS | RULE_RETEST | 허용 |  | 공정 진행 중(P3 완료)
+35 | T27 | REGISTER | RULE_RECIPE | 허용 |  | 등록
+36 | T27 | P1 | RULE_SEQ | 허용 |  | 공정 진행 중(P1 완료)
+37 | T27 | P2 | RULE_SEQ | 허용 |  | 공정 진행 중(P2 완료)
+38 | T27 | P3 | RULE_SEQ | 허용 |  | 공정 진행 중(P3 완료)
+39 | T27 | INSPECT LEAK FAIL | RULE_FAIL_HOLD | 허용 |  | 보류
+40 | T27 | RETEST_REQUEST LEAK | RULE_RETEST | 허용 |  | 보류
+41 | T27 | INSPECT LEAK FAIL | RULE_RETEST | 허용 |  | 보류
+42 | T27 | RETEST_REQUEST LEAK | RULE_RETEST | 허용 |  | 보류
+43 | T27 | INSPECT LEAK FAIL | RULE_RETEST | 허용 |  | 폐기
+44 | T27 | P4 | RULE_RETEST | 거절 | 폐기된 제품 | 폐기
+45 | T27 | RETEST_REQUEST LEAK | RULE_RETEST | 거절 | 폐기된 제품 | 폐기
+46 | T27 | INSPECT LIGHT PASS | RULE_RETEST | 거절 | 폐기된 제품 | 폐기
+47 | T28_NO_RESULT | REGISTER | RULE_RECIPE | 허용 |  | 등록
+48 | T28_NO_RESULT | P1 | RULE_SEQ | 허용 |  | 공정 진행 중(P1 완료)
+49 | T28_NO_RESULT | P2 | RULE_SEQ | 허용 |  | 공정 진행 중(P2 완료)
+50 | T28_NO_RESULT | P3 | RULE_SEQ | 허용 |  | 공정 진행 중(P3 완료)
+51 | T28_NO_RESULT | RETEST_REQUEST LEAK | RULE_RETEST | 거절 | 미해결 FAIL 없음 | 공정 진행 중(P3 완료)
+52 | T28_PASS | REGISTER | RULE_RECIPE | 허용 |  | 등록
+53 | T28_PASS | P1 | RULE_SEQ | 허용 |  | 공정 진행 중(P1 완료)
+54 | T28_PASS | P2 | RULE_SEQ | 허용 |  | 공정 진행 중(P2 완료)
+55 | T28_PASS | P3 | RULE_SEQ | 허용 |  | 공정 진행 중(P3 완료)
+56 | T28_PASS | INSPECT LEAK PASS | RULE_NOT_DONE | 허용 |  | 공정 진행 중(P3 완료)
+57 | T28_PASS | RETEST_REQUEST LEAK | RULE_RETEST | 거절 | 미해결 FAIL 없음 | 공정 진행 중(P3 완료)
+58 | T28_OPEN | REGISTER | RULE_RECIPE | 허용 |  | 등록
+59 | T28_OPEN | P1 | RULE_SEQ | 허용 |  | 공정 진행 중(P1 완료)
+60 | T28_OPEN | P2 | RULE_SEQ | 허용 |  | 공정 진행 중(P2 완료)
+61 | T28_OPEN | P3 | RULE_SEQ | 허용 |  | 공정 진행 중(P3 완료)
+62 | T28_OPEN | INSPECT LEAK FAIL | RULE_FAIL_HOLD | 허용 |  | 보류
+63 | T28_OPEN | RETEST_REQUEST LEAK | RULE_RETEST | 허용 |  | 보류
+64 | T28_OPEN | RETEST_REQUEST LEAK | RULE_RETEST | 거절 | 이미 열린 재검사 요청 | 보류
+65 | T28_MODEL_B | REGISTER | RULE_RECIPE | 허용 |  | 등록
+66 | T28_MODEL_B | P1 | RULE_SEQ | 허용 |  | 공정 진행 중(P1 완료)
+67 | T28_MODEL_B | P2 | RULE_SEQ | 허용 |  | 공정 진행 중(P2 완료)
+68 | T28_MODEL_B | RETEST_REQUEST FINAL | RULE_RECIPE | 거절 | 제품 레시피에 없는 검사 FINAL | 공정 진행 중(P2 완료)
+69 | T28_UNREGISTERED | RETEST_REQUEST LEAK | RULE_PRESERVE | 거절 | 미등록 제품 | 미등록
+70 | T28_FORMAT | REGISTER | RULE_RECIPE | 허용 |  | 등록
+71 | T28_FORMAT | P1 | RULE_SEQ | 허용 |  | 공정 진행 중(P1 완료)
+72 | T28_FORMAT | P2 | RULE_SEQ | 허용 |  | 공정 진행 중(P2 완료)
+73 | T28_FORMAT | P3 | RULE_SEQ | 허용 |  | 공정 진행 중(P3 완료)
+74 | T28_FORMAT | INSPECT LEAK FAIL | RULE_FAIL_HOLD | 허용 |  | 보류
+75 | T28_FORMAT | RETEST_REQUEST LEAK PASS | RULE_PRESERVE | 거절 | RETEST_REQUEST의 result는 빈칸이어야 함 | 보류
+76 | T29 | REGISTER | RULE_RECIPE | 허용 |  | 등록
+77 | T29 | P1 | RULE_SEQ | 허용 |  | 공정 진행 중(P1 완료)
+78 | T29 | P2 | RULE_SEQ | 허용 |  | 공정 진행 중(P2 완료)
+79 | T29 | P3 | RULE_SEQ | 허용 |  | 공정 진행 중(P3 완료)
+80 | T29 | P4 | RULE_SEQ | 허용 |  | 공정 진행 중(P4 완료)
+81 | T29 | P5 | RULE_SEQ | 허용 |  | 검사 대기
+82 | T29 | INSPECT LEAK PASS | RULE_NOT_DONE | 허용 |  | 검사 대기
+83 | T29 | INSPECT LIGHT FAIL | RULE_FAIL_HOLD | 허용 |  | 보류
+84 | T29 | INSPECT FINAL FAIL | RULE_FAIL_HOLD | 허용 |  | 보류
+85 | T29 | RETEST_REQUEST LIGHT | RULE_RETEST | 허용 |  | 보류
+86 | T29 | INSPECT LIGHT PASS | RULE_RETEST | 허용 |  | 보류
+87 | T29 | RETEST_REQUEST FINAL | RULE_RETEST | 허용 |  | 보류
+88 | T29 | INSPECT FINAL PASS | RULE_RETEST | 허용 |  | 레시피 모의 흐름 완료
+89 | T30 | REGISTER | RULE_RECIPE | 허용 |  | 등록
+90 | T30 | P1 | RULE_SEQ | 허용 |  | 공정 진행 중(P1 완료)
+91 | T30 | P2 | RULE_SEQ | 허용 |  | 공정 진행 중(P2 완료)
+92 | T30 | P3 | RULE_SEQ | 허용 |  | 공정 진행 중(P3 완료)
+93 | T30 | INSPECT LEAK FAIL | RULE_FAIL_HOLD | 허용 |  | 보류
+94 | T30 | RETEST_REQUEST LEAK | RULE_RETEST | 허용 |  | 보류
+95 | T30 | INSPECT LEAK FAIL | RULE_RETEST | 허용 |  | 보류
+96 | T30 | RETEST_REQUEST LEAK | RULE_RETEST | 허용 |  | 보류
+97 | T30 | INSPECT LEAK PASS | RULE_RETEST | 허용 |  | 공정 진행 중(P3 완료)
+98 | T30 | P4 | RULE_SEQ | 허용 |  | 공정 진행 중(P4 완료)
+99 | T30 | P5 | RULE_SEQ | 허용 |  | 검사 대기
+100 | T30 | INSPECT LIGHT FAIL | RULE_FAIL_HOLD | 허용 |  | 보류
+101 | T30 | RETEST_REQUEST LIGHT | RULE_RETEST | 허용 |  | 보류
+102 | T30 | INSPECT LIGHT PASS | RULE_RETEST | 허용 |  | 검사 대기
+
+[제품별 최종 상태]
+product_id | model | 최종 상태 | 미완료 이유 | history
+T23 | A | 보류 | P4 미완료; P5 미완료; LEAK FAIL(재검사 요청됨); LIGHT 미실시; FINAL 미실시 | LEAK: FAIL@5 → 요청@6
+T24 | A | 레시피 모의 흐름 완료 |  | LEAK: FAIL@12 → 요청@13 → PASS@14(재검사 1); LIGHT: PASS@17; FINAL: PASS@18
+T25 | A | 보류 | P4 미완료; P5 미완료; LEAK FAIL; LIGHT 미실시; FINAL 미실시 | LEAK: FAIL@23
+T26 | A | 공정 진행 중(P3 완료) | P4 미완료; P5 미완료; LIGHT 미실시; FINAL 미실시 | LEAK: FAIL@29 → 요청@30 → FAIL@31(재검사 1) → 요청@33 → PASS@34(재검사 2)
+T27 | A | 폐기 | LEAK 재검사 한도 2회 초과 FAIL로 폐기 | LEAK: FAIL@39 → 요청@40 → FAIL@41(재검사 1) → 요청@42 → FAIL@43(재검사 2)
+T28_NO_RESULT | A | 공정 진행 중(P3 완료) | P4 미완료; P5 미완료; LEAK 미실시; LIGHT 미실시; FINAL 미실시 | 
+T28_PASS | A | 공정 진행 중(P3 완료) | P4 미완료; P5 미완료; LIGHT 미실시; FINAL 미실시 | LEAK: PASS@56
+T28_OPEN | A | 보류 | P4 미완료; P5 미완료; LEAK FAIL(재검사 요청됨); LIGHT 미실시; FINAL 미실시 | LEAK: FAIL@62 → 요청@63
+T28_MODEL_B | B | 공정 진행 중(P2 완료) | P3 미완료; P4 미완료; LEAK 미실시; LIGHT 미실시 | 
+T28_FORMAT | A | 보류 | P4 미완료; P5 미완료; LEAK FAIL; LIGHT 미실시; FINAL 미실시 | LEAK: FAIL@74
+T29 | A | 레시피 모의 흐름 완료 |  | LEAK: PASS@82; LIGHT: FAIL@83 → 요청@85 → PASS@86(재검사 1); FINAL: FAIL@84 → 요청@87 → PASS@88(재검사 1)
+T30 | A | 검사 대기 | FINAL 미실시 | LEAK: FAIL@93 → 요청@94 → FAIL@95(재검사 1) → 요청@96 → PASS@97(재검사 2); LIGHT: FAIL@100 → 요청@101 → PASS@102(재검사 1)
+
+[규칙 ID별 거절 건수]
+규칙 ID | 거절 건수
+RULE_RECIPE | 1
+RULE_SEQ | 0
+RULE_INSP_PRE | 0
+RULE_NOT_DONE | 0
+RULE_FAIL_HOLD | 1
+RULE_PRESERVE | 4
+RULE_RETEST | 6
+
+저장 파일:
+reports/sample_events_retest_rows.csv
+reports/sample_events_retest_products.csv
+reports/sample_events_retest_rejections.csv
+```
+종료 코드: 0
+
+명령: `py -m unittest discover -s tests`
+
+```text
+......................................................
+----------------------------------------------------------------------
+Ran 54 tests in 5.704s
+
+OK
+```
+종료 코드: 0
