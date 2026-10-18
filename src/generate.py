@@ -11,12 +11,11 @@ import random
 from .equipment import EquipmentState, load_equipment
 from .recipe import load_recipe
 from .recipe_rules import EQUIPMENT_INPUT_COLUMNS, RecipeProcess
+from .reason_codes import INJECTED_ERROR_CODES as ERROR_KINDS
 
 
 GENERATOR_VERSION = "1.0.0"
 DEFAULT_CONFIG = Path(__file__).resolve().parents[1] / "recipes/generator.json"
-ERROR_KINDS = ("SEQ_SKIP", "PRESERVE_BAD_RESULT", "PRESERVE_DUP_RESULT",
-               "EQUIP_UNKNOWN", "RECIPE_UNKNOWN_STEP")
 
 
 def event(product_id, name, inspection="", result="", model="", equipment=""):
@@ -92,7 +91,6 @@ class Generator:
         return rows
 
     def inject_errors(self, normal):
-        # 정상 열을 먼저 고정하고 해당 위치에서 상태를 바꾸지 않는 오류만 추가한다.
         candidates = {kind: [] for kind in ERROR_KINDS}
         process = RecipeProcess(self.models, self.book)
         for position, row in enumerate(normal, 1):

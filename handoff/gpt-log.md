@@ -3041,3 +3041,53 @@ exit_code=0; elapsed_seconds=11.747833
 - T34 행 26–31만 원래 물리 순서로 표시하고 seq 30의 정지 설비 거절에 LEAK-2 정지 행 25/T33_P3 및 FAIL 행 14/T33_T35_A, 25/T33_P3를 연결했다. 중복·감소 seq 테스트도 물리 행 인덱스 26–31 및 원인 인덱스 14·25로 확인했다.
 - summary·trace를 모두 먼저 계산·검증한 뒤 파일을 저장한다. 요청한 trace 중 하나라도 입력에 없으면 종료 2이며 기존 4종 포함 보고서를 새로 만들지 않는다. 반복 --trace, summary 동시 사용과 기존 보고서 바이트 보존을 확인했다.
 - 입력에 행은 있으나 등록이 거절된 ID도 추적할 수 있으며 마지막 상태는 미등록으로 표시한다. 파일명에 쓸 수 없는 제품 ID 문자는 percent encoding하여 reports/ 밖 경로가 되지 않게 한다. 일반 제품 ID는 그대로 쓴다.
+
+### 실행 기록: stage4-tests
+
+명령·출력 원문: [run-logs/stage4-tests.txt](run-logs/stage4-tests.txt)
+
+```text
+$ py -m unittest discover -s tests
+T44 seed=42 products=500 generation_seconds=0.130818 judgment_analysis_seconds=0.069414
+T44 seed=7 products=200 generation_seconds=0.043801 judgment_analysis_seconds=0.024872
+T44 seed=42 all_rows_deepcopy_invariant_seconds=34.836820
+T44 seed=7 all_rows_deepcopy_invariant_seconds=5.670792
+................................................................................................
+======================================================================
+FAIL: test_t44_seed42_nonempty_completion_hold_discard_stop_and_five_errors (test_generate.GeneratedInvariantTests) (requirement='discarded')
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "C:\Users\PC\Documents\ChatGPT\에스엘 KDT AI 교육 부트캠프\project\tests\test_generate.py", line 157, in test_t44_seed42_nonempty_completion_hold_discard_stop_and_five_errors
+    self.assertGreater(count, 0, "명세 이견: seed42 빈 검증 조건 미충족: " + requirement)
+AssertionError: 0 not greater than 0 : 명세 이견: seed42 빈 검증 조건 미충족: discarded
+
+----------------------------------------------------------------------
+Ran 97 tests in 53.877s
+
+FAILED (failures=1)
+
+exit_code=1; elapsed_seconds=54.106285
+```
+
+### 실행 기록: stage4-simplify-tests
+
+명령·출력 원문: [run-logs/stage4-simplify-tests.txt](run-logs/stage4-simplify-tests.txt)
+
+```text
+$ py -m unittest discover -s tests -p test_generate.py -k GeneratorTests
+..
+----------------------------------------------------------------------
+Ran 2 tests in 0.501s
+
+OK
+
+exit_code=0; elapsed_seconds=0.707469
+```
+
+### T44 실제 결과·의견과 간소화
+
+- 전체 97개 중 실패 1개: `test_t44_seed42_nonempty_completion_hold_discard_stop_and_five_errors`, `discarded=0`. 시드 42의 완료·보류·정지 설비·5종 오류 양수 조건은 충족했다. 시드 42/500개와 7/200개 각각 CSV·meta 및 기존 4종+summary+trace의 바이트 재현성, 완료 상태, 정지/폐기 뒤 허용 금지, 거절 집계 분해와 모든 거절의 전체 제품·설비 상태 불변 검사는 통과했다.
+- 500개 생성 0.130818초, 판정+분석 0.069414초, 모든 물리 행 deepcopy 불변식 검사 34.836820초. 200개도 deepcopy 검사 5.670792초로 수행했다. 500개 검증을 생략하지 않았다. 전체 테스트 53.877초. 실행 시간은 이 PC의 해당 실행 관측치다.
+- **명세 이견 유지:** 재검사 2회의 FAIL까지 요구하는 폐기는 정상 FAIL 2%, 다른 설비 우선 및 빠른 고장 설비 정지 조건에서 희소하다. seed42의 결과가 0인 사실을 숨기지 않았다. 빈 검증 테스트·기대표·기존 테스트·시드·확률은 수정하지 않았다. 사용자가 실패 유지 및 후속 구현·단계별 커밋을 명시했으므로 이 알려진 실패를 포함해 커밋한다.
+- ce-simplify-code mode:pipeline의 5개 렌즈 완료. 코드 중복 1건 반영(오류 코드 tuple을 고정 사유 코드 모듈에서 재사용), 중복 설명 주석 1건 삭제, 품질·효율·테스트 변경 없음. 두 proof-test와 기존 4개 테스트 보존. 설정된 별도 lint/typecheck 도구 없음.
+- 간소화 전후 seed42 CSV+meta 결합 SHA-256 모두 `88275405bfb6cda618f01e5bef6844c3610f56bb668286cbc3ebaf33f0a2ba3d`, 집중 생성기 테스트 2개 통과(위 원문). 값·순서와 난수 소비가 변하지 않음을 확인했다.
