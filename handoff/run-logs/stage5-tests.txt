@@ -1,0 +1,20 @@
+$ py -m unittest discover -s tests
+T44 seed=42 products=500 generation_seconds=0.111544 judgment_analysis_seconds=0.061856
+T44 seed=7 products=200 generation_seconds=0.044143 judgment_analysis_seconds=0.025246
+T44 seed=42 all_rows_deepcopy_invariant_seconds=35.363208
+T44 seed=7 all_rows_deepcopy_invariant_seconds=5.705319
+................................................................................................
+======================================================================
+FAIL: test_t44_seed42_nonempty_completion_hold_discard_stop_and_five_errors (test_generate.GeneratedInvariantTests) (requirement='discarded')
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "C:\Users\PC\Documents\ChatGPT\에스엘 KDT AI 교육 부트캠프\project\tests\test_generate.py", line 157, in test_t44_seed42_nonempty_completion_hold_discard_stop_and_five_errors
+    self.assertGreater(count, 0, "명세 이견: seed42 빈 검증 조건 미충족: " + requirement)
+AssertionError: 0 not greater than 0 : 명세 이견: seed42 빈 검증 조건 미충족: discarded
+
+----------------------------------------------------------------------
+Ran 97 tests in 55.091s
+
+FAILED (failures=1)
+
+exit_code=1; elapsed_seconds=55.292803

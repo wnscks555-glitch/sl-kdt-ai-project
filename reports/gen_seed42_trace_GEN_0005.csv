@@ -1,0 +1,11 @@
+﻿section,row_index,seq,product_id,input,model,equipment,rule_id,decision,reason,state,stop_row_index,stop_seq,stop_product_id,cause_row_indices,cause_seqs,cause_product_ids,incomplete_reason,history
+event,5,5,GEN_0005,REGISTER,B,,RULE_RECIPE,허용,,등록,,,,,,,,
+event,518,518,GEN_0005,P1,,,RULE_SEQ,허용,,공정 진행 중(P1 완료),,,,,,,,
+event,1034,1034,GEN_0005,P2,,,RULE_SEQ,허용,,공정 진행 중(P2 완료),,,,,,,,
+event,1549,1549,GEN_0005,INSPECT LEAK FAIL @LEAK-2,,LEAK-2,RULE_FAIL_HOLD,허용,,보류,,,,,,,,
+event,2063,2063,GEN_0005,RETEST_REQUEST LEAK,,,RULE_RETEST,허용,,보류,,,,,,,,
+event,2575,2575,GEN_0005,INSPECT LEAK PASS @LEAK-1,,LEAK-1,RULE_RETEST,허용,,공정 진행 중(P2 완료),,,,,,,,
+event,3089,3089,GEN_0005,P3,,,RULE_SEQ,허용,,공정 진행 중(P3 완료),,,,,,,,
+event,3597,3597,GEN_0005,P4,,,RULE_SEQ,허용,,검사 대기,,,,,,,,
+event,3861,3861,GEN_0005,INSPECT LIGHT PASS @LIGHT-1,,LIGHT-1,RULE_FAIL_HOLD,허용,,레시피 모의 흐름 완료,,,,,,,,
+current_state,,,GEN_0005,,,,,,,레시피 모의 흐름 완료,,,,,,,,LEAK: FAIL@1549[LEAK-2] → 요청@2063 → PASS@2575[LEAK-1](재검사 1); LIGHT: PASS@3861[LIGHT-1]

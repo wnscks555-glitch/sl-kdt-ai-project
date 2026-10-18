@@ -3091,3 +3091,75 @@ exit_code=0; elapsed_seconds=0.707469
 - **명세 이견 유지:** 재검사 2회의 FAIL까지 요구하는 폐기는 정상 FAIL 2%, 다른 설비 우선 및 빠른 고장 설비 정지 조건에서 희소하다. seed42의 결과가 0인 사실을 숨기지 않았다. 빈 검증 테스트·기대표·기존 테스트·시드·확률은 수정하지 않았다. 사용자가 실패 유지 및 후속 구현·단계별 커밋을 명시했으므로 이 알려진 실패를 포함해 커밋한다.
 - ce-simplify-code mode:pipeline의 5개 렌즈 완료. 코드 중복 1건 반영(오류 코드 tuple을 고정 사유 코드 모듈에서 재사용), 중복 설명 주석 1건 삭제, 품질·효율·테스트 변경 없음. 두 proof-test와 기존 4개 테스트 보존. 설정된 별도 lint/typecheck 도구 없음.
 - 간소화 전후 seed42 CSV+meta 결합 SHA-256 모두 `88275405bfb6cda618f01e5bef6844c3610f56bb668286cbc3ebaf33f0a2ba3d`, 집중 생성기 테스트 2개 통과(위 원문). 값·순서와 난수 소비가 변하지 않음을 확인했다.
+
+### 실행 기록: stage5-generate
+
+명령·출력 원문: [run-logs/stage5-generate.txt](run-logs/stage5-generate.txt)
+
+```text
+$ py -m src.generate --seed 42 --products 500 --out data/generated/gen_seed42.csv
+생성: data/generated/gen_seed42.csv
+{
+  "seed": 42,
+  "products": 500,
+  "generator_version": "1.0.0",
+  "sha256": {
+    "config": "d28b9b34edd1aaa43cda8ad5c927d433b45eb6ca70daad8e45b60a9de692625b",
+    "recipe": "438229b58c9e8bc4a9f464704c9ace956150e33920fa36f0441add7f354ca7ac",
+    "equipment": "fc7e9b06b007846199847ad06d0d9381ca17ae039557c1739816eb2155afbbab"
+  },
+  "normal_rows": 4020,
+  "rows": 4140,
+  "injected_errors": {
+    "SEQ_SKIP": 24,
+    "PRESERVE_BAD_RESULT": 24,
+    "PRESERVE_DUP_RESULT": 24,
+    "EQUIP_UNKNOWN": 24,
+    "RECIPE_UNKNOWN_STEP": 24
+  },
+  "injection_rate": 0.03
+}
+
+exit_code=0; elapsed_seconds=0.260631
+```
+
+### 실행 기록: stage5-summary-trace
+
+명령·출력 원문: [run-logs/stage5-summary-trace.txt](run-logs/stage5-summary-trace.txt)
+
+`py -m src.main data/generated/gen_seed42.csv --recipe recipes/lamp_models_retest.json --equipment recipes/equipment_generated.json --summary --trace GEN_0005` — 종료 0, 0.314607초. 전체 stdout·stderr는 위 원문 파일에 보존.
+
+### 실행 기록: stage5-tests
+
+명령·출력 원문: [run-logs/stage5-tests.txt](run-logs/stage5-tests.txt)
+
+```text
+$ py -m unittest discover -s tests
+T44 seed=42 products=500 generation_seconds=0.111544 judgment_analysis_seconds=0.061856
+T44 seed=7 products=200 generation_seconds=0.044143 judgment_analysis_seconds=0.025246
+T44 seed=42 all_rows_deepcopy_invariant_seconds=35.363208
+T44 seed=7 all_rows_deepcopy_invariant_seconds=5.705319
+................................................................................................
+======================================================================
+FAIL: test_t44_seed42_nonempty_completion_hold_discard_stop_and_five_errors (test_generate.GeneratedInvariantTests) (requirement='discarded')
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "C:\Users\PC\Documents\ChatGPT\에스엘 KDT AI 교육 부트캠프\project\tests\test_generate.py", line 157, in test_t44_seed42_nonempty_completion_hold_discard_stop_and_five_errors
+    self.assertGreater(count, 0, "명세 이견: seed42 빈 검증 조건 미충족: " + requirement)
+AssertionError: 0 not greater than 0 : 명세 이견: seed42 빈 검증 조건 미충족: discarded
+
+----------------------------------------------------------------------
+Ran 97 tests in 55.091s
+
+FAILED (failures=1)
+
+exit_code=1; elapsed_seconds=55.292803
+```
+
+### 생성 샘플·보고서 확인
+
+- `data/generated/gen_seed42.csv` 4,140행 및 `.meta.json`, `reports/gen_seed42_{rows,products,rejections,equipment,summary}.csv`, 대표 `gen_seed42_trace_GEN_0005.csv` 생성. 실행 명령과 전체 stdout·stderr는 위 stage5 원문 파일에 보존했다(대량 행 출력은 gpt-log에 복제하지 않고 원문 링크).
+- summary 실측: 등록 500, 완료 497·보류 3·폐기 0, FPY 482/500=`0.9640`, 최초 FAIL 18/1246=`0.0144`, 전체 FAIL 18/1261=`0.0143`, 거절 검사 72, 미실시 검사 2. 입력 오류 120, 정지 설비 거절 0, 기타 0. 주입 120/4020=`0.0299`, 최종 거절 120/4140=`0.0290`.
+- LEAK-2는 seq 1556/GEN_0012에서 정지했으며 창의 FAIL 원인은 1549/GEN_0005, 1556/GEN_0012다. 생성기가 정지 설비를 피했으므로 이 샘플의 정지 후 거절은 0이다. 교차 제품 정지 거절 trace 자체는 T47 고정 샘플에서 검증했다.
+- 대표 trace GEN_0005는 LEAK 최초 FAIL@1549[LEAK-2] → 요청@2063 → PASS@2575[LEAK-1](재검사 1) 뒤 LIGHT PASS@3861로 완료한 사례다.
+- 단계5 전체 테스트 97개 중 알려진 폐기 양수 조건 1개만 실패. 보호 파일 diff는 출력 없음. 기본값·입력 확률·기대표를 바꾸지 않았다.
