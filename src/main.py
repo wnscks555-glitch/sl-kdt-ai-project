@@ -2,6 +2,7 @@
 
 import argparse
 import csv
+import json
 from pathlib import Path
 from typing import Optional, Sequence
 
@@ -47,13 +48,13 @@ def build_reports(events):
     return rows, products, list(counts.items())
 
 
-def write_reports(stem: str, reports, product_columns=PRODUCT_COLUMNS):
+def write_reports(stem: str, reports, product_columns=PRODUCT_COLUMNS, *, equipment_mode=False):
     directory = Path("reports")
     directory.mkdir(exist_ok=True)
     paths = []
     suffixes = ("rows", "products", "rejections")
     report_columns = (ROW_COLUMNS, product_columns, REJECTION_COLUMNS)
-    if len(reports) == 4:
+    if equipment_mode:
         from .recipe_reports import EQUIPMENT_COLUMNS
 
         suffixes += ("equipment",)
@@ -72,13 +73,13 @@ def write_reports(stem: str, reports, product_columns=PRODUCT_COLUMNS):
     return paths
 
 
-def print_reports(reports, paths, product_heading="product_id | 최종 상태 | 미완료 이유"):
+def print_reports(reports, paths, product_heading="product_id | 최종 상태 | 미완료 이유", *, equipment_mode=False):
     sections = (
         ("행별 판정", "seq | product_id | 입력 | 적용 규칙 ID | 허용/거절 | 거절 이유 | 처리 후 상태"),
         ("제품별 최종 상태", product_heading),
         ("규칙 ID별 거절 건수", "규칙 ID | 거절 건수"),
     )
-    if len(reports) == 4:
+    if equipment_mode:
         sections += (("설비별 최종 상태", "equipment | inspection | counted_results | fail_count | state | stopped_at_seq"),)
     for (title, heading), rows in zip(sections, reports):
         print("[" + title + "]")
@@ -91,7 +92,7 @@ def print_reports(reports, paths, product_heading="product_id | 최종 상태 | 
         print(path.as_posix())
 
 
-def run_recipe(input_csv: Path, recipe_path: Path, parser, equipment_path=None) -> int:
+def run_recipe(input_csv: Path, recipe_path: Path, parser, equipment_path=None, *, summary=False) -> int:
     from .recipe import RecipeError, load_recipe
     from .recipe_reports import PRODUCT_COLUMNS as RECIPE_PRODUCT_COLUMNS, RETEST_PRODUCT_COLUMNS, build_recipe_reports
     from .recipe_rules import INPUT_COLUMNS as RECIPE_INPUT_COLUMNS, EQUIPMENT_INPUT_COLUMNS
@@ -113,15 +114,34 @@ def run_recipe(input_csv: Path, recipe_path: Path, parser, equipment_path=None) 
         print("설비: " + equipment_path.as_posix() + " | SHA-256: " + equipment_book.sha256[:12])
     try:
         input_columns = EQUIPMENT_INPUT_COLUMNS if equipment_book is not None else RECIPE_INPUT_COLUMNS
-        reports = build_recipe_reports(read_events(input_csv, input_columns), book.models, equipment_book)
+        events = read_events(input_csv, input_columns)
+        reports = build_recipe_reports(events, book.models, equipment_book)
+        summary_rows = None
+        if summary:
+            from .summary import build_analysis, build_summary
+
+            meta_path = Path(str(input_csv) + ".meta.json")
+            try:
+                meta = json.loads(meta_path.read_text(encoding="utf-8-sig"))
+            except FileNotFoundError:
+                meta = None
+            summary_rows = build_summary(build_analysis(events, book.models, equipment_book), meta)
         columns = RETEST_PRODUCT_COLUMNS if book.retest_enabled else RECIPE_PRODUCT_COLUMNS
-        paths = write_reports(input_csv.stem, reports, columns)
+        paths = write_reports(input_csv.stem, reports, columns, equipment_mode=equipment_book is not None)
+        if summary_rows is not None:
+            from .summary import write_summary
+
+            summary_path = write_summary(input_csv.stem, summary_rows)
     except (OSError, UnicodeError, csv.Error, ValueError) as error:
         parser.exit(2, "오류: " + str(error) + "\n")
     heading = "product_id | model | 최종 상태 | 미완료 이유"
     if book.retest_enabled:
         heading += " | history"
-    print_reports(reports, paths, heading)
+    print_reports(reports, paths, heading, equipment_mode=equipment_book is not None)
+    if summary_rows is not None:
+        from .summary import print_summary
+
+        print_summary(summary_rows, summary_path)
     return 0
 
 
@@ -130,11 +150,14 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
     parser.add_argument("input_csv", type=Path, help="seq,product_id,event,inspection,result CSV")
     parser.add_argument("--recipe", type=Path, help="v2 모델별 선형 공정 레시피 JSON (CSV에 model 열 추가)")
     parser.add_argument("--equipment", type=Path, help="검사 설비·정지 규칙 JSON (--recipe 필수)")
+    parser.add_argument("--summary", action="store_true", help="설비 모드의 지표·파레토 분석 보고서")
     args = parser.parse_args(argv)
     if args.equipment is not None and args.recipe is None:
         parser.error("--equipment는 --recipe와 함께만 사용 가능")
+    if args.summary and args.equipment is None:
+        parser.error("--summary는 설비 모드에서만 사용 가능")
     if args.recipe is not None:
-        return run_recipe(args.input_csv, args.recipe, parser, args.equipment)
+        return run_recipe(args.input_csv, args.recipe, parser, args.equipment, summary=args.summary)
     try:
         reports = build_reports(read_events(args.input_csv))
         paths = write_reports(args.input_csv.stem, reports)
