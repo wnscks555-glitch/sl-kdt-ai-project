@@ -538,3 +538,144 @@ Ran 38 tests in 4.211s
 OK
 exit=0
 ```
+
+## 2026-10-18 최종 v1 회귀·보존 확인 (T1–T10)
+
+- 최종 구현 이후 실행한 명령과 출력 원문:
+
+```powershell
+py -m src.main data/sample_events.csv
+```
+
+```text
+[행별 판정]
+seq | product_id | 입력 | 적용 규칙 ID | 허용/거절 | 거절 이유 | 처리 후 상태
+1 | T1 | REGISTER | RULE_SEQ | 허용 |  | 등록
+2 | T1 | PRE_ASSEMBLY | RULE_SEQ | 허용 |  | 예비 조립
+3 | T1 | MAIN_ASSEMBLY | RULE_SEQ | 허용 |  | 검사 대기
+4 | T1 | INSPECT LIGHT PASS | RULE_NOT_DONE | 허용 |  | 검사 대기
+5 | T1 | INSPECT LEAK PASS | RULE_FAIL_HOLD | 허용 |  | 선택한 두 검사까지의 모의 흐름 완료
+6 | T2 | REGISTER | RULE_SEQ | 허용 |  | 등록
+7 | T2 | MAIN_ASSEMBLY | RULE_SEQ | 거절 | PRE_ASSEMBLY 미완료 | 등록
+8 | T3 | REGISTER | RULE_SEQ | 허용 |  | 등록
+9 | T3 | PRE_ASSEMBLY | RULE_SEQ | 허용 |  | 예비 조립
+10 | T3 | INSPECT LIGHT PASS | RULE_INSP_PRE | 거절 | MAIN_ASSEMBLY 미완료 | 예비 조립
+11 | T4 | REGISTER | RULE_SEQ | 허용 |  | 등록
+12 | T4 | PRE_ASSEMBLY | RULE_SEQ | 허용 |  | 예비 조립
+13 | T4 | MAIN_ASSEMBLY | RULE_SEQ | 허용 |  | 검사 대기
+14 | T4 | INSPECT LIGHT PASS | RULE_NOT_DONE | 허용 |  | 검사 대기
+15 | T5 | REGISTER | RULE_SEQ | 허용 |  | 등록
+16 | T5 | PRE_ASSEMBLY | RULE_SEQ | 허용 |  | 예비 조립
+17 | T5 | MAIN_ASSEMBLY | RULE_SEQ | 허용 |  | 검사 대기
+18 | T5 | INSPECT LIGHT PASS | RULE_NOT_DONE | 허용 |  | 검사 대기
+19 | T5 | INSPECT LEAK FAIL | RULE_FAIL_HOLD | 허용 |  | 보류
+20 | T6 | REGISTER | RULE_SEQ | 허용 |  | 등록
+21 | T6 | PRE_ASSEMBLY | RULE_SEQ | 허용 |  | 예비 조립
+22 | T6 | MAIN_ASSEMBLY | RULE_SEQ | 허용 |  | 검사 대기
+23 | T6 | INSPECT LIGHT PASS | RULE_NOT_DONE | 허용 |  | 검사 대기
+24 | T6 | INSPECT LEAK FAIL | RULE_FAIL_HOLD | 허용 |  | 보류
+25 | T6 | INSPECT LEAK PASS | RULE_PRESERVE | 거절 | LEAK 결과 이미 존재 | 보류
+26 | T7 | REGISTER | RULE_SEQ | 허용 |  | 등록
+27 | T7 | PRE_ASSEMBLY | RULE_SEQ | 허용 |  | 예비 조립
+28 | T7 | MAIN_ASSEMBLY | RULE_SEQ | 허용 |  | 검사 대기
+29 | T7 | INSPECT LIGHT PASS | RULE_NOT_DONE | 허용 |  | 검사 대기
+30 | T7 | INSPECT LEAK PASS | RULE_FAIL_HOLD | 허용 |  | 선택한 두 검사까지의 모의 흐름 완료
+31 | T7 | INSPECT LIGHT FAIL | RULE_PRESERVE | 거절 | LIGHT 결과 이미 존재 | 선택한 두 검사까지의 모의 흐름 완료
+32 | T8 | REGISTER | RULE_SEQ | 허용 |  | 등록
+33 | T8 | PRE_ASSEMBLY | RULE_SEQ | 허용 |  | 예비 조립
+34 | T8 | PRE_ASSEMBLY | RULE_PRESERVE | 거절 | 중복 조립 이벤트 | 예비 조립
+35 | T9_UNREGISTERED | MAIN_ASSEMBLY | RULE_PRESERVE | 거절 | 미등록 제품 | 미등록
+36 | T9 | REGISTER | RULE_SEQ | 허용 |  | 등록
+37 | T9 | PRE_ASSEMBLY | RULE_SEQ | 허용 |  | 예비 조립
+38 | T9 | MAIN_ASSEMBLY | RULE_SEQ | 허용 |  | 검사 대기
+39 | T9 | INSPECT LIGHT OK | RULE_PRESERVE | 거절 | 잘못된 result (PASS 또는 FAIL 필요) | 검사 대기
+
+[제품별 최종 상태]
+product_id | 최종 상태 | 미완료 이유
+T1 | 선택한 두 검사까지의 모의 흐름 완료 | 
+T2 | 등록 | PRE_ASSEMBLY 미완료; MAIN_ASSEMBLY 미완료; LIGHT 미실시; LEAK 미실시
+T3 | 예비 조립 | MAIN_ASSEMBLY 미완료; LIGHT 미실시; LEAK 미실시
+T4 | 검사 대기 | LEAK 미실시
+T5 | 보류 | LEAK FAIL
+T6 | 보류 | LEAK FAIL
+T7 | 선택한 두 검사까지의 모의 흐름 완료 | 
+T8 | 예비 조립 | MAIN_ASSEMBLY 미완료; LIGHT 미실시; LEAK 미실시
+T9 | 검사 대기 | LIGHT 미실시; LEAK 미실시
+
+[규칙 ID별 거절 건수]
+규칙 ID | 거절 건수
+RULE_SEQ | 1
+RULE_INSP_PRE | 1
+RULE_NOT_DONE | 0
+RULE_FAIL_HOLD | 0
+RULE_PRESERVE | 5
+
+저장 파일:
+reports/sample_events_rows.csv
+reports/sample_events_products.csv
+reports/sample_events_rejections.csv
+exit=0
+```
+- 보고서는 `git cat-file --filters 27e8992:<파일>` 원시 바이트와 대조했다. raw blob LF/CRLF 차이는 착수 전과 같다. 보호 경로는 `git hash-object --path <파일> <파일>`과 `git rev-parse 27e8992:<파일>`의 내용 ID를 대조했다. 보호 파일 중 decisions.md처럼 이미 LF인 작업 파일도 있어 전체 원시 바이트가 checkout 필터와 같다고 주장하지 않는다.
+
+```text
+reports/sample_events_rows.csv: checkout_byte_equal=True, blob_byte_equal=False, SHA-256=eb4042fb981c2ffe6611117a0ebb5636c552177a894d83a4406a607b08a952c8
+reports/sample_events_products.csv: checkout_byte_equal=True, blob_byte_equal=False, SHA-256=e2317c768731185c28b5040aea345eb197873e76cf3459adacf25b3ea89c86e6
+reports/sample_events_rejections.csv: checkout_byte_equal=True, blob_byte_equal=False, SHA-256=72143e7c3410b4a0ac1829f139027fcbca3fb305c7d83586cb0b2f8ac9d6c17f
+Protected tracked files: 8; all Git content IDs match starting commit 27e8992
+Branch: main
+```
+
+## 2026-10-18 v2 1단계 완료 보고 (T1–T22)
+
+- 사용자 확정 현행 절의 ① 레시피 로드·검증 → ② 판정 → ③ CLI → ④ 샘플·보고서 → ⑤ README 순서로 구현·검증·커밋했다. `main`에서 작업했으며 새 브랜치·push·원격 설정 변경·패키지 설치는 하지 않았다.
+- 산출물: `recipes/lamp_models.json`, `src/recipe.py`, `src/recipe_rules.py`, `src/recipe_reports.py`, `src/main.py`, `tests/test_recipe.py`, `tests/fixtures/`, `data/sample_events_v2.csv`, `reports/sample_events_v2_rows.csv`, `reports/sample_events_v2_products.csv`, `reports/sample_events_v2_rejections.csv`, `README.md`.
+- 검증: 착수 전 v1 12개 테스트, 레시피 16개, 판정 33개, CLI 37개, 샘플/README/최종 주석 정리 후 전체 38개 테스트(기존 v1 12 + v2 26) 모두 통과. 명령·출력 원문은 위 각 단계에 보존했다. 최종 v1 실행은 시작 체크아웃 보고서 3종과 바이트·SHA-256 동일하다.
+- 기대표는 수정하지 않았다. `src/rules.py`, `tests/test_rules.py`, `handoff/tasks.md`, `handoff/decisions.md`, `handoff/reviews/`, `CLAUDE.md`, `.claude/`는 수정하지 않았다. 신규 테스트의 기대값도 구현 결과에 맞춰 변경하지 않았다.
+
+### 기대표 대조
+
+| ID | 실제 결과 |
+| --- | --- |
+| T11 | A의 5공정·3검사 PASS 후 레시피 모의 흐름 완료 |
+| T12 | 섞인 입력에서도 B 완료, A P4 완료와 지정 미완료 사유 유지 |
+| T13 | P3를 RULE_SEQ/P2 미완료로 거절, 상태 유지 후 P2 허용 |
+| T14 | LEAK/P3 미완료, LIGHT/P5 미완료를 RULE_INSP_PRE로 거절, 검사 결과 미저장 |
+| T15 | 중간 LEAK PASS 허용, 최종 검사 대기/FINAL 미실시 |
+| T16 | LEAK FAIL 보류, P4 RULE_FAIL_HOLD 거절, 재입력 PASS RULE_PRESERVE 거절, P3/FAIL 유지 |
+| T16b | LIGHT FAIL 뒤 FINAL 첫 PASS 허용, 보류 유지 |
+| T17 | 없는 모델/제품 레시피에 없는 공정·검사 모두 RULE_RECIPE, 전체 상태 불변 |
+| T18 | 지정 7사례 및 추가 구조/읽기 오류를 위치별 출력, 종료 3, 이벤트 미처리·보고서 미생성 |
+| T19 | B의 P5 입력 RULE_RECIPE 거절, 전체 상태 불변 |
+| T20 | 등록 model 빈값 RULE_RECIPE, 다른 행 model 기입 RULE_PRESERVE, 전체 상태 불변 |
+| T21 | 동일 입력·레시피의 stdout/CSV 3종 바이트 동일; B LEAK after 변경 시 해당 검사 행의 판정 변화 |
+| T22 | 다른 모델 재등록 RULE_PRESERVE/이미 등록된 제품 거절, 모델 A/P2 유지 |
+
+v2 기대표와 실제 결과의 차이는 없다. **명세 이견:** v1의 Git 내부 blob과 생성 CSV를 변환 없이 비교하면 LF/CRLF 차이로 엄격한 바이트 동일 조건은 착수 전부터 성립하지 않았다. 체크아웃된 커밋 파일과의 바이트 동일 조건은 충족한다. 이 차이를 숨기거나 Git 설정·v1 출력·기대표를 변경하지 않았다.
+
+### 명세가 모호해 내린 해석·가정
+
+1. `seq`는 v1의 양의 정수 표식이다. 유일성/단조 증가를 요구하지 않고 물리적 행 순서로 처리한다. product_id와 ID의 앞뒤 공백을 정리하지 않는다.
+2. 빈 event/INSPECT inspection은 빈칸 형식 오류로 RULE_PRESERVE, 비어 있지 않은 미등록 공정·검사는 RULE_RECIPE다. 등록 model 빈값은 명시된 RULE_RECIPE가 형식 오류보다 우선한다는 뜻이 아니라 형식 검사를 통과한 등록 행에 적용한다.
+3. 진행 상태의 Pk는 하드코딩한 번호가 아닌 실제 완료 공정 ID다. 건너뜀 사유는 가장 먼저 남아 있는 공정을 표시한다.
+4. rows의 input은 v1처럼 event/inspection/result로 표시한다. model은 지정된 products 열에 기록한다. 미등록 또는 거절된 신규 등록은 products에 만들지 않는다.
+5. 레시피는 UTF-8 및 선택적 BOM을 허용하고 읽기/디코딩 실패도 종료 3으로 처리한다. JSON 문법이 깨지면 구문 위치를 알리고, 파싱 가능한 설정은 독립적으로 확인할 수 있는 모든 구조 오류를 수집한다.
+6. 해시는 재직렬화가 아닌 원본 레시피 파일 바이트 기준(BOM·줄바꿈 포함)이다. 표시 경로는 인자로 받은 Path의 POSIX 표기다.
+7. 보고서 위치·BOM·덮어쓰기·입력 stem 방식은 v1과 같다. 잘못된 레시피는 보고서를 생성·덮어쓰지 않으며 기존 보고서를 삭제하지 않는다.
+8. 모듈/보고서의 일부 구조 중복은 v1 동결을 위한 의도적 분리로 유지한다. 별도 lint/typecheck 설정은 없으므로 설치 없이 unittest와 실제 CLI·보고서 바이트 대조로 검증했다.
+
+### 교훈 기록 판단
+
+`ce-compound mode:non-interactive`: Documentation skipped. 판정·상태 보존 판단은 코드·테스트·README에서 복원 가능하고, 줄바꿈 비교 조건은 이 로그에 근거·재현 명령을 이미 기록했다. 별도 해결 지식 문서를 중복 생성하지 않았다.
+
+### 확인 범위와 한계
+
+- Windows/Python 3.9.13의 `py`로 로컬 검증했다. 다른 운영체제와 콘솔의 육안 한글 표시는 검증하지 않았다.
+- 보류 해제·재검사·정정·설비·로트·그래프·중간 관문·대량 생성기는 현행 제외 범위대로 구현하지 않았다.
+- `git diff --check`에서 원문 CLI 출력의 빈 미완료 사유 뒤 구분자 공백을 trailing whitespace로 표시한다. 로그 원문 보존 요구에 따라 이 공백은 유지한다.
+
+### 최종 코드 리뷰 (T1–T22)
+
+- `ce-code-review mode:agent base:27e8992 plan:handoff/tasks.md`의 full 범위로 correctness, adversarial, testing, standards, security, maintainability, reliability 7개 관점을 검토했다. 7개 결과 모두 실질 지적/추가 테스트 공백 0건이다.
+- 독립 반례 탐침은 모델별 상태 분리, 보류 중 규칙 우선순위, 다른 검사의 최초 결과 허용, 임의 공정명·배열 순서, 다중 모델 설정 오류 시 이벤트/보고서 호출 차단을 확인했다. 외부 모델로 코드 전송은 하지 않았다. 병합 결과 primary=0, selected=0이며 추가 finding 검증 대상은 없다.
+- 기존 v1.0 태그를 유지했다. 최종 보존 대조와 코드/테스트에 대한 `git diff --check 27e8992 -- . ":(exclude)handoff/gpt-log.md"`는 변경·공백 오류 없이 통과했다.
