@@ -200,8 +200,10 @@ class RetestProcessTests(unittest.TestCase):
             self.reject(row, "RULE_PRESERVE", "")
 
     def test_t29_other_failed_inspection_keeps_hold_and_requests_are_independent(self):
-        self.register(steps=5)
+        self.register(steps=3)
         self.accept("INSPECT", inspection="LEAK", result="PASS")
+        self.accept("P4")
+        self.accept("P5")
         self.accept("INSPECT", inspection="LIGHT", result="FAIL")
         self.accept("INSPECT", inspection="FINAL", result="FAIL")
         self.request("LIGHT")

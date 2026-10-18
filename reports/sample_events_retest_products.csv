@@ -9,5 +9,5 @@ T28_PASS,A,공정 진행 중(P3 완료),P4 미완료; P5 미완료; LIGHT 미실
 T28_OPEN,A,보류,P4 미완료; P5 미완료; LEAK FAIL(재검사 요청됨); LIGHT 미실시; FINAL 미실시,LEAK: FAIL@62 → 요청@63
 T28_MODEL_B,B,공정 진행 중(P2 완료),P3 미완료; P4 미완료; LEAK 미실시; LIGHT 미실시,
 T28_FORMAT,A,보류,P4 미완료; P5 미완료; LEAK FAIL; LIGHT 미실시; FINAL 미실시,LEAK: FAIL@74
-T29,A,레시피 모의 흐름 완료,,LEAK: PASS@82; LIGHT: FAIL@83 → 요청@85 → PASS@86(재검사 1); FINAL: FAIL@84 → 요청@87 → PASS@88(재검사 1)
+T29,A,레시피 모의 흐름 완료,,LEAK: PASS@80; LIGHT: FAIL@83 → 요청@85 → PASS@86(재검사 1); FINAL: FAIL@84 → 요청@87 → PASS@88(재검사 1)
 T30,A,검사 대기,FINAL 미실시,LEAK: FAIL@93 → 요청@94 → FAIL@95(재검사 1) → 요청@96 → PASS@97(재검사 2); LIGHT: FAIL@100 → 요청@101 → PASS@102(재검사 1)
