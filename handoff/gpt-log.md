@@ -2944,3 +2944,46 @@ Exit code: 0.
 - 검토 receipt: `C:/Users/PC/AppData/Local/Temp/ce-equipment-review-k457aao5/review.json`; native 구현 반환: 같은 폴더 `ce-work-return.json`. 프로젝트 기록은 이 로그가 기준이다.
 - 보존 확인: 보호 파일 및 AGENTS.md의 `git diff --exit-code 4947d12 -- ...` 출력 없음·종료 0. handoff/tasks.md·decisions.md·reviews/·CLAUDE.md·.claude/·src/rules.py·기존 테스트 3개·기존 보고서 9개 무수정. main에서만 작업했고 새 브랜치·원격 설정 변경·패키지 설치·push·PR·배포를 하지 않았다.
 - 커밋: 회귀 기준 `4d5ab04` → ① T40 `2c528ec` → ② T33–T39 `1cf25d6` → ③ T41 `7ddefae` → ④ T33–T41 `04e6168` → ⑤ T33–T41 `5d5786d` → 이 완료 보고 커밋. 각 단계 전체 테스트 통과 뒤 관련 경로만 커밋했다.
+
+## v2 4단계 착수·회귀 기준 (2026-10-18)
+
+- 현행 작업 상태 **사용자 확정** 확인. main 유지, 시작 작업 트리 깨끗함, 기존 로컬 선행 커밋 1개 보존.
+- 관련 해결 기록: `.compound-engineering/config.yaml` 및 `docs/solutions/` 없음.
+- 확정 명세의 구현 순서·기대표를 계획으로 재사용한다(계획 중복 생성·원본 변경 없음). 실행은 ce-work mode:return-to-caller의 native 경로, 통합·커밋·최종 리뷰는 주 에이전트 담당.
+- ① 생성기/meta T42–43 → ② summary/사유 코드 T45·46·49 → ③ trace T47–48 → ④ 불변식 T44 → ⑤ 생성 산출물 → ⑥ README. 각 단계 전체 테스트와 범위별 커밋.
+- 리뷰004: L1 반영(명시적 설비 모드·추가 보고서 별도 경로). L2 보류(재가동 제외、호출부 정지 거절 보존). L3 기존 README 설명·독립 T39 테스트로 이미 반영. L4 보류(사용자 문서 수정 금지). L5 보류(이전 단계의 역사적 범위 설명、이번 범위와 무관).
+
+### 수정 전 실제 실행·출력 원문
+
+```text
+$ py -m unittest discover -s tests
+.........................................................................
+----------------------------------------------------------------------
+Ran 73 tests in 9.103s
+
+OK
+exit_code=0
+$ py -m src.main data/sample_events.csv 
+exit_code=0; checked_reports=3; byte_identical=True
+$ py -m src.main data/sample_events_v2.csv --recipe recipes/lamp_models.json
+exit_code=0; checked_reports=3; byte_identical=True
+$ py -m src.main data/sample_events_retest.csv --recipe recipes/lamp_models_retest.json
+exit_code=0; checked_reports=3; byte_identical=True
+$ py -m src.main data/sample_events_equipment.csv --recipe recipes/lamp_models_retest.json --equipment recipes/equipment.json
+exit_code=0; checked_reports=4; byte_identical=True
+```
+
+### 실행 기록: stage1-tests
+
+명령·출력 원문: [run-logs/stage1-tests.txt](run-logs/stage1-tests.txt)
+
+```text
+$ py -m unittest discover -s tests
+...........................................................................
+----------------------------------------------------------------------
+Ran 75 tests in 10.494s
+
+OK
+
+exit_code=0; elapsed_seconds=10.692279
+```
