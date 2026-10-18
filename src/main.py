@@ -123,6 +123,7 @@ def run_recipe(input_csv: Path, recipe_path: Path, parser, equipment_path=None, 
 
             analysis = build_analysis(events, book.models, equipment_book)
         if summary:
+            from .reason_codes import INJECTED_ERROR_CODES
             from .summary import build_summary
 
             meta_path = Path(str(input_csv) + ".meta.json")
@@ -136,6 +137,8 @@ def run_recipe(input_csv: Path, recipe_path: Path, parser, equipment_path=None, 
                 if not isinstance(injected, dict) or any(
                         type(count) is not int or count < 0 for count in injected.values()):
                     raise ValueError("meta.json의 injected_errors는 값이 0 이상의 정수인 객체여야 함")
+                if not set(injected) <= set(INJECTED_ERROR_CODES):
+                    raise ValueError("meta.json의 injected_errors 키는 주입 오류 5종 코드만 허용됨")
             except FileNotFoundError:
                 meta = None
             summary_rows = build_summary(analysis, meta)

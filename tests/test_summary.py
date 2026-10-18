@@ -206,7 +206,10 @@ class SummaryTests(unittest.TestCase):
                      for value in ("24", 24.0, True, -1)),
                    {"normal_rows": 24, "injected_errors": []},
                    *({"normal_rows": 24, "injected_errors": {"SEQ_SKIP": value}}
-                     for value in ("1", 1.0, True, None, -1))]
+                     for value in ("1", 1.0, True, None, -1)),
+                   {"normal_rows": 24, "injected_errors": {"SEQ_SKIP": 1, "FOO": 5}},
+                   {"normal_rows": 24, "injected_errors": {"FOO": 0}},
+                   {"normal_rows": 24, "injected_errors": {"EQUIP_STOPPED": 1}}]
         for meta in invalid:
             with self.subTest(meta=meta), tempfile.TemporaryDirectory() as directory:
                 source = Path(directory) / "events.csv"

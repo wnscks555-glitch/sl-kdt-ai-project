@@ -3416,3 +3416,46 @@ No installed Python found!
 - `ce-compound mode:non-interactive` 판단: 실행으로 검증된 새 해결 지식이 없고 H1은 미해결이다. **Documentation skipped — 미검증 변경이나 명세 이견을 영구 해결 문서로 기록하지 않음.**
 
 남은 일은 Python 실행 환경에서 위 전체 명령을 재실행해 새 회귀와 기존 보존 조건을 검증하는 것, 그리고 H1의 사용자 결정이다. 변경은 커밋하지 않은 상태로 루프 스크립트에 남긴다.
+
+## 리뷰 006 수정 단계 (2026-10-18)
+
+대상은 `handoff/reviews/006-review.md`의 높음 H1·중간 M1뿐이다. 낮음 L1 및 리뷰 005의 낮음 항목, 새 기능은 처리하지 않았다. 착수 시 작업 트리는 깨끗했고 HEAD는 `93a255e`였다. 자동 검토 루프의 현재 체크아웃에서 수정했으며 커밋·스테이징·브랜치 변경·push는 하지 않았다.
+
+### 항목별 판단과 변경
+
+| 항목 | 판단 | 이유·처리 |
+| --- | --- | --- |
+| H1 (T44, 리뷰 005 H1 재지적) | **보류** | 리뷰 006은 seed42 폐기 0건을 직접 재확인했고, 생성기·판정기의 폐기 경로는 명세대로이며 기존 보류 처리에 동의한다고 명시했다. `tasks.md` 불변식 6은 해당 상태가 비면 실패를 유지하고 시드·확률을 바꾸지 말고 명세 이견으로 보고하도록 한다. `decisions.md`에도 이를 바꾸는 사용자 결정이 없다. 읽기 전용 독립 점검에서도 가동 설비 선택·처음 FAIL한 설비 회피·70% 요청·상한 FAIL 종료가 현행 명세와 일치했다. 시드·확률·생성 정책·기대표·테스트 기대값을 바꾸지 않았다. 정책 변경 결정 전에는 H1 해결이나 T44 충족으로 보고하지 않는다. 이번 환경에서는 폐기 건수를 재실행으로 확인하지 못했다. |
+| M1 (T45, meta의 알 수 없는 주입 종류 키) | **반영, 실행 검증 미완료** | `src/main.py`의 meta 구조·값 검사 직후에 `injected_errors`의 키가 기존 `INJECTED_ERROR_CODES` 5종의 부분집합인지 검사한다. 위반은 `ValueError`를 통해 오류 메시지·종료 2가 되며, 보고서 저장 전에 중단한다. 알 수 없는 키가 0건이어도 거절한다. 빠진 종류를 0건으로 표시하는 기존 정책은 유지한다. README에 허용 코드 5종과 키 오류 처리 조건을 명시했다. 기존 `test_review005_m2_invalid_meta_exits_2_without_reports`에 `{SEQ_SKIP: 1, FOO: 5}`, `{FOO: 0}`, `{EQUIP_STOPPED: 1}` 사례만 추가했다. 기존 종료 코드·메시지·트레이스백 부재·보고서 미생성 기대값은 그대로다. |
+
+### 실제 실행과 검증 한계
+
+회귀 사례를 먼저 추가하고 구현 수정 전에 집중 테스트를 실행했으나, 테스트 수집 전에 종료됐다. 따라서 수정 전 red 실패를 관측했다고 보고하지 않는다.
+
+```text
+$ py -m unittest discover -s tests -p test_summary.py -k review005_m2
+No installed Python found!
+[exit code 1]
+```
+
+수정 후 사용자가 지정한 전체 테스트 명령의 실제 출력:
+
+```text
+$ py -m unittest discover -s tests
+No installed Python found!
+[exit code 1]
+```
+
+`py --list-paths`도 `No installed Pythons found!`를 반환했다. 이번 실행은 테스트를 수집하지 못했으므로 새 통과·실패 개수를 제시할 수 없다. 리뷰 006의 **101개 중 100개 통과·T44 1개 실패**는 리뷰어의 이전 실행 근거이며 이번 수정 후 결과가 아니다. 설치·전역 설정 변경·`python` 별칭 실행은 하지 않았다.
+
+### 범위 보존·검토·인계
+
+- 변경은 `src/main.py`, `tests/test_summary.py`, `README.md`, 이 로그뿐이다. `handoff/tasks.md`, `handoff/decisions.md`, `handoff/reviews/`, `CLAUDE.md`, `.claude/`, `src/rules.py`, 기존 테스트 4개, 생성기·설정·데이터·보고서는 수정하지 않았다. 기존 테스트의 기대값은 수정하지 않았다.
+- `git diff --check`: 종료 0. M1 검사는 `--summary` 경로 안에만 추가했고 기존 사유 코드 상수를 재사용했다. 기존 샘플·seed42 산출물의 재생성 바이트 비교는 Python 부재로 미검증이다.
+- `practical-work-operation`으로 범위·보존·독립 검토를 조율했다. 기존 명세와 리뷰가 구현·검증 범위를 확정하므로 새 계획서는 만들지 않았다. `.compound-engineering/config.yaml`과 `docs/solutions/`는 없어 재사용할 해결 기록이 없었다.
+- `ce-work mode:return-to-caller`: native 구현, 외부 실행 엔진·모델 전송 없음. M1 구현은 반영했지만 로컬 실행 검증은 차단 상태다. H1은 명세 결정 대기이며 커밋·게시 단계는 현재 사용자 지시에 따라 생략한다.
+- `ce-simplify-code mode:pipeline`의 재사용·코드 품질·효율·테스트 가치 검토를 읽기 전용으로 각각 수행했다. 추가 수정 지적은 없고 proof test는 보존했다. lint/typecheck 설정은 발견되지 않았다. 주 에이전트도 보고서 저장 전 오류 처리와 변경 diff를 확인했다. 정적 검토를 실행 검증으로 간주하지 않는다.
+- `ce-code-review`는 필수 scope 도구를 `py .../ce-code-review/scripts/review-scope.py --base HEAD --docs-root docs`로 실행했으나 `No installed Python found!`로 시작하지 못했다. 정식 리뷰 receipt·PASS·절차 완료는 주장하지 않는다.
+- `ce-compound mode:non-interactive` 판단: M1의 이유는 작은 코드 변경·회귀 사례·README로 복원할 수 있고 실행 검증은 미완료이며, H1은 미해결이다. **Documentation skipped — 별도로 보존할 검증된 비자명한 해결 지식 없음.**
+
+남은 일은 Python이 동작하는 환경에서 지정 전체 테스트를 실행하는 것과 H1의 사용자 정책 결정이다. 변경은 커밋하지 않은 상태로 루프 스크립트에 남긴다.
