@@ -1,6 +1,6 @@
 # 교육용 가상 조립·검사 공정의 진행 조건 판정기
 
-제품별 등록·조립 이벤트와 점등(`LIGHT`)·누설(`LEAK`) 검사 결과를 CSV로 받아, 다음 단계 진행 가능 여부와 거절 이유를 판정하는 Python CLI입니다. 현행 명세와 사전 기대표 v1(T1–T10)·v2 1단계(T11–T22)는 [handoff/tasks.md](handoff/tasks.md)에 있습니다. `docs/`의 문서는 재검사를 포함했던 이전 범위의 기록입니다.
+제품별 등록·조립 이벤트와 점등(`LIGHT`)·누설(`LEAK`) 검사 결과를 CSV로 받아, 다음 단계 진행 가능 여부와 거절 이유를 판정하는 Python CLI입니다. 현행 명세와 사전 기대표 v1(T1–T10)·v2 1단계(T11–T22)·2단계(T23–T32)는 [handoff/tasks.md](handoff/tasks.md)에 있습니다. `docs/`의 문서는 이전 범위의 기록입니다.
 
 아래 기본 실행과 5열 입력 설명은 동결된 v1입니다. 모델별 레시피를 사용하는 v2는 뒤의 「v2 1단계: 모델별 레시피」에서 설명합니다.
 
@@ -168,3 +168,69 @@ seq,product_id,event,inspection,result,model
 ### v2 1단계 제외 범위
 
 재검사·보류 해제, 설비·로트, 대량 생성기, 분기·병렬·순환 공정, 검사 PASS를 다음 공정 조건으로 거는 중간 관문, 실행 중 레시피 변경, 등록 정정, 외부 패키지는 포함하지 않습니다. 기존 v1의 DB·권한·웹 UI·LLM 및 실제 측정·품질 판정 제외도 유지합니다.
+
+## 재검사 모드 (v2 2단계)
+
+FAIL로 보류된 검사에 요청을 열고, 다음 검사 결과를 재검사로 처리합니다. PASS면 해당 검사의 보류가 풀립니다. 다른 미해결 FAIL이 없으면 멈췄던 공정부터 재개할 수 있습니다. 최초 FAIL과 모든 허용된 요청·시도는 이력에 남습니다.
+
+**공정·검사·재검사·폐기는 모두 교육용 가상 규칙입니다. 재검사 상한 2회는 SL 실제 기준이 아니며, 모의 흐름 완료는 출하·양품·SL 기준 적합을 뜻하지 않습니다.**
+
+### 켜는 법과 입력
+
+```powershell
+py -m src.main data/sample_events_retest.csv --recipe recipes/lamp_models_retest.json
+py -m unittest discover -s tests
+```
+
+[재검사 레시피](recipes/lamp_models_retest.json)는 기존 `lamp_models.json`의 두 모델에 `"retest_limit": 2`만 추가한 설정입니다. **모든 모델**에 이 키가 있어야 재검사 모드가 켜집니다. 하나도 없으면 1단계의 보고서 4열·6개 규칙 집계를 사용합니다. 일부 모델에만 있거나 값이 1–5 정수가 아니면 위치별 전체 오류를 출력하고 종료 코드 3으로 끝내며 보고서는 만들지 않습니다. `true`, `false`, `"2"`, `2.0`은 정수가 아닙니다. 기본 제공 상한은 검사당 2회입니다. `RETEST_REQUEST`도 `REGISTER`, `INSPECT`처럼 공정 ID로 사용할 수 없는 예약어입니다.
+
+CSV는 1단계와 같은 6열입니다. `RETEST_REQUEST`의 `inspection`에 검사 ID를 쓰고 `result`, `model`은 비웁니다. 다음 `INSPECT`는 **같은 제품·같은 검사**에 열린 요청이 있을 때 재검사 결과가 됩니다.
+
+```csv
+seq,product_id,event,inspection,result,model
+1,a,REGISTER,,,A
+2,a,P1,,,
+3,a,P2,,,
+4,a,P3,,,
+5,a,INSPECT,LEAK,FAIL,
+6,a,RETEST_REQUEST,LEAK,,
+7,a,INSPECT,LEAK,PASS,
+8,a,P4,,,
+```
+
+### 규칙과 폐기 기준
+
+| 입력·조건 | 판정과 상태 |
+| --- | --- |
+| 현재 FAIL이며 열린 요청 없음 → 요청 | `RULE_RETEST` 허용, 요청 열림, 보류 유지. 요청만으로 횟수는 늘지 않음 |
+| 미실시·PASS 검사에 요청 | `RULE_RETEST` 거절: `미해결 FAIL 없음` |
+| 열린 요청에 다시 요청 | `RULE_RETEST` 거절: `이미 열린 재검사 요청` |
+| 검사의 최초 결과 | 1단계 검사 시점·판정 유지. 보류 중에도 아직 안 한 다른 검사의 최초 결과는 시점 조건을 만족하면 허용 |
+| 결과 있음 + 열린 요청 → 검사 | `RULE_RETEST` 허용, 요청 닫힘, 해당 검사 재검사 횟수 +1 |
+| 결과 있음 + 요청 없음 → 검사 | `RULE_PRESERVE` 거절: `결과 이미 존재` |
+| 재검사 PASS | 해당 검사 현재 결과가 PASS. 다른 FAIL이 없으면 보류 해소 |
+| 재검사 FAIL, 상한 미달 | 보류 유지. 다시 검사하려면 새 요청 필요 |
+| 재검사 FAIL, 상한 도달 | 그 FAIL 행을 **허용하면서 폐기** |
+| 폐기 후 공정·검사·요청 | `RULE_RETEST` 거절: `폐기된 제품` |
+
+횟수는 **검사마다 별도**이며 허용된 재검사 결과만 셉니다. 기본 상한 2에서 최초 FAIL → 재검사 1 FAIL → 재검사 2 FAIL이면 폐기합니다. 두 번째 재검사가 PASS이면 폐기하지 않습니다. 반복 FAIL의 공정 투입을 막고, 폐기 원인 결과를 거절로 지우지 않기 위한 가상 기준입니다. 검사 하나가 PASS가 되어도 다른 검사에 FAIL이 남으면 보류를 유지합니다.
+
+판정 순서는 형식 오류 → 등록 처리(중복 등록 포함) → 미등록 → 폐기 → 모델 레시피에 없는 공정·검사 → 이벤트별 규칙입니다. 폐기 후에도 형식 오류·중복 등록은 `RULE_PRESERVE`가 먼저입니다. 요청에 `inspection`이 없거나 `result`·`model`을 쓰면 형식 오류입니다. 재검사 모드가 아닌 레시피에 정상 형식의 요청을 입력하면 `RULE_RECIPE`로 거절합니다. **거절은 공정 위치·현재 결과·이력·열린 요청·횟수·폐기 상태를 바꾸지 않습니다.**
+
+### 상태·보고서와 고정 샘플
+
+상태 우선순위는 `폐기` → `보류` → `레시피 모의 흐름 완료` → `등록` → `공정 진행 중(Pk 완료)` → `검사 대기`입니다. 요청 중인 FAIL의 미완료 이유에는 `LEAK FAIL(재검사 요청됨)`을 표시합니다. 폐기 이유는 `LEAK 재검사 한도 2회 초과 FAIL로 폐기`로 표시하며, 여기서 “초과”는 두 번째 재검사 FAIL에 도달한 시점을 뜻합니다.
+
+| 보고서 | 형식 |
+| --- | --- |
+| `reports/sample_events_retest_rows.csv` | 기존과 같은 `seq,product_id,input,rule_id,decision,rejection_reason,state` |
+| `reports/sample_events_retest_products.csv` | `product_id,model,state,incomplete_reason,history` |
+| `reports/sample_events_retest_rejections.csv` | 기존 6개 규칙 뒤에 `RULE_RETEST` 추가, 0건 포함 7개 |
+
+history 예: `LEAK: FAIL@5 → 요청@6 → PASS@7(재검사 1)`. 시도가 있는 검사만 레시피 검사 순서로 표시하고 검사 사이는 `; `로 나눕니다. 그룹 안에서는 입력된 순서를 유지하며 `@` 뒤 숫자는 입력 행의 seq입니다. 거절된 요청·결과는 이력에 추가하지 않습니다.
+
+[고정 샘플](data/sample_events_retest.csv)은 T23–T30을 제품별로 담은 102행으로, 허용 90·거절 12와 등록 제품 12개를 포함합니다. 거절 집계는 `RULE_RECIPE 1`, `RULE_SEQ 0`, `RULE_INSP_PRE 0`, `RULE_NOT_DONE 0`, `RULE_FAIL_HOLD 1`, `RULE_PRESERVE 4`, `RULE_RETEST 6`입니다. `tests/test_retest.py`는 T23–T32, 전체 상태 불변, 복수 FAIL·동시 요청·검사별 횟수, 보고서와 터미널 출력의 바이트 재현성을 검사합니다. 같은 경로의 입력과 레시피로 실행하면 동일한 결과를 만듭니다.
+
+### 이번 단계 제외 범위
+
+설비·로트, 대량 생성기, 요청 ID·시도 ID 열 추가, 재검사 설비 지정, 폐기 취소, 레시피별 다른 상한 정책은 포함하지 않습니다. 분기·병렬·순환 공정, 중간 검사 관문, 실행 중 레시피 변경, 등록 정정과 실제 측정·품질 판정도 제외합니다.
