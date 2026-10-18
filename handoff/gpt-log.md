@@ -324,3 +324,20 @@ reports/sample_events_rows.csv: checkout_byte_equal=True, blob_byte_equal=False,
 reports/sample_events_products.csv: checkout_byte_equal=True, blob_byte_equal=False, LF_normalized_equal=True, SHA-256=e2317c768731185c28b5040aea345eb197873e76cf3459adacf25b3ea89c86e6
 reports/sample_events_rejections.csv: checkout_byte_equal=True, blob_byte_equal=False, LF_normalized_equal=True, SHA-256=72143e7c3410b4a0ac1829f139027fcbca3fb305c7d83586cb0b2f8ac9d6c17f
 ```
+
+## 2026-10-18 ① 레시피 로드·검증 (T18)
+
+- 변경: `src/recipe.py`, `recipes/lamp_models.json`, `tests/test_recipe.py`, `tests/fixtures/`. JSON 구조·허용 키·ID·중복·예약 공정·검사 시점을 전체 검증하고 원본 파일 바이트 SHA-256을 보존한다. CLI 종료 코드와 이벤트 미처리는 ③에서 연결한다.
+- 테스트 선작성: `ModuleNotFoundError: No module named 'src.recipe'`로 의도한 실패 확인. 첫 구현 검증에서는 문자열이 아닌 공정 ID의 배열 수준 진단이 빠져 `E.steps` 위치 검사가 실패했다. 테스트/기대표는 유지하고 문자열 ID 배열의 구조 진단을 추가했다.
+- 수행 오류: 첫 검증 실패 뒤 커밋 실행이 차단되지 않아 `0b086b9`에 미통과 구현이 들어갔다. 즉시 구현을 수정하고 이 후속 커밋 전에 전체 16개 테스트 통과를 확인했다. 이후 모든 커밋은 테스트 exit=0을 별도 확인한 후 실행한다.
+- 실제 명령 `py -m unittest discover -s tests` 출력 원문:
+
+```text
+................
+----------------------------------------------------------------------
+Ran 16 tests in 0.326s
+
+OK
+exit=0
+```
+- 해석: UTF-8 BOM 허용. 읽기·디코딩 실패도 레시피 오류다. JSON 문법 오류는 파싱 위치를 표시하며 파싱 가능한 설정은 독립 오류를 모두 수집한다.

@@ -66,8 +66,10 @@ def load_recipe(path: Path) -> RecipeBook:
         check_keys(body, ("steps", "inspections"), model)
         steps = body.get("steps")
         valid_steps = set()
-        if not isinstance(steps, list) or not steps:
-            errors.append(model + ".steps: 비어 있지 않은 배열이어야 함")
+        if not isinstance(steps, list) or not steps or any(
+            not isinstance(step, str) for step in steps
+        ):
+            errors.append(model + ".steps: 비어 있지 않은 문자열 ID 배열이어야 함")
         if isinstance(steps, list):
             for index, step in enumerate(steps):
                 location = model + ".steps[" + str(index) + "]"
