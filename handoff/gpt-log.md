@@ -1722,3 +1722,365 @@ OK
 - `4e01653`: 고정 샘플·보고서 (T23–T30, T32)
 - `5362304`: README (T23–T32)
 - `b32f344`: 기대표의 중간 검사 순서로 새 T29 테스트·샘플 정정
+
+
+# v2 3단계 구현 (2026-10-18, T33–T41)
+## 착수·계획·회귀 기준
+- 기준 커밋: `4947d12518c6b0e584204ee3d97710272e84d5b2`. 시작 브랜치 `main`, 작업 트리 깨끗함. 현행 상태 **사용자 확정** 및 decisions.md 승인 확인.
+- 사용자 지정 ① T40 검증 → ② T33–T39 판정 → ③ T41 CLI·보고서 → ④ 샘플 → ⑤ README 순서로 실행·테스트·경로 한정 커밋. 확정된 기존 명세를 실행 계획으로 사용하며 별도 계획서·브랜치를 만들지 않음. Native 구현, 외부 모델·서비스 전송 없음. 관련 해결 기록: `.compound-engineering/config.yaml`, `docs/solutions/` 없음.
+- 보호: rules.py·기존 테스트 3종, tasks.md·decisions.md·reviews/·CLAUDE.md·.claude/ 무수정.
+
+명령: `py -m unittest discover -s tests`
+
+```text
+......................................................
+----------------------------------------------------------------------
+Ran 54 tests in 5.869s
+
+OK
+```
+종료 코드: 0
+
+명령(저장소 밖 임시 폴더, PYTHONPATH=저장소): `py -m src.main C:\Users\PC\Documents\ChatGPT\에스엘 KDT AI 교육 부트캠프\project\data\sample_events.csv`
+
+```text
+[행별 판정]
+seq | product_id | 입력 | 적용 규칙 ID | 허용/거절 | 거절 이유 | 처리 후 상태
+1 | T1 | REGISTER | RULE_SEQ | 허용 |  | 등록
+2 | T1 | PRE_ASSEMBLY | RULE_SEQ | 허용 |  | 예비 조립
+3 | T1 | MAIN_ASSEMBLY | RULE_SEQ | 허용 |  | 검사 대기
+4 | T1 | INSPECT LIGHT PASS | RULE_NOT_DONE | 허용 |  | 검사 대기
+5 | T1 | INSPECT LEAK PASS | RULE_FAIL_HOLD | 허용 |  | 선택한 두 검사까지의 모의 흐름 완료
+6 | T2 | REGISTER | RULE_SEQ | 허용 |  | 등록
+7 | T2 | MAIN_ASSEMBLY | RULE_SEQ | 거절 | PRE_ASSEMBLY 미완료 | 등록
+8 | T3 | REGISTER | RULE_SEQ | 허용 |  | 등록
+9 | T3 | PRE_ASSEMBLY | RULE_SEQ | 허용 |  | 예비 조립
+10 | T3 | INSPECT LIGHT PASS | RULE_INSP_PRE | 거절 | MAIN_ASSEMBLY 미완료 | 예비 조립
+11 | T4 | REGISTER | RULE_SEQ | 허용 |  | 등록
+12 | T4 | PRE_ASSEMBLY | RULE_SEQ | 허용 |  | 예비 조립
+13 | T4 | MAIN_ASSEMBLY | RULE_SEQ | 허용 |  | 검사 대기
+14 | T4 | INSPECT LIGHT PASS | RULE_NOT_DONE | 허용 |  | 검사 대기
+15 | T5 | REGISTER | RULE_SEQ | 허용 |  | 등록
+16 | T5 | PRE_ASSEMBLY | RULE_SEQ | 허용 |  | 예비 조립
+17 | T5 | MAIN_ASSEMBLY | RULE_SEQ | 허용 |  | 검사 대기
+18 | T5 | INSPECT LIGHT PASS | RULE_NOT_DONE | 허용 |  | 검사 대기
+19 | T5 | INSPECT LEAK FAIL | RULE_FAIL_HOLD | 허용 |  | 보류
+20 | T6 | REGISTER | RULE_SEQ | 허용 |  | 등록
+21 | T6 | PRE_ASSEMBLY | RULE_SEQ | 허용 |  | 예비 조립
+22 | T6 | MAIN_ASSEMBLY | RULE_SEQ | 허용 |  | 검사 대기
+23 | T6 | INSPECT LIGHT PASS | RULE_NOT_DONE | 허용 |  | 검사 대기
+24 | T6 | INSPECT LEAK FAIL | RULE_FAIL_HOLD | 허용 |  | 보류
+25 | T6 | INSPECT LEAK PASS | RULE_PRESERVE | 거절 | LEAK 결과 이미 존재 | 보류
+26 | T7 | REGISTER | RULE_SEQ | 허용 |  | 등록
+27 | T7 | PRE_ASSEMBLY | RULE_SEQ | 허용 |  | 예비 조립
+28 | T7 | MAIN_ASSEMBLY | RULE_SEQ | 허용 |  | 검사 대기
+29 | T7 | INSPECT LIGHT PASS | RULE_NOT_DONE | 허용 |  | 검사 대기
+30 | T7 | INSPECT LEAK PASS | RULE_FAIL_HOLD | 허용 |  | 선택한 두 검사까지의 모의 흐름 완료
+31 | T7 | INSPECT LIGHT FAIL | RULE_PRESERVE | 거절 | LIGHT 결과 이미 존재 | 선택한 두 검사까지의 모의 흐름 완료
+32 | T8 | REGISTER | RULE_SEQ | 허용 |  | 등록
+33 | T8 | PRE_ASSEMBLY | RULE_SEQ | 허용 |  | 예비 조립
+34 | T8 | PRE_ASSEMBLY | RULE_PRESERVE | 거절 | 중복 조립 이벤트 | 예비 조립
+35 | T9_UNREGISTERED | MAIN_ASSEMBLY | RULE_PRESERVE | 거절 | 미등록 제품 | 미등록
+36 | T9 | REGISTER | RULE_SEQ | 허용 |  | 등록
+37 | T9 | PRE_ASSEMBLY | RULE_SEQ | 허용 |  | 예비 조립
+38 | T9 | MAIN_ASSEMBLY | RULE_SEQ | 허용 |  | 검사 대기
+39 | T9 | INSPECT LIGHT OK | RULE_PRESERVE | 거절 | 잘못된 result (PASS 또는 FAIL 필요) | 검사 대기
+
+[제품별 최종 상태]
+product_id | 최종 상태 | 미완료 이유
+T1 | 선택한 두 검사까지의 모의 흐름 완료 | 
+T2 | 등록 | PRE_ASSEMBLY 미완료; MAIN_ASSEMBLY 미완료; LIGHT 미실시; LEAK 미실시
+T3 | 예비 조립 | MAIN_ASSEMBLY 미완료; LIGHT 미실시; LEAK 미실시
+T4 | 검사 대기 | LEAK 미실시
+T5 | 보류 | LEAK FAIL
+T6 | 보류 | LEAK FAIL
+T7 | 선택한 두 검사까지의 모의 흐름 완료 | 
+T8 | 예비 조립 | MAIN_ASSEMBLY 미완료; LIGHT 미실시; LEAK 미실시
+T9 | 검사 대기 | LIGHT 미실시; LEAK 미실시
+
+[규칙 ID별 거절 건수]
+규칙 ID | 거절 건수
+RULE_SEQ | 1
+RULE_INSP_PRE | 1
+RULE_NOT_DONE | 0
+RULE_FAIL_HOLD | 0
+RULE_PRESERVE | 5
+
+저장 파일:
+reports/sample_events_rows.csv
+reports/sample_events_products.csv
+reports/sample_events_rejections.csv
+```
+종료 코드: 0
+- `reports/sample_events_rows.csv`: 체크아웃 파일과 바이트 동일=True; SHA-256 `eb4042fb981c2ffe6611117a0ebb5636c552177a894d83a4406a607b08a952c8`
+- `reports/sample_events_products.csv`: 체크아웃 파일과 바이트 동일=True; SHA-256 `e2317c768731185c28b5040aea345eb197873e76cf3459adacf25b3ea89c86e6`
+- `reports/sample_events_rejections.csv`: 체크아웃 파일과 바이트 동일=True; SHA-256 `72143e7c3410b4a0ac1829f139027fcbca3fb305c7d83586cb0b2f8ac9d6c17f`
+
+명령(저장소 밖 임시 폴더, PYTHONPATH=저장소): `py -m src.main C:\Users\PC\Documents\ChatGPT\에스엘 KDT AI 교육 부트캠프\project\data\sample_events_v2.csv --recipe C:\Users\PC\Documents\ChatGPT\에스엘 KDT AI 교육 부트캠프\project\recipes\lamp_models.json`
+
+```text
+레시피: C:/Users/PC/Documents/ChatGPT/에스엘 KDT AI 교육 부트캠프/project/recipes/lamp_models.json | SHA-256: d7a8976ee178
+[행별 판정]
+seq | product_id | 입력 | 적용 규칙 ID | 허용/거절 | 거절 이유 | 처리 후 상태
+1 | T11 | REGISTER | RULE_RECIPE | 허용 |  | 등록
+2 | T11 | P1 | RULE_SEQ | 허용 |  | 공정 진행 중(P1 완료)
+3 | T11 | P2 | RULE_SEQ | 허용 |  | 공정 진행 중(P2 완료)
+4 | T11 | P3 | RULE_SEQ | 허용 |  | 공정 진행 중(P3 완료)
+5 | T11 | P4 | RULE_SEQ | 허용 |  | 공정 진행 중(P4 완료)
+6 | T11 | P5 | RULE_SEQ | 허용 |  | 검사 대기
+7 | T11 | INSPECT LEAK PASS | RULE_NOT_DONE | 허용 |  | 검사 대기
+8 | T11 | INSPECT LIGHT PASS | RULE_NOT_DONE | 허용 |  | 검사 대기
+9 | T11 | INSPECT FINAL PASS | RULE_FAIL_HOLD | 허용 |  | 레시피 모의 흐름 완료
+10 | T12_A | REGISTER | RULE_RECIPE | 허용 |  | 등록
+11 | T12_B | REGISTER | RULE_RECIPE | 허용 |  | 등록
+12 | T12_A | P1 | RULE_SEQ | 허용 |  | 공정 진행 중(P1 완료)
+13 | T12_B | P1 | RULE_SEQ | 허용 |  | 공정 진행 중(P1 완료)
+14 | T12_A | P2 | RULE_SEQ | 허용 |  | 공정 진행 중(P2 완료)
+15 | T12_B | P2 | RULE_SEQ | 허용 |  | 공정 진행 중(P2 완료)
+16 | T12_A | P3 | RULE_SEQ | 허용 |  | 공정 진행 중(P3 완료)
+17 | T12_B | P3 | RULE_SEQ | 허용 |  | 공정 진행 중(P3 완료)
+18 | T12_A | P4 | RULE_SEQ | 허용 |  | 공정 진행 중(P4 완료)
+19 | T12_B | P4 | RULE_SEQ | 허용 |  | 검사 대기
+20 | T12_B | INSPECT LEAK PASS | RULE_NOT_DONE | 허용 |  | 검사 대기
+21 | T12_B | INSPECT LIGHT PASS | RULE_FAIL_HOLD | 허용 |  | 레시피 모의 흐름 완료
+22 | T13 | REGISTER | RULE_RECIPE | 허용 |  | 등록
+23 | T13 | P1 | RULE_SEQ | 허용 |  | 공정 진행 중(P1 완료)
+24 | T13 | P3 | RULE_SEQ | 거절 | P2 미완료 | 공정 진행 중(P1 완료)
+25 | T13 | P2 | RULE_SEQ | 허용 |  | 공정 진행 중(P2 완료)
+26 | T14_LEAK | REGISTER | RULE_RECIPE | 허용 |  | 등록
+27 | T14_LEAK | P1 | RULE_SEQ | 허용 |  | 공정 진행 중(P1 완료)
+28 | T14_LEAK | P2 | RULE_SEQ | 허용 |  | 공정 진행 중(P2 완료)
+29 | T14_LEAK | INSPECT LEAK PASS | RULE_INSP_PRE | 거절 | P3 미완료 | 공정 진행 중(P2 완료)
+30 | T14_LIGHT | REGISTER | RULE_RECIPE | 허용 |  | 등록
+31 | T14_LIGHT | P1 | RULE_SEQ | 허용 |  | 공정 진행 중(P1 완료)
+32 | T14_LIGHT | P2 | RULE_SEQ | 허용 |  | 공정 진행 중(P2 완료)
+33 | T14_LIGHT | P3 | RULE_SEQ | 허용 |  | 공정 진행 중(P3 완료)
+34 | T14_LIGHT | P4 | RULE_SEQ | 허용 |  | 공정 진행 중(P4 완료)
+35 | T14_LIGHT | INSPECT LIGHT PASS | RULE_INSP_PRE | 거절 | P5 미완료 | 공정 진행 중(P4 완료)
+36 | T15 | REGISTER | RULE_RECIPE | 허용 |  | 등록
+37 | T15 | P1 | RULE_SEQ | 허용 |  | 공정 진행 중(P1 완료)
+38 | T15 | P2 | RULE_SEQ | 허용 |  | 공정 진행 중(P2 완료)
+39 | T15 | P3 | RULE_SEQ | 허용 |  | 공정 진행 중(P3 완료)
+40 | T15 | INSPECT LEAK PASS | RULE_NOT_DONE | 허용 |  | 공정 진행 중(P3 완료)
+41 | T15 | P4 | RULE_SEQ | 허용 |  | 공정 진행 중(P4 완료)
+42 | T15 | P5 | RULE_SEQ | 허용 |  | 검사 대기
+43 | T15 | INSPECT LIGHT PASS | RULE_NOT_DONE | 허용 |  | 검사 대기
+44 | T16 | REGISTER | RULE_RECIPE | 허용 |  | 등록
+45 | T16 | P1 | RULE_SEQ | 허용 |  | 공정 진행 중(P1 완료)
+46 | T16 | P2 | RULE_SEQ | 허용 |  | 공정 진행 중(P2 완료)
+47 | T16 | P3 | RULE_SEQ | 허용 |  | 공정 진행 중(P3 완료)
+48 | T16 | INSPECT LEAK FAIL | RULE_FAIL_HOLD | 허용 |  | 보류
+49 | T16 | P4 | RULE_FAIL_HOLD | 거절 | FAIL로 보류 중인 제품 | 보류
+50 | T16 | INSPECT LEAK PASS | RULE_PRESERVE | 거절 | LEAK 결과 이미 존재 | 보류
+51 | T16B | REGISTER | RULE_RECIPE | 허용 |  | 등록
+52 | T16B | P1 | RULE_SEQ | 허용 |  | 공정 진행 중(P1 완료)
+53 | T16B | P2 | RULE_SEQ | 허용 |  | 공정 진행 중(P2 완료)
+54 | T16B | P3 | RULE_SEQ | 허용 |  | 공정 진행 중(P3 완료)
+55 | T16B | P4 | RULE_SEQ | 허용 |  | 공정 진행 중(P4 완료)
+56 | T16B | P5 | RULE_SEQ | 허용 |  | 검사 대기
+57 | T16B | INSPECT LIGHT FAIL | RULE_FAIL_HOLD | 허용 |  | 보류
+58 | T16B | INSPECT FINAL PASS | RULE_FAIL_HOLD | 허용 |  | 보류
+59 | T17_C | REGISTER | RULE_RECIPE | 거절 | model이 비어 있거나 레시피에 없는 모델 | 미등록
+60 | T17_A | REGISTER | RULE_RECIPE | 허용 |  | 등록
+61 | T17_A | P6 | RULE_RECIPE | 거절 | 제품 레시피에 없는 공정 P6 | 등록
+62 | T17_B | REGISTER | RULE_RECIPE | 허용 |  | 등록
+63 | T17_B | INSPECT FINAL PASS | RULE_RECIPE | 거절 | 제품 레시피에 없는 검사 FINAL | 등록
+64 | T19 | REGISTER | RULE_RECIPE | 허용 |  | 등록
+65 | T19 | P1 | RULE_SEQ | 허용 |  | 공정 진행 중(P1 완료)
+66 | T19 | P2 | RULE_SEQ | 허용 |  | 공정 진행 중(P2 완료)
+67 | T19 | P3 | RULE_SEQ | 허용 |  | 공정 진행 중(P3 완료)
+68 | T19 | P4 | RULE_SEQ | 허용 |  | 검사 대기
+69 | T19 | P5 | RULE_RECIPE | 거절 | 제품 레시피에 없는 공정 P5 | 검사 대기
+70 | T20_MISSING | REGISTER | RULE_RECIPE | 거절 | model이 비어 있거나 레시피에 없는 모델 | 미등록
+71 | T20 | REGISTER | RULE_RECIPE | 허용 |  | 등록
+72 | T20 | P1 | RULE_PRESERVE | 거절 | REGISTER 이외의 model은 빈칸이어야 함 | 등록
+73 | T22 | REGISTER | RULE_RECIPE | 허용 |  | 등록
+74 | T22 | P1 | RULE_SEQ | 허용 |  | 공정 진행 중(P1 완료)
+75 | T22 | P2 | RULE_SEQ | 허용 |  | 공정 진행 중(P2 완료)
+76 | T22 | REGISTER | RULE_PRESERVE | 거절 | 이미 등록된 제품 | 공정 진행 중(P2 완료)
+
+[제품별 최종 상태]
+product_id | model | 최종 상태 | 미완료 이유
+T11 | A | 레시피 모의 흐름 완료 | 
+T12_A | A | 공정 진행 중(P4 완료) | P5 미완료; LEAK 미실시; LIGHT 미실시; FINAL 미실시
+T12_B | B | 레시피 모의 흐름 완료 | 
+T13 | A | 공정 진행 중(P2 완료) | P3 미완료; P4 미완료; P5 미완료; LEAK 미실시; LIGHT 미실시; FINAL 미실시
+T14_LEAK | A | 공정 진행 중(P2 완료) | P3 미완료; P4 미완료; P5 미완료; LEAK 미실시; LIGHT 미실시; FINAL 미실시
+T14_LIGHT | A | 공정 진행 중(P4 완료) | P5 미완료; LEAK 미실시; LIGHT 미실시; FINAL 미실시
+T15 | A | 검사 대기 | FINAL 미실시
+T16 | A | 보류 | P4 미완료; P5 미완료; LEAK FAIL; LIGHT 미실시; FINAL 미실시
+T16B | A | 보류 | LEAK 미실시; LIGHT FAIL
+T17_A | A | 등록 | P1 미완료; P2 미완료; P3 미완료; P4 미완료; P5 미완료; LEAK 미실시; LIGHT 미실시; FINAL 미실시
+T17_B | B | 등록 | P1 미완료; P2 미완료; P3 미완료; P4 미완료; LEAK 미실시; LIGHT 미실시
+T19 | B | 검사 대기 | LEAK 미실시; LIGHT 미실시
+T20 | A | 등록 | P1 미완료; P2 미완료; P3 미완료; P4 미완료; P5 미완료; LEAK 미실시; LIGHT 미실시; FINAL 미실시
+T22 | A | 공정 진행 중(P2 완료) | P3 미완료; P4 미완료; P5 미완료; LEAK 미실시; LIGHT 미실시; FINAL 미실시
+
+[규칙 ID별 거절 건수]
+규칙 ID | 거절 건수
+RULE_RECIPE | 5
+RULE_SEQ | 1
+RULE_INSP_PRE | 2
+RULE_NOT_DONE | 0
+RULE_FAIL_HOLD | 1
+RULE_PRESERVE | 3
+
+저장 파일:
+reports/sample_events_v2_rows.csv
+reports/sample_events_v2_products.csv
+reports/sample_events_v2_rejections.csv
+```
+종료 코드: 0
+- `reports/sample_events_v2_rows.csv`: 체크아웃 파일과 바이트 동일=True; SHA-256 `f160067a77135885d3b5c1a5d11fae387102728433093b1dcaf92507c88da633`
+- `reports/sample_events_v2_products.csv`: 체크아웃 파일과 바이트 동일=True; SHA-256 `27d129198d56de2add69ba538956457e4c1f6f103ac9d63dfc68ba424ca66791`
+- `reports/sample_events_v2_rejections.csv`: 체크아웃 파일과 바이트 동일=True; SHA-256 `0486d5fc2af322959b6d9630e640e5303c647519f19df4ff4e83a63566cdf5a2`
+
+명령(저장소 밖 임시 폴더, PYTHONPATH=저장소): `py -m src.main C:\Users\PC\Documents\ChatGPT\에스엘 KDT AI 교육 부트캠프\project\data\sample_events_retest.csv --recipe C:\Users\PC\Documents\ChatGPT\에스엘 KDT AI 교육 부트캠프\project\recipes\lamp_models_retest.json`
+
+```text
+레시피: C:/Users/PC/Documents/ChatGPT/에스엘 KDT AI 교육 부트캠프/project/recipes/lamp_models_retest.json | SHA-256: 438229b58c9e
+[행별 판정]
+seq | product_id | 입력 | 적용 규칙 ID | 허용/거절 | 거절 이유 | 처리 후 상태
+1 | T23 | REGISTER | RULE_RECIPE | 허용 |  | 등록
+2 | T23 | P1 | RULE_SEQ | 허용 |  | 공정 진행 중(P1 완료)
+3 | T23 | P2 | RULE_SEQ | 허용 |  | 공정 진행 중(P2 완료)
+4 | T23 | P3 | RULE_SEQ | 허용 |  | 공정 진행 중(P3 완료)
+5 | T23 | INSPECT LEAK FAIL | RULE_FAIL_HOLD | 허용 |  | 보류
+6 | T23 | RETEST_REQUEST LEAK | RULE_RETEST | 허용 |  | 보류
+7 | T23 | P4 | RULE_FAIL_HOLD | 거절 | FAIL로 보류 중인 제품 | 보류
+8 | T24 | REGISTER | RULE_RECIPE | 허용 |  | 등록
+9 | T24 | P1 | RULE_SEQ | 허용 |  | 공정 진행 중(P1 완료)
+10 | T24 | P2 | RULE_SEQ | 허용 |  | 공정 진행 중(P2 완료)
+11 | T24 | P3 | RULE_SEQ | 허용 |  | 공정 진행 중(P3 완료)
+12 | T24 | INSPECT LEAK FAIL | RULE_FAIL_HOLD | 허용 |  | 보류
+13 | T24 | RETEST_REQUEST LEAK | RULE_RETEST | 허용 |  | 보류
+14 | T24 | INSPECT LEAK PASS | RULE_RETEST | 허용 |  | 공정 진행 중(P3 완료)
+15 | T24 | P4 | RULE_SEQ | 허용 |  | 공정 진행 중(P4 완료)
+16 | T24 | P5 | RULE_SEQ | 허용 |  | 검사 대기
+17 | T24 | INSPECT LIGHT PASS | RULE_NOT_DONE | 허용 |  | 검사 대기
+18 | T24 | INSPECT FINAL PASS | RULE_FAIL_HOLD | 허용 |  | 레시피 모의 흐름 완료
+19 | T25 | REGISTER | RULE_RECIPE | 허용 |  | 등록
+20 | T25 | P1 | RULE_SEQ | 허용 |  | 공정 진행 중(P1 완료)
+21 | T25 | P2 | RULE_SEQ | 허용 |  | 공정 진행 중(P2 완료)
+22 | T25 | P3 | RULE_SEQ | 허용 |  | 공정 진행 중(P3 완료)
+23 | T25 | INSPECT LEAK FAIL | RULE_FAIL_HOLD | 허용 |  | 보류
+24 | T25 | INSPECT LEAK PASS | RULE_PRESERVE | 거절 | LEAK 결과 이미 존재 | 보류
+25 | T26 | REGISTER | RULE_RECIPE | 허용 |  | 등록
+26 | T26 | P1 | RULE_SEQ | 허용 |  | 공정 진행 중(P1 완료)
+27 | T26 | P2 | RULE_SEQ | 허용 |  | 공정 진행 중(P2 완료)
+28 | T26 | P3 | RULE_SEQ | 허용 |  | 공정 진행 중(P3 완료)
+29 | T26 | INSPECT LEAK FAIL | RULE_FAIL_HOLD | 허용 |  | 보류
+30 | T26 | RETEST_REQUEST LEAK | RULE_RETEST | 허용 |  | 보류
+31 | T26 | INSPECT LEAK FAIL | RULE_RETEST | 허용 |  | 보류
+32 | T26 | INSPECT LEAK PASS | RULE_PRESERVE | 거절 | LEAK 결과 이미 존재 | 보류
+33 | T26 | RETEST_REQUEST LEAK | RULE_RETEST | 허용 |  | 보류
+34 | T26 | INSPECT LEAK PASS | RULE_RETEST | 허용 |  | 공정 진행 중(P3 완료)
+35 | T27 | REGISTER | RULE_RECIPE | 허용 |  | 등록
+36 | T27 | P1 | RULE_SEQ | 허용 |  | 공정 진행 중(P1 완료)
+37 | T27 | P2 | RULE_SEQ | 허용 |  | 공정 진행 중(P2 완료)
+38 | T27 | P3 | RULE_SEQ | 허용 |  | 공정 진행 중(P3 완료)
+39 | T27 | INSPECT LEAK FAIL | RULE_FAIL_HOLD | 허용 |  | 보류
+40 | T27 | RETEST_REQUEST LEAK | RULE_RETEST | 허용 |  | 보류
+41 | T27 | INSPECT LEAK FAIL | RULE_RETEST | 허용 |  | 보류
+42 | T27 | RETEST_REQUEST LEAK | RULE_RETEST | 허용 |  | 보류
+43 | T27 | INSPECT LEAK FAIL | RULE_RETEST | 허용 |  | 폐기
+44 | T27 | P4 | RULE_RETEST | 거절 | 폐기된 제품 | 폐기
+45 | T27 | RETEST_REQUEST LEAK | RULE_RETEST | 거절 | 폐기된 제품 | 폐기
+46 | T27 | INSPECT LIGHT PASS | RULE_RETEST | 거절 | 폐기된 제품 | 폐기
+47 | T28_NO_RESULT | REGISTER | RULE_RECIPE | 허용 |  | 등록
+48 | T28_NO_RESULT | P1 | RULE_SEQ | 허용 |  | 공정 진행 중(P1 완료)
+49 | T28_NO_RESULT | P2 | RULE_SEQ | 허용 |  | 공정 진행 중(P2 완료)
+50 | T28_NO_RESULT | P3 | RULE_SEQ | 허용 |  | 공정 진행 중(P3 완료)
+51 | T28_NO_RESULT | RETEST_REQUEST LEAK | RULE_RETEST | 거절 | 미해결 FAIL 없음 | 공정 진행 중(P3 완료)
+52 | T28_PASS | REGISTER | RULE_RECIPE | 허용 |  | 등록
+53 | T28_PASS | P1 | RULE_SEQ | 허용 |  | 공정 진행 중(P1 완료)
+54 | T28_PASS | P2 | RULE_SEQ | 허용 |  | 공정 진행 중(P2 완료)
+55 | T28_PASS | P3 | RULE_SEQ | 허용 |  | 공정 진행 중(P3 완료)
+56 | T28_PASS | INSPECT LEAK PASS | RULE_NOT_DONE | 허용 |  | 공정 진행 중(P3 완료)
+57 | T28_PASS | RETEST_REQUEST LEAK | RULE_RETEST | 거절 | 미해결 FAIL 없음 | 공정 진행 중(P3 완료)
+58 | T28_OPEN | REGISTER | RULE_RECIPE | 허용 |  | 등록
+59 | T28_OPEN | P1 | RULE_SEQ | 허용 |  | 공정 진행 중(P1 완료)
+60 | T28_OPEN | P2 | RULE_SEQ | 허용 |  | 공정 진행 중(P2 완료)
+61 | T28_OPEN | P3 | RULE_SEQ | 허용 |  | 공정 진행 중(P3 완료)
+62 | T28_OPEN | INSPECT LEAK FAIL | RULE_FAIL_HOLD | 허용 |  | 보류
+63 | T28_OPEN | RETEST_REQUEST LEAK | RULE_RETEST | 허용 |  | 보류
+64 | T28_OPEN | RETEST_REQUEST LEAK | RULE_RETEST | 거절 | 이미 열린 재검사 요청 | 보류
+65 | T28_MODEL_B | REGISTER | RULE_RECIPE | 허용 |  | 등록
+66 | T28_MODEL_B | P1 | RULE_SEQ | 허용 |  | 공정 진행 중(P1 완료)
+67 | T28_MODEL_B | P2 | RULE_SEQ | 허용 |  | 공정 진행 중(P2 완료)
+68 | T28_MODEL_B | RETEST_REQUEST FINAL | RULE_RECIPE | 거절 | 제품 레시피에 없는 검사 FINAL | 공정 진행 중(P2 완료)
+69 | T28_UNREGISTERED | RETEST_REQUEST LEAK | RULE_PRESERVE | 거절 | 미등록 제품 | 미등록
+70 | T28_FORMAT | REGISTER | RULE_RECIPE | 허용 |  | 등록
+71 | T28_FORMAT | P1 | RULE_SEQ | 허용 |  | 공정 진행 중(P1 완료)
+72 | T28_FORMAT | P2 | RULE_SEQ | 허용 |  | 공정 진행 중(P2 완료)
+73 | T28_FORMAT | P3 | RULE_SEQ | 허용 |  | 공정 진행 중(P3 완료)
+74 | T28_FORMAT | INSPECT LEAK FAIL | RULE_FAIL_HOLD | 허용 |  | 보류
+75 | T28_FORMAT | RETEST_REQUEST LEAK PASS | RULE_PRESERVE | 거절 | RETEST_REQUEST의 result는 빈칸이어야 함 | 보류
+76 | T29 | REGISTER | RULE_RECIPE | 허용 |  | 등록
+77 | T29 | P1 | RULE_SEQ | 허용 |  | 공정 진행 중(P1 완료)
+78 | T29 | P2 | RULE_SEQ | 허용 |  | 공정 진행 중(P2 완료)
+79 | T29 | P3 | RULE_SEQ | 허용 |  | 공정 진행 중(P3 완료)
+80 | T29 | INSPECT LEAK PASS | RULE_NOT_DONE | 허용 |  | 공정 진행 중(P3 완료)
+81 | T29 | P4 | RULE_SEQ | 허용 |  | 공정 진행 중(P4 완료)
+82 | T29 | P5 | RULE_SEQ | 허용 |  | 검사 대기
+83 | T29 | INSPECT LIGHT FAIL | RULE_FAIL_HOLD | 허용 |  | 보류
+84 | T29 | INSPECT FINAL FAIL | RULE_FAIL_HOLD | 허용 |  | 보류
+85 | T29 | RETEST_REQUEST LIGHT | RULE_RETEST | 허용 |  | 보류
+86 | T29 | INSPECT LIGHT PASS | RULE_RETEST | 허용 |  | 보류
+87 | T29 | RETEST_REQUEST FINAL | RULE_RETEST | 허용 |  | 보류
+88 | T29 | INSPECT FINAL PASS | RULE_RETEST | 허용 |  | 레시피 모의 흐름 완료
+89 | T30 | REGISTER | RULE_RECIPE | 허용 |  | 등록
+90 | T30 | P1 | RULE_SEQ | 허용 |  | 공정 진행 중(P1 완료)
+91 | T30 | P2 | RULE_SEQ | 허용 |  | 공정 진행 중(P2 완료)
+92 | T30 | P3 | RULE_SEQ | 허용 |  | 공정 진행 중(P3 완료)
+93 | T30 | INSPECT LEAK FAIL | RULE_FAIL_HOLD | 허용 |  | 보류
+94 | T30 | RETEST_REQUEST LEAK | RULE_RETEST | 허용 |  | 보류
+95 | T30 | INSPECT LEAK FAIL | RULE_RETEST | 허용 |  | 보류
+96 | T30 | RETEST_REQUEST LEAK | RULE_RETEST | 허용 |  | 보류
+97 | T30 | INSPECT LEAK PASS | RULE_RETEST | 허용 |  | 공정 진행 중(P3 완료)
+98 | T30 | P4 | RULE_SEQ | 허용 |  | 공정 진행 중(P4 완료)
+99 | T30 | P5 | RULE_SEQ | 허용 |  | 검사 대기
+100 | T30 | INSPECT LIGHT FAIL | RULE_FAIL_HOLD | 허용 |  | 보류
+101 | T30 | RETEST_REQUEST LIGHT | RULE_RETEST | 허용 |  | 보류
+102 | T30 | INSPECT LIGHT PASS | RULE_RETEST | 허용 |  | 검사 대기
+
+[제품별 최종 상태]
+product_id | model | 최종 상태 | 미완료 이유 | history
+T23 | A | 보류 | P4 미완료; P5 미완료; LEAK FAIL(재검사 요청됨); LIGHT 미실시; FINAL 미실시 | LEAK: FAIL@5 → 요청@6
+T24 | A | 레시피 모의 흐름 완료 |  | LEAK: FAIL@12 → 요청@13 → PASS@14(재검사 1); LIGHT: PASS@17; FINAL: PASS@18
+T25 | A | 보류 | P4 미완료; P5 미완료; LEAK FAIL; LIGHT 미실시; FINAL 미실시 | LEAK: FAIL@23
+T26 | A | 공정 진행 중(P3 완료) | P4 미완료; P5 미완료; LIGHT 미실시; FINAL 미실시 | LEAK: FAIL@29 → 요청@30 → FAIL@31(재검사 1) → 요청@33 → PASS@34(재검사 2)
+T27 | A | 폐기 | LEAK 재검사 한도 2회 초과 FAIL로 폐기 | LEAK: FAIL@39 → 요청@40 → FAIL@41(재검사 1) → 요청@42 → FAIL@43(재검사 2)
+T28_NO_RESULT | A | 공정 진행 중(P3 완료) | P4 미완료; P5 미완료; LEAK 미실시; LIGHT 미실시; FINAL 미실시 | 
+T28_PASS | A | 공정 진행 중(P3 완료) | P4 미완료; P5 미완료; LIGHT 미실시; FINAL 미실시 | LEAK: PASS@56
+T28_OPEN | A | 보류 | P4 미완료; P5 미완료; LEAK FAIL(재검사 요청됨); LIGHT 미실시; FINAL 미실시 | LEAK: FAIL@62 → 요청@63
+T28_MODEL_B | B | 공정 진행 중(P2 완료) | P3 미완료; P4 미완료; LEAK 미실시; LIGHT 미실시 | 
+T28_FORMAT | A | 보류 | P4 미완료; P5 미완료; LEAK FAIL; LIGHT 미실시; FINAL 미실시 | LEAK: FAIL@74
+T29 | A | 레시피 모의 흐름 완료 |  | LEAK: PASS@80; LIGHT: FAIL@83 → 요청@85 → PASS@86(재검사 1); FINAL: FAIL@84 → 요청@87 → PASS@88(재검사 1)
+T30 | A | 검사 대기 | FINAL 미실시 | LEAK: FAIL@93 → 요청@94 → FAIL@95(재검사 1) → 요청@96 → PASS@97(재검사 2); LIGHT: FAIL@100 → 요청@101 → PASS@102(재검사 1)
+
+[규칙 ID별 거절 건수]
+규칙 ID | 거절 건수
+RULE_RECIPE | 1
+RULE_SEQ | 0
+RULE_INSP_PRE | 0
+RULE_NOT_DONE | 0
+RULE_FAIL_HOLD | 1
+RULE_PRESERVE | 4
+RULE_RETEST | 6
+
+저장 파일:
+reports/sample_events_retest_rows.csv
+reports/sample_events_retest_products.csv
+reports/sample_events_retest_rejections.csv
+```
+종료 코드: 0
+- `reports/sample_events_retest_rows.csv`: 체크아웃 파일과 바이트 동일=True; SHA-256 `6674e813936d5d62192d2742a90de18c78ebeddb11c90104f218df4034249963`
+- `reports/sample_events_retest_products.csv`: 체크아웃 파일과 바이트 동일=True; SHA-256 `3f6e9f3a24fb758f019c472684a07c87bcec24d0fa9bbf27e54f7eda906afe7e`
+- `reports/sample_events_retest_rejections.csv`: 체크아웃 파일과 바이트 동일=True; SHA-256 `d3d6d4f485ef95a92a3c952f8342eb2f0e1325e886a85885c430ac6f975d5d28`
+
+### 최신 리뷰 003 대응
+- L1 반영: 기존 승인된 T32 예외(inspection 빈칸은 RULE_PRESERVE, result 기입은 이유 문구 변경)도 보존한다. 이번 작업에서 기존 재검사 규칙을 바꾸지 않는다.
+- L2 반영 확인: 사용자가 2단계 사후 확정·3단계 사전 사용자 확정을 기록했다. 보호 문서는 수정하지 않는다.
+- L3 보류: 기존 폐기 이유 원문과 샘플 보존을 위해 변경하지 않음.
+- L4 보류: 기존 테스트는 명세 충족·사용자 보호 대상이므로 수정하지 않음. 새 설비 검증은 별도 tests/test_equipment.py에서 검증.
