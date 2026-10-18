@@ -84,7 +84,7 @@ def print_reports(reports, paths, product_heading="product_id | 최종 상태 | 
 
 def run_recipe(input_csv: Path, recipe_path: Path, parser) -> int:
     from .recipe import RecipeError, load_recipe
-    from .recipe_reports import PRODUCT_COLUMNS as RECIPE_PRODUCT_COLUMNS, build_recipe_reports
+    from .recipe_reports import PRODUCT_COLUMNS as RECIPE_PRODUCT_COLUMNS, RETEST_PRODUCT_COLUMNS, build_recipe_reports
     from .recipe_rules import INPUT_COLUMNS as RECIPE_INPUT_COLUMNS
 
     try:
@@ -94,10 +94,14 @@ def run_recipe(input_csv: Path, recipe_path: Path, parser) -> int:
     print("레시피: " + recipe_path.as_posix() + " | SHA-256: " + book.sha256[:12])
     try:
         reports = build_recipe_reports(read_events(input_csv, RECIPE_INPUT_COLUMNS), book.models)
-        paths = write_reports(input_csv.stem, reports, RECIPE_PRODUCT_COLUMNS)
+        columns = RETEST_PRODUCT_COLUMNS if book.retest_enabled else RECIPE_PRODUCT_COLUMNS
+        paths = write_reports(input_csv.stem, reports, columns)
     except (OSError, UnicodeError, csv.Error, ValueError) as error:
         parser.exit(2, "오류: " + str(error) + "\n")
-    print_reports(reports, paths, "product_id | model | 최종 상태 | 미완료 이유")
+    heading = "product_id | model | 최종 상태 | 미완료 이유"
+    if book.retest_enabled:
+        heading += " | history"
+    print_reports(reports, paths, heading)
     return 0
 
 

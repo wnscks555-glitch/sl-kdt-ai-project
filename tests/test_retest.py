@@ -255,5 +255,61 @@ class RetestProcessTests(unittest.TestCase):
         self.assertFalse(self.process.products["a"].open_requests)
 
 
+class RetestReportTests(unittest.TestCase):
+    def test_t32_stage_one_request_is_recipe_rejection_and_state_unchanged(self):
+        process = RecipeProcess(load_recipe(STAGE_ONE).models)
+        process.apply(dict(seq="1", product_id="a", event="REGISTER", inspection="", result="", model="A"))
+        before = copy.deepcopy(process.products)
+        decision = process.apply(dict(seq="2", product_id="a", event="RETEST_REQUEST", inspection="LEAK", result="", model=""))
+        self.assertFalse(decision.accepted)
+        self.assertEqual(decision.rule_id, "RULE_RECIPE")
+        self.assertEqual(process.products, before)
+
+    def test_t32_cli_history_seven_rules_and_byte_reproducibility(self):
+        with tempfile.TemporaryDirectory() as directory:
+            source = Path(directory) / "events.csv"
+            source.write_text(
+                "seq,product_id,event,inspection,result,model\n"
+                "1,a,REGISTER,,,A\n2,a,P1,,,\n3,a,P2,,,\n4,a,P3,,,\n"
+                "5,a,INSPECT,LEAK,FAIL,\n6,a,RETEST_REQUEST,LEAK,,\n"
+                "7,a,INSPECT,LEAK,PASS,\n8,a,P4,,,\n9,a,P5,,,\n"
+                "10,a,INSPECT,LIGHT,PASS,\n11,a,INSPECT,FINAL,PASS,\n"
+                "12,a,INSPECT,LEAK,FAIL,\n13,a,RETEST_REQUEST,LEAK,,\n",
+                encoding="utf-8",
+            )
+            first = run_cli(directory, source, RECIPE)
+            self.assertEqual(first.returncode, 0, first.stderr)
+            self.assertEqual(first.stderr, b"")
+            reports = {p.name: p.read_bytes() for p in (Path(directory) / "reports").glob("*.csv")}
+            self.assertEqual(len(reports), 3)
+            second = run_cli(directory, source, RECIPE)
+            self.assertEqual(second.returncode, 0, second.stderr)
+            self.assertEqual(first.stdout, second.stdout)
+            self.assertEqual(first.stderr, second.stderr)
+            self.assertEqual(reports, {p.name: p.read_bytes() for p in (Path(directory) / "reports").glob("*.csv")})
+            with tempfile.TemporaryDirectory() as other:
+                third = run_cli(other, source, RECIPE)
+                self.assertEqual(third.returncode, 0, third.stderr)
+                self.assertEqual(first.stdout, third.stdout)
+                self.assertEqual(reports, {p.name: p.read_bytes() for p in (Path(other) / "reports").glob("*.csv")})
+            products = list(csv.DictReader(io.StringIO(reports["events_products.csv"].decode("utf-8-sig"))))
+            self.assertEqual(list(products[0]), ["product_id", "model", "state", "incomplete_reason", "history"])
+            self.assertEqual(products, [{
+                "product_id": "a", "model": "A", "state": "레시피 모의 흐름 완료", "incomplete_reason": "",
+                "history": "LEAK: FAIL@5 → 요청@6 → PASS@7(재검사 1); LIGHT: PASS@10; FINAL: PASS@11",
+            }])
+            self.assertIn("product_id | model | 최종 상태 | 미완료 이유 | history", first.stdout.decode("utf-8"))
+            counts = list(csv.reader(io.StringIO(reports["events_rejections.csv"].decode("utf-8-sig"))))
+            self.assertEqual(counts, [
+                ["rule_id", "rejection_count"], ["RULE_RECIPE", "0"], ["RULE_SEQ", "0"],
+                ["RULE_INSP_PRE", "0"], ["RULE_NOT_DONE", "0"], ["RULE_FAIL_HOLD", "0"],
+                ["RULE_PRESERVE", "1"], ["RULE_RETEST", "1"],
+            ])
+            rows = list(csv.reader(io.StringIO(reports["events_rows.csv"].decode("utf-8-sig"))))
+            self.assertEqual(rows[0], ["seq", "product_id", "input", "rule_id", "decision", "rejection_reason", "state"])
+            self.assertEqual([rows[index][3] for index in (6, 7)], ["RULE_RETEST", "RULE_RETEST"])
+            self.assertEqual(len(rows), 14)
+
+
 if __name__ == "__main__":
     unittest.main()

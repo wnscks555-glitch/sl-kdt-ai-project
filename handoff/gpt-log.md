@@ -1058,3 +1058,38 @@ Ran 51 tests in 5.177s
 OK
 ```
 종료 코드: 0
+
+## ③ 모드 전환과 보고서 (T32)
+
+- 모든 모델에 retest_limit이 있을 때만 products에 history를 더하고, 6개 규칙 뒤 RULE_RETEST를 붙인다. rows 형식과 1단계 4열·6개 집계·터미널 헤더는 유지한다.
+- 실제 CLI를 통한 history 정확 문자열, 요청 없는 입력 거절 집계, 같은 폴더 반복 및 별도 폴더 반복의 stdout·stderr·CSV 3종 바이트 비교 테스트를 추가. 구현 전 RULE_RETEST 집계 키 누락으로 실패, 구현 후 전체 53개 통과.
+
+명령: `py -m unittest discover -s tests -p test_retest.py`
+
+```text
+.............F.
+======================================================================
+FAIL: test_t32_cli_history_seven_rules_and_byte_reproducibility (test_retest.RetestReportTests)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "C:\Users\PC\Documents\ChatGPT\에스엘 KDT AI 교육 부트캠프\project\tests\test_retest.py", line 281, in test_t32_cli_history_seven_rules_and_byte_reproducibility
+    self.assertEqual(first.returncode, 0, first.stderr)
+AssertionError: 1 != 0 : b'Traceback (most recent call last):\r\n  File "C:\\Users\\PC\\anaconda3\\lib\\runpy.py", line 197, in _run_module_as_main\r\n    return _run_code(code, main_globals, None,\r\n  File "C:\\Users\\PC\\anaconda3\\lib\\runpy.py", line 87, in _run_code\r\n    exec(code, run_globals)\r\n  File "C:\\Users\\PC\\Documents\\ChatGPT\\\xec\x97\x90\xec\x8a\xa4\xec\x97\x98 KDT AI \xea\xb5\x90\xec\x9c\xa1 \xeb\xb6\x80\xed\x8a\xb8\xec\xba\xa0\xed\x94\x84\\project\\src\\main.py", line 121, in <module>\r\n    raise SystemExit(main())\r\n  File "C:\\Users\\PC\\Documents\\ChatGPT\\\xec\x97\x90\xec\x8a\xa4\xec\x97\x98 KDT AI \xea\xb5\x90\xec\x9c\xa1 \xeb\xb6\x80\xed\x8a\xb8\xec\xba\xa0\xed\x94\x84\\project\\src\\main.py", line 110, in main\r\n    return run_recipe(args.input_csv, args.recipe, parser)\r\n  File "C:\\Users\\PC\\Documents\\ChatGPT\\\xec\x97\x90\xec\x8a\xa4\xec\x97\x98 KDT AI \xea\xb5\x90\xec\x9c\xa1 \xeb\xb6\x80\xed\x8a\xb8\xec\xba\xa0\xed\x94\x84\\project\\src\\main.py", line 96, in run_recipe\r\n    reports = build_recipe_reports(read_events(input_csv, RECIPE_INPUT_COLUMNS), book.models)\r\n  File "C:\\Users\\PC\\Documents\\ChatGPT\\\xec\x97\x90\xec\x8a\xa4\xec\x97\x98 KDT AI \xea\xb5\x90\xec\x9c\xa1 \xeb\xb6\x80\xed\x8a\xb8\xec\xba\xa0\xed\x94\x84\\project\\src\\recipe_reports.py", line 23, in build_recipe_reports\r\n    counts[decision.rule_id] += 1\r\nKeyError: \'RULE_RETEST\'\r\n'
+
+----------------------------------------------------------------------
+Ran 15 tests in 1.277s
+
+FAILED (failures=1)
+```
+종료 코드: 1
+
+명령: `py -m unittest discover -s tests`
+
+```text
+.....................................................
+----------------------------------------------------------------------
+Ran 53 tests in 6.019s
+
+OK
+```
+종료 코드: 0
