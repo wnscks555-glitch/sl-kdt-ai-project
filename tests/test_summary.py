@@ -139,6 +139,45 @@ class SummaryTests(unittest.TestCase):
                 else:
                     self.assertEqual(len(list((Path(directory) / "reports").glob("*.csv"))), 6)
 
+    def test_review008_m1_unregistered_defective_ids_fail_summary(self):
+        rejected_registration = {**self.events[0], "seq": "27", "product_id": "ghost", "model": "UNKNOWN"}
+        events = self.events + [rejected_registration]
+        for defective in (["ZZZ"], ["A"], [" a"], ["a "], ["a", "ZZZ"], ["ghost"]):
+            with self.subTest(defective=defective), self.assertRaisesRegex(
+                    ValueError, "meta.json.*defective_products.*등록되지 않은"):
+                self.summary(events, {"normal_rows": 26, "injected_errors": {},
+                                      "defective_products": defective})
+
+    def test_review008_m1_cli_rejects_unregistered_ids_before_any_report(self):
+        for defective in (["ZZZ"], ["A"], [" a"], ["a "], ["a", "ZZZ"], ["ghost"]):
+            for options in (("--summary",), ("--summary", "--trace", "a")):
+                with self.subTest(defective=defective, options=options), tempfile.TemporaryDirectory() as directory:
+                    source = Path(directory) / "events.csv"
+                    source.write_bytes((ROOT / "tests/fixtures/summary_events.csv").read_bytes()
+                                       + b"27,ghost,REGISTER,,,UNKNOWN,\n")
+                    meta = {"normal_rows": 26, "injected_errors": {}, "defective_products": defective}
+                    Path(str(source) + ".meta.json").write_text(json.dumps(meta), encoding="utf-8")
+                    result = subprocess.run(
+                        ["py", "-m", "src.main", str(source), "--recipe",
+                         str(ROOT / "recipes/lamp_models_retest.json"), "--equipment",
+                         str(ROOT / "recipes/equipment.json"), *options],
+                        cwd=directory, capture_output=True,
+                        env={**os.environ, "PYTHONPATH": str(ROOT), "PYTHONIOENCODING": "utf-8"})
+                    self.assertEqual(result.returncode, 2, result.stderr.decode("utf-8"))
+                    self.assertIn("meta.json", result.stderr.decode("utf-8"))
+                    self.assertIn("defective_products", result.stderr.decode("utf-8"))
+                    self.assertIn("등록되지 않은", result.stderr.decode("utf-8"))
+                    self.assertNotIn(b"Traceback", result.stderr)
+                    self.assertFalse((Path(directory) / "reports").exists())
+
+    def test_review008_m1_registered_other_states_and_exact_ids_remain_valid(self):
+        events = [{**event, "product_id": " A "} if event["product_id"] == "a" else event
+                  for event in self.events]
+        rows = self.summary(events, {"normal_rows": 26, "injected_errors": {},
+                                     "defective_products": [" A ", "c", "d"]})
+        self.assertEqual(self.find(rows, "injection_comparison", "defective_completed")["count"], 1)
+        self.assertEqual(self.find(rows, "injection_comparison", "defective_other")["count"], 2)
+
     def test_t46_stopped_equipment_causes_and_error_separation(self):
         events = read_events(ROOT / "data/sample_events_equipment.csv", EQUIPMENT_INPUT_COLUMNS)
         rows = self.summary(events)

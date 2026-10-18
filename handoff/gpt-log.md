@@ -3531,3 +3531,41 @@ T44 seed=7 all_rows_deepcopy_invariant_seconds=5.943210
 - `ce-simplify-code mode:pipeline`: reuse·quality·efficiency·test-value·comment 렌즈를 읽기 전용 네이티브 검토로 확인했다. 재사용 1건(기존 전체 폐기 집계에서 결함품 폐기를 빼 정상품 폐기를 계산)을 반영하고 확률 선택 조건문의 가독성을 정리했다. proof test 파일은 간소화로 바꾸지 않았으며, 이후 위 전체 테스트·반례를 재실행했다. 별도 lint/typecheck 설정은 없었다.
 - 정식 `ce-code-review mode:agent base:baaa7cd plan:handoff/tasks.md` 완료: **actionable findings 0, 요구 누락 0**. 필수 scope helper가 실행 코드 변경 36줄·small·full 강제 조건 없음으로 집계했고, 숨은 진실·확률 집계 오류의 가능성을 고려해 focused 깊이의 correctness 및 별도 네이티브 adversarial 검토를 수행했다. 실제 독립 집계도 4,138행·500제품·487/9/4 상태, 결함품 4/2/0/0·정상품 폐기 0, 참조 SHA 3개 일치를 확인했다. [리뷰 결과 원문](run-logs/t51-code-review.json). 리뷰의 원래 HEAD는 `baaa7cd`이고 검토 중 동일 내용이 `77a133d`로 커밋됐음을 receipt에 명시했다. 리뷰어는 제공된 테스트 원문을 재사용했으며 전체 테스트를 중복 실행했다고 주장하지 않는다. 외부 모델·서비스 전송은 없었고 full 깊이의 별도 보안·성능 등 모든 렌즈를 수행한 리뷰로 확대 해석하지 않는다.
 - `ce-compound mode:non-interactive` 판단: H1 원인과 채택 근거는 이미 사용자 결정·수정 명세에 있고 구현·회귀·README로 복원할 수 있다. 별도 해결 지식 문서를 만들 필요가 없다. **Documentation skipped — 기존 기록과 최종 코드·테스트·README에 없는 비자명한 검증 교훈 없음.**
+
+## 리뷰 008 M1 재개·처리 (T51, 2026-10-18)
+
+사용 한도로 중단된 작업 트리의 `README.md`, `src/summary.py`, `tests/test_summary.py` 변경을 먼저 읽었다. 현행 명세·사용자 결정·리뷰 008 M1 및 CLI의 보고서 저장 순서와 대조한 결과 변경 방향과 구현이 맞아 그대로 이어서 검증했다. 이 세 파일에 추가 수정은 하지 않았으며, 이번 재개에서는 아래 처리·검증 기록을 보완한다.
+
+| 리뷰 항목 | 처리 | 이유·내용 |
+| --- | --- | --- |
+| 008 M1 (중간) | **반영** | 제안 ①을 채택했다. `defective_products`와 등록이 허용된 `process.products` 키를 비교해 미등록 ID가 있으면 `ValueError`를 발생시킨다. 기존 CLI 오류 경로가 이를 메시지·종료 코드 2로 처리하고, 보고서 저장 전에 중단한다. 최종 상태가 없는 ID를 「그 밖」으로 집계하지 않으며 별도 지표 추가 없이 기존 meta 오류 처리와 일관된다. README에 정확한 ID 일치 조건과 「그 밖」의 의미를 명시했다. |
+| 008 L1 (낮음) | **보류** | 사용자가 이번 범위에서 제외했다. `defective_count`와 목록 길이의 일치 검사·출력은 추가하지 않았다. |
+| 008 L2 (낮음) | **보류** | 사용자가 이번 범위에서 제외했다. 생성 설정의 누락 키 메시지·확률 범위 검사에는 손대지 않았다. |
+
+### 회귀 검증
+
+- M1 테스트 3개를 유지했다. 미등록 ID `ZZZ`, 대소문자 차이 `A`, 앞/뒤 공백 차이 `" a"`·`"a "`, 정상·미등록 혼합 목록, 등록이 거절된 `ghost`를 검사한다. CLI는 `--summary`와 `--summary --trace a` 두 조합 모두 오류 메시지·종료 2·트레이스백 없음·보고서 디렉터리 미생성을 확인한다. 실제로 공백을 포함해 등록된 `" A "`의 정확한 일치 및 등록·검사 대기 상태의 정상 집계도 보존한다.
+- 수정 전 `HEAD:src/summary.py`의 `build_summary`만 메모리에 불러 새 미등록 ID 회귀 테스트에 적용했다. 파일을 되돌리지 않았고 여섯 사례 모두 `ValueError not raised`로 실패함을 확인했다. 이는 재개 시 검증이며 중단 전 수정 당시의 test-first 실행을 주장하지 않는다.
+- 읽기 전용 독립 검토의 M1 테스트 3개·기존 T51 분포 분리 테스트 1개: **4개 통과(2.412초)**. M1 외 코드 변경이나 추가 수정 필요 사항 없음.
+
+실제 전체 실행 명령: `py -m unittest discover -s tests` (종료 코드 0).
+
+```text
+............................................................................................................
+----------------------------------------------------------------------
+Ran 108 tests in 81.280s
+
+OK
+T44 seed=42 products=500 generation_seconds=0.139979 judgment_analysis_seconds=0.074735
+T44 seed=7 products=200 generation_seconds=0.056672 judgment_analysis_seconds=0.027292
+T44 seed=42 all_rows_deepcopy_invariant_seconds=49.137321
+T44 seed=7 all_rows_deepcopy_invariant_seconds=7.399932
+```
+
+### 보존·마무리 판단
+
+- 기존 `tests/test_summary.py` 테스트 21개의 AST 본문·기대값은 모두 같고 M1 함수 3개만 추가됐다. 전체 105개에서 108개로 늘어났으며 기존 테스트를 결과에 맞춰 바꾸지 않았다.
+- 작업 시작 때 승인된 4개 파일(기존 변경 3개와 이 로그)을 제외한 130개 파일의 SHA-256을 보관해 전체 테스트 뒤 다시 대조했고 전부 같았다. 여기에는 `src/rules.py`, 기존 테스트 4개, `handoff/tasks.md`, `handoff/decisions.md`, `handoff/reviews/`, `CLAUDE.md`, `.claude/` 및 기존 생성·보고서 산출물이 포함된다. `git diff --check`도 통과했다.
+- 변경 범위의 간소화 점검: 작은 차집합 검사와 기존 예외 경로면 충분하며 추가 추상화·중복 검증·관련 없는 리팩터링은 필요 없다. 증거 테스트는 그대로 유지했다. 별도 lint·typecheck 설정은 없다.
+- `ce-compound mode:non-interactive` 판단: 원인과 해결은 리뷰 008·README·최종 코드·회귀 테스트에서 복원할 수 있으므로 별도 해결 지식 문서는 만들지 않는다. **Documentation skipped — 추가로 보존할 비자명한 해결 교훈 없음.**
+- 로컬 브랜치 `codex/review-008-m1`에서 지정 메시지 `fix: apply review 008 M1 (T51)`로 단일 커밋한다. push·원격 설정 변경·패키지 설치는 수행하지 않는다.

@@ -208,8 +208,10 @@ def build_summary(analysis, meta=None):
                          actual_rejections=len(rejected)))
         if "defective_products" in meta:
             defective = set(meta["defective_products"])
-            defect_states = Counter(process.products[product_id].status for product_id in defective
-                                    if product_id in process.products)
+            unregistered = defective - process.products.keys()
+            if unregistered:
+                raise ValueError("meta.json의 defective_products에 등록되지 않은 제품 ID: " + repr(sorted(unregistered)))
+            defect_states = Counter(process.products[product_id].status for product_id in defective)
             completed = defect_states["레시피 모의 흐름 완료"]
             discarded, held = defect_states["폐기"], defect_states["보류"]
             for key, state, count in (
