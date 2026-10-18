@@ -1,0 +1,18 @@
+I wrote the review to `handoff/reviews/003-review.md`, and its verdict is **VERDICT: PASS**.
+
+**Tests:** I ran `py -m unittest discover -s tests` and all 54 tests passed (`Ran 54 tests in 5.467s`, `OK`).
+
+**v1 and stage-1 preservation:**
+- `src/rules.py`, `tests/test_rules.py`, `tests/test_recipe.py`, `AGENTS.md` and the six existing report files are unchanged since 962a4b5 (`git diff` is empty for all of them).
+- T1–T22 pass without any changes to their tests.
+- **Not verified:** I couldn't regenerate the v1 and stage-1 sample reports myself and compare them byte for byte. The tool permission settings blocked that command. The review records this, along with the evidence I had: those files are unchanged in git, and GPT reported matching SHA-256 hashes. The new retest sample report is compared byte for byte by one of the tests, which passed.
+
+**T23–T32:** All ten match the expected table. That includes the decision order, where a scrapped product is rejected before the recipe check, and the unchanged-state checks on rejections. I hand-counted the retest sample's rejection totals (RULE_RETEST 6, RULE_PRESERVE 4, and so on) and they match the report.
+
+**GPT's points I agreed with:** how it handled the T32 spec conflict, its note that the "at most one unresolved FAIL" reasoning conflicts with T29, and its choice to keep the scrap message wording as written.
+
+**Low-severity notes (recorded only, no fixes required):**
+- **L1:** With the stage-1 recipe, a `RETEST_REQUEST` row with an empty `inspection` used to get `RULE_RECIPE` and now gets `RULE_PRESERVE`. GPT didn't report this. I suggested adding one line about it to gpt-log; no code change.
+- **L2:** The `tasks.md` status line still says the spec is a draft, not yet confirmed. Confirming it is your call, recorded in `decisions.md`.
+- **L3:** The scrap message says the product failed after "more than" 2 retests, but scrapping happens when the 2nd retest fails. This wording comes straight from the spec, so I suggested explaining it verbally in the demo rather than changing it before the deadline.
+- **L4:** The T31 tests check only the error location, and the T32 ① test calls the rule engine directly instead of the CLI.
