@@ -1,5 +1,3 @@
-"""v2 판정 결과를 결정적인 보고서 행으로 변환한다."""
-
 from .recipe_rules import RULE_IDS, RecipeProcess
 
 

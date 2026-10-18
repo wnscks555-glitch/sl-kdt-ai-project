@@ -1,5 +1,3 @@
-"""선형 모의 공정 레시피 로드와 전체 오류 검증."""
-
 from dataclasses import dataclass
 import hashlib
 import json
