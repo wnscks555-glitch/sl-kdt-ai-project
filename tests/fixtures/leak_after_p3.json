@@ -1,0 +1,17 @@
+{
+  "A": {
+    "steps": ["P1", "P2", "P3", "P4", "P5"],
+    "inspections": [
+      {"id": "LEAK", "after": "P3"},
+      {"id": "LIGHT", "after": "P5"},
+      {"id": "FINAL", "after": "P5"}
+    ]
+  },
+  "B": {
+    "steps": ["P1", "P2", "P3", "P4"],
+    "inspections": [
+      {"id": "LEAK", "after": "P3"},
+      {"id": "LIGHT", "after": "P4"}
+    ]
+  }
+}

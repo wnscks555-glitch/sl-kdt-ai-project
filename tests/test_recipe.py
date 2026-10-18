@@ -1,6 +1,11 @@
 import copy
+import csv
 import hashlib
+import io
+import os
 from pathlib import Path
+import subprocess
+import tempfile
 import unittest
 
 from src.recipe import Inspection, ModelRecipe, RecipeError, load_recipe
@@ -334,6 +339,131 @@ class RecipeProcessTests(unittest.TestCase):
         decision = self.accept("START", rule_id="RULE_SEQ")
         self.assertEqual(decision.state, "레시피 모의 흐름 완료")
         self.assertEqual(self.process.products["a"].incomplete_reason, "")
+
+
+class RecipeCommandLineTests(unittest.TestCase):
+    INPUT = (
+        "seq,product_id,event,inspection,result,model\n"
+        "1,b,REGISTER,,,B\n"
+        "2,b,P1,,,\n"
+        "3,b,P2,,,\n"
+        "4,b,INSPECT,LEAK,PASS,\n"
+    )
+
+    def run_cli(self, cwd, source, recipe=DEFAULT_RECIPE):
+        env = os.environ.copy()
+        env["PYTHONPATH"] = str(ROOT)
+        env["PYTHONIOENCODING"] = "utf-8"
+        command = ["py", "-m", "src.main", str(source)]
+        if recipe is not None:
+            command.extend(["--recipe", str(recipe)])
+        return subprocess.run(command, cwd=cwd, env=env, capture_output=True)
+
+    @staticmethod
+    def report_bytes(cwd):
+        return {path.name: path.read_bytes() for path in (cwd / "reports").glob("*.csv")}
+
+    @staticmethod
+    def csv_rows(content):
+        return list(csv.DictReader(io.StringIO(content.decode("utf-8-sig"))))
+
+    def test_t18_invalid_recipe_stops_before_missing_input_and_writes_no_reports(self):
+        names = (
+            "empty_steps.json", "duplicate_steps.json", "duplicate_inspections.json",
+            "string_steps.json", "unknown_key.json", "unknown_after.json",
+            "multiple_errors.json", "invalid_structure.json", "invalid_json.json",
+            "array_root.json", "empty_models.json", "missing.json",
+        )
+        with tempfile.TemporaryDirectory() as temporary:
+            cwd = Path(temporary)
+            for name in names:
+                with self.subTest(name=name):
+                    result = self.run_cli(cwd, cwd / "missing.csv", FIXTURES / name)
+                    self.assertEqual(result.returncode, 3, result.stderr.decode("utf-8"))
+                    self.assertFalse((cwd / "reports").exists())
+                    self.assertNotIn("[행별 판정]".encode("utf-8"), result.stdout)
+                    if name == "multiple_errors.json":
+                        self.assertIn(b"A.steps:", result.stderr)
+                        self.assertIn(b"A.next:", result.stderr)
+
+    def test_t21_same_csv_and_recipe_repeat_byte_identically_and_after_changes_decision(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            base = Path(temporary)
+            source = base / "events.csv"
+            source.write_text(self.INPUT, encoding="utf-8")
+            snapshots = []
+            for name in ("first", "second"):
+                cwd = base / name
+                cwd.mkdir()
+                result = self.run_cli(cwd, source)
+                self.assertEqual(result.returncode, 0, result.stderr.decode("utf-8"))
+                self.assertEqual(result.stderr, b"")
+                snapshots.append((result.stdout, self.report_bytes(cwd)))
+            self.assertEqual(snapshots[0], snapshots[1])
+            repeated = self.run_cli(cwd, source)
+            self.assertEqual(repeated.returncode, 0)
+            self.assertEqual((repeated.stdout, self.report_bytes(cwd)), snapshots[0])
+            stdout, reports = snapshots[0]
+            self.assertEqual(set(reports), {"events_rows.csv", "events_products.csv", "events_rejections.csv"})
+            heading = stdout.decode("utf-8").splitlines()[0]
+            self.assertIn(DEFAULT_RECIPE.as_posix(), heading)
+            self.assertIn(hashlib.sha256(DEFAULT_RECIPE.read_bytes()).hexdigest()[:12], heading)
+            self.assertEqual(self.csv_rows(reports["events_rows.csv"])[-1]["decision"], "허용")
+            self.assertEqual(self.csv_rows(reports["events_products.csv"]), [{
+                "product_id": "b", "model": "B", "state": "공정 진행 중(P2 완료)",
+                "incomplete_reason": "P3 미완료; P4 미완료; LIGHT 미실시",
+            }])
+            self.assertEqual(
+                self.csv_rows(reports["events_rejections.csv"]),
+                [{"rule_id": rule, "rejection_count": "0"} for rule in (
+                    "RULE_RECIPE", "RULE_SEQ", "RULE_INSP_PRE", "RULE_NOT_DONE", "RULE_FAIL_HOLD", "RULE_PRESERVE"
+                )],
+            )
+            changed = self.run_cli(cwd, source, FIXTURES / "leak_after_p3.json")
+            self.assertEqual(changed.returncode, 0, changed.stderr.decode("utf-8"))
+            changed_reports = self.report_bytes(cwd)
+            last = self.csv_rows(changed_reports["events_rows.csv"])[-1]
+            self.assertEqual(last["decision"], "거절")
+            self.assertEqual(last["rule_id"], "RULE_INSP_PRE")
+            self.assertEqual(last["rejection_reason"], "P3 미완료")
+            self.assertEqual(self.csv_rows(changed_reports["events_products.csv"])[0]["incomplete_reason"],
+                             "P3 미완료; P4 미완료; LEAK 미실시; LIGHT 미실시")
+
+    def test_header_mode_mismatch_and_input_errors_exit_two_without_reports(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            cwd = Path(temporary)
+            source = cwd / "events.csv"
+            source.write_text(self.INPUT, encoding="utf-8")
+            for csv_path, recipe in (
+                (source, None), (ROOT / "data" / "sample_events.csv", DEFAULT_RECIPE),
+                (cwd / "missing.csv", DEFAULT_RECIPE),
+            ):
+                with self.subTest(csv_path=csv_path, recipe=recipe):
+                    result = self.run_cli(cwd, csv_path, recipe)
+                    self.assertEqual(result.returncode, 2)
+                    self.assertFalse((cwd / "reports").exists())
+
+    def test_csv_physical_order_and_malformed_rows_are_reported_without_state_changes(self):
+        text = (
+            "seq,product_id,event,inspection,result,model\n"
+            "9,a,REGISTER,,,A\n"
+            "2,a,P1,,,\n"
+            "2,a,P2,,,\n"
+            "1,a,P3,,,EXTRA,EXTRA\n"
+            "1,a,P3,,\n"
+        )
+        with tempfile.TemporaryDirectory() as temporary:
+            cwd = Path(temporary)
+            source = cwd / "events.csv"
+            source.write_text(text, encoding="utf-8")
+            result = self.run_cli(cwd, source)
+            self.assertEqual(result.returncode, 0, result.stderr.decode("utf-8"))
+            reports = self.report_bytes(cwd)
+            rows = self.csv_rows(reports["events_rows.csv"])
+            self.assertEqual([row["seq"] for row in rows], ["9", "2", "2", "1", "1"])
+            self.assertEqual([row["rule_id"] for row in rows[-2:]], ["RULE_PRESERVE", "RULE_PRESERVE"])
+            self.assertEqual([row["state"] for row in rows[-2:]], ["공정 진행 중(P2 완료)"] * 2)
+            self.assertEqual(self.csv_rows(reports["events_products.csv"])[0]["state"], "공정 진행 중(P2 완료)")
 
 
 if __name__ == "__main__":

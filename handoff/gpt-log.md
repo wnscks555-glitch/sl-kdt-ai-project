@@ -358,3 +358,21 @@ Ran 33 tests in 0.335s
 OK
 exit=0
 ```
+
+## 2026-10-18 ③ --recipe CLI 연결 (T18, T21 및 T11–T22 통합)
+
+- 변경: `src/main.py`, `src/recipe_reports.py`, `tests/test_recipe.py`, `tests/fixtures/leak_after_p3.json`. 옵션 없을 때 기존 v1 build_reports/Process를 사용한다. CSV 읽기·쓰기·출력의 기본값은 유지하고 v2만 6열/모델열/6개 규칙을 사용한다. 레시피 전체 로드 성공 후에만 CSV 읽기·판정을 시작한다.
+- 증거: CLI 테스트 먼저 추가 후 `py -m unittest discover -s tests -p test_recipe.py`에서 `unrecognized arguments: --recipe`, `Ran 25 tests`, `FAILED (failures=14)` 관측. 구현 후 전체 테스트 결과 원문:
+
+```text
+.....................................
+----------------------------------------------------------------------
+Ran 37 tests in 3.997s
+
+OK
+exit=0
+```
+- T18: 12개 잘못된/없는 설정과 없는 입력 CSV 조합에서 모두 종료 3, 이벤트 보고서·디렉터리 미생성 확인. 두 오류 위치를 함께 출력한다. 이미 존재하는 보고서는 지우지 않는다.
+- T21: 별도 폴더 2회와 같은 폴더 덮어쓰기 1회의 stdout·3개 CSV 바이트 일치. B의 LEAK after만 P2→P3인 fixture에서 해당 검사 행이 허용→RULE_INSP_PRE 거절로 바뀌며 검사 결과가 미저장된다.
+- v1/v2 헤더 교차 및 입력 읽기 오류는 종료 2. seq 중복/감소를 실제 CSV로 확인하고 열 수가 다른 행은 RULE_PRESERVE 거절 후 전체 제품 상태를 유지한다.
+- 해석: SHA-256은 읽은 JSON 파일 원본 바이트(BOM·줄바꿈 포함) 기준이며 표시 경로는 전달받은 Path의 POSIX 표기다. JSON 읽기 실패도 레시피 오류 3이다.
