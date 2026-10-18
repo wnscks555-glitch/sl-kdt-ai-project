@@ -14,7 +14,7 @@ from .recipe_rules import EQUIPMENT_INPUT_COLUMNS, RecipeProcess
 from .reason_codes import INJECTED_ERROR_CODES as ERROR_KINDS
 
 
-GENERATOR_VERSION = "1.0.0"
+GENERATOR_VERSION = "1.1.0"
 DEFAULT_CONFIG = Path(__file__).resolve().parents[1] / "recipes/generator.json"
 
 
@@ -31,6 +31,7 @@ class Generator:
         self.book = equipment_book
         self.equipment = {name: EquipmentState() for name in self.book.equipment}
         self.cursor = defaultdict(int)
+        self.defective_products = []
 
     def choose_equipment(self, inspection, avoid=""):
         names = [name for name, kind in self.book.equipment.items() if kind == inspection]
@@ -45,6 +46,9 @@ class Generator:
 
     def product(self, product_id, model):
         recipe = self.models[model]
+        defective = self.rng.random() < self.config["defective_product_probability"]
+        if defective:
+            self.defective_products.append(product_id)
         yield event(product_id, "REGISTER", model=model), False
         for step in recipe.steps:
             yield event(product_id, step), False
@@ -56,8 +60,11 @@ class Generator:
                     equipment = self.choose_equipment(item.id, first_equipment)
                     if equipment is None:
                         return
-                    probability = self.config["faulty_equipment"].get(
-                        equipment, self.config["normal_fail_probability"])
+                    if defective:
+                        probability = self.config["defective_fail_probability"]
+                    else:
+                        probability = self.config["faulty_equipment"].get(
+                            equipment, self.config["normal_fail_probability"])
                     result = "FAIL" if self.rng.random() < probability else "PASS"
                     yield event(product_id, "INSPECT", item.id, result, equipment=equipment), attempt == 0
                     if result == "PASS":
@@ -167,6 +174,8 @@ def generate(seed=42, products=500, out=Path("data/generated/gen_seed42.csv"), c
                    "recipe": recipe.sha256, "equipment": equipment.sha256},
         "normal_rows": len(normal), "rows": len(rows), "injected_errors": counts,
         "injection_rate": config["error_rate"],
+        "defective_count": len(generator.defective_products),
+        "defective_products": generator.defective_products,
     }
     out.parent.mkdir(parents=True, exist_ok=True)
     with out.open("w", encoding="utf-8-sig", newline="") as target:

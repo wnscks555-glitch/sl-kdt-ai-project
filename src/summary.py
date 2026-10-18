@@ -206,6 +206,20 @@ def build_summary(analysis, meta=None):
         rows.append(_row("injection_comparison", "TOTAL", normal_rows=normal_rows,
                          injected_count=sum(injected.values()), injection_rate=_ratio(sum(injected.values()), normal_rows),
                          actual_rejections=len(rejected)))
+        if "defective_products" in meta:
+            defective = set(meta["defective_products"])
+            defect_states = Counter(process.products[product_id].status for product_id in defective
+                                    if product_id in process.products)
+            completed = defect_states["레시피 모의 흐름 완료"]
+            discarded, held = defect_states["폐기"], defect_states["보류"]
+            for key, state, count in (
+                ("defective_discarded", "폐기", discarded),
+                ("defective_held", "보류", held),
+                ("defective_completed", "완료", completed),
+                ("defective_other", "그 밖", len(defective) - discarded - held - completed),
+                ("normal_discarded", "폐기", statuses["폐기"] - discarded),
+            ):
+                rows.append(_row("injection_comparison", key, state=state, count=count))
     return rows
 
 

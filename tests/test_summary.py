@@ -92,6 +92,53 @@ class SummaryTests(unittest.TestCase):
             with self.subTest(numerator=numerator, denominator=denominator):
                 self.assertEqual(_ratio(numerator, denominator), expected)
 
+    def test_t51_defect_distribution_is_confined_to_injection_comparison(self):
+        # a,b=완료, c=검사 대기, d=등록, T36=폐기. 결함 표시는 최종 PASS를 바꾸지 않는다.
+        discarded = [event for event in read_events(
+            ROOT / "data/sample_events_equipment.csv", EQUIPMENT_INPUT_COLUMNS)
+            if event["product_id"] == "T36"]
+        events = self.events + discarded
+        meta = {"normal_rows": len(events), "injected_errors": {}}
+        baseline = self.summary(events, meta)
+        for defective, expected in (
+            (["b", "c", "d", "T36"], (1, 0, 1, 2, 0)),
+            (["a"], (0, 0, 1, 0, 1)),
+            ([], (0, 0, 0, 0, 1)),
+        ):
+            with self.subTest(defective=defective):
+                rows = self.summary(events, {**meta, "defective_products": defective})
+                keys = ("defective_discarded", "defective_held", "defective_completed",
+                        "defective_other", "normal_discarded")
+                self.assertEqual(tuple(self.find(rows, "injection_comparison", key)["count"]
+                                       for key in keys), expected)
+                self.assertEqual([row for row in rows if row["key"] not in keys], baseline)
+        held_events = [event for event in self.events if int(event["seq"]) <= 13]
+        rows = self.summary(held_events, {**meta, "defective_products": ["b"]})
+        self.assertEqual(self.find(rows, "injection_comparison", "defective_held")["count"], 1)
+
+    def test_t51_cli_defective_meta_validation_before_any_report(self):
+        invalid = (None, "a", {}, [1], [True], [[]], [""], ["  "], ["a", "a"])
+        for defective in (*invalid, [], ["a", "b"]):
+            with self.subTest(defective=defective), tempfile.TemporaryDirectory() as directory:
+                source = Path(directory) / "events.csv"
+                source.write_bytes((ROOT / "tests/fixtures/summary_events.csv").read_bytes())
+                meta = {"normal_rows": 24, "injected_errors": {}, "defective_products": defective}
+                Path(str(source) + ".meta.json").write_text(json.dumps(meta), encoding="utf-8")
+                result = subprocess.run(
+                    ["py", "-m", "src.main", str(source), "--recipe",
+                     str(ROOT / "recipes/lamp_models_retest.json"), "--equipment",
+                     str(ROOT / "recipes/equipment.json"), "--summary", "--trace", "a"],
+                    cwd=directory, capture_output=True,
+                    env={**os.environ, "PYTHONPATH": str(ROOT), "PYTHONIOENCODING": "utf-8"})
+                self.assertEqual(result.returncode, 2 if defective in invalid else 0,
+                                 result.stderr.decode("utf-8"))
+                self.assertNotIn(b"Traceback", result.stderr)
+                if defective in invalid:
+                    self.assertIn("defective_products", result.stderr.decode("utf-8"))
+                    self.assertFalse((Path(directory) / "reports").exists())
+                else:
+                    self.assertEqual(len(list((Path(directory) / "reports").glob("*.csv"))), 6)
+
     def test_t46_stopped_equipment_causes_and_error_separation(self):
         events = read_events(ROOT / "data/sample_events_equipment.csv", EQUIPMENT_INPUT_COLUMNS)
         rows = self.summary(events)

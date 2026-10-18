@@ -8,8 +8,9 @@ import subprocess
 import tempfile
 import time
 import unittest
+from unittest.mock import patch
 
-from src.generate import GENERATOR_VERSION, generate
+from src.generate import GENERATOR_VERSION, Generator, generate
 from src.equipment import load_equipment
 from src.main import read_events
 from src.recipe import load_recipe
@@ -22,6 +23,38 @@ CONFIG = ROOT / "recipes/generator.json"
 
 
 class GeneratorTests(unittest.TestCase):
+    def test_t51_defect_probability_applies_once_to_initial_and_retest_results(self):
+        models = load_recipe(ROOT / "recipes/lamp_models_retest.json").models
+        book = load_equipment(ROOT / "recipes/equipment_generated.json", models)
+        config = json.loads(CONFIG.read_text(encoding="utf-8-sig"))
+        cases = (
+            ([0.019, 0.899, 0.69, 0.899, 0.69, 0.899], ["FAIL"] * 3, ["p"]),
+            ([0.019, 0.9, 0.9, 0.9], ["PASS"] * 3, ["p"]),
+            ([0.02, 0.02, 0.02, 0.02], ["PASS"] * 3, []),
+        )
+        for draws, expected, defective in cases:
+            with self.subTest(draws=draws):
+                generator = Generator(42, config, models, book)
+                with patch.object(generator.rng, "random", side_effect=draws):
+                    rows = [row for row, _ in generator.product("p", "A")]
+                results = [row for row in rows if row["event"] == "INSPECT"]
+                self.assertEqual([row["result"] for row in results], expected)
+                self.assertEqual(generator.defective_products, defective)
+                self.assertTrue(all(tuple(row) == EQUIPMENT_INPUT_COLUMNS for row in rows))
+
+    def test_t51_seed42_meta_lists_defects_without_csv_truth_columns(self):
+        with tempfile.TemporaryDirectory() as directory:
+            target = Path(directory) / "events.csv"
+            meta = generate(42, 500, target, CONFIG)
+            defective = meta["defective_products"]
+            self.assertEqual(meta["defective_count"], len(defective))
+            self.assertEqual(len(defective), len(set(defective)))
+            self.assertGreater(len(defective), 0)
+            events = read_events(target, EQUIPMENT_INPUT_COLUMNS)
+            registered = {row["product_id"] for row in events if row["event"] == "REGISTER"}
+            self.assertTrue(set(defective) <= registered)
+            self.assertEqual(json.loads(Path(str(target) + ".meta.json").read_text(encoding="utf-8")), meta)
+
     def test_t42_same_seed_csv_meta_and_provenance(self):
         with tempfile.TemporaryDirectory() as directory:
             a, b = Path(directory) / "a.csv", Path(directory) / "b.csv"

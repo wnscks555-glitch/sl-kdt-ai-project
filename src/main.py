@@ -139,6 +139,13 @@ def run_recipe(input_csv: Path, recipe_path: Path, parser, equipment_path=None, 
                     raise ValueError("meta.json의 injected_errors는 값이 0 이상의 정수인 객체여야 함")
                 if not set(injected) <= set(INJECTED_ERROR_CODES):
                     raise ValueError("meta.json의 injected_errors 키는 주입 오류 5종 코드만 허용됨")
+                if "defective_products" in meta:
+                    defective = meta["defective_products"]
+                    if not isinstance(defective, list) or any(
+                            not isinstance(product_id, str) or not product_id.strip() for product_id in defective):
+                        raise ValueError("meta.json의 defective_products는 비어 있지 않은 제품 ID 문자열 배열이어야 함")
+                    if len(defective) != len(set(defective)):
+                        raise ValueError("meta.json의 defective_products에는 중복 제품 ID를 허용하지 않음")
             except FileNotFoundError:
                 meta = None
             summary_rows = build_summary(analysis, meta)

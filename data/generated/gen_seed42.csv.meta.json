@@ -1,14 +1,14 @@
 {
   "seed": 42,
   "products": 500,
-  "generator_version": "1.0.0",
+  "generator_version": "1.1.0",
   "sha256": {
-    "config": "d28b9b34edd1aaa43cda8ad5c927d433b45eb6ca70daad8e45b60a9de692625b",
+    "config": "37ab081136e05f0bc1406da1e16fe703d565833cfa49b82e6a9907e3d8a648d9",
     "recipe": "438229b58c9e8bc4a9f464704c9ace956150e33920fa36f0441add7f354ca7ac",
     "equipment": "fc7e9b06b007846199847ad06d0d9381ca17ae039557c1739816eb2155afbbab"
   },
-  "normal_rows": 4020,
-  "rows": 4140,
+  "normal_rows": 4018,
+  "rows": 4138,
   "injected_errors": {
     "SEQ_SKIP": 24,
     "PRESERVE_BAD_RESULT": 24,
@@ -16,5 +16,14 @@
     "EQUIP_UNKNOWN": 24,
     "RECIPE_UNKNOWN_STEP": 24
   },
-  "injection_rate": 0.03
+  "injection_rate": 0.03,
+  "defective_count": 6,
+  "defective_products": [
+    "GEN_0019",
+    "GEN_0099",
+    "GEN_0138",
+    "GEN_0185",
+    "GEN_0383",
+    "GEN_0457"
+  ]
 }
