@@ -260,6 +260,29 @@ class TraceTests(unittest.TestCase):
                 self.assertEqual(result.returncode, 2)
                 self.assertFalse((Path(directory) / "reports").exists())
 
+    def test_t47_case_colliding_product_ids_keep_distinct_reproducible_files(self):
+        with tempfile.TemporaryDirectory() as directory:
+            source = Path(directory) / "case.csv"
+            source.write_text("seq,product_id,event,inspection,result,model,equipment\n"
+                              "1,p,REGISTER,,,A,\n2,P,REGISTER,,,B,\n", encoding="utf-8")
+            command = ["py", "-m", "src.main", str(source), "--recipe",
+                       str(ROOT / "recipes/lamp_models_retest.json"), "--equipment",
+                       str(ROOT / "recipes/equipment.json")]
+            env = {**os.environ, "PYTHONPATH": str(ROOT), "PYTHONIOENCODING": "utf-8"}
+            run = subprocess.run(command + ["--trace", "p", "--trace", "P"], cwd=directory,
+                                 env=env, capture_output=True)
+            self.assertEqual(run.returncode, 0, run.stderr.decode("utf-8"))
+            reports = Path(directory) / "reports"
+            traces = {path.name: path.read_bytes() for path in reports.glob("case_trace_*.csv")}
+            self.assertEqual(len(traces), 2)
+            self.assertEqual(len({name.casefold() for name in traces}), 2)
+            self.assertTrue(any(b",p," in content for content in traces.values()))
+            self.assertTrue(any(b",P," in content for content in traces.values()))
+            for product_id in ("P", "p"):
+                again = subprocess.run(command + ["--trace", product_id], cwd=directory, env=env, capture_output=True)
+                self.assertEqual(again.returncode, 0, again.stderr.decode("utf-8"))
+                self.assertEqual({path.name: path.read_bytes() for path in reports.glob("case_trace_*.csv")}, traces)
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -54,8 +54,12 @@ def build_trace(analysis, product_id):
     return rows
 
 
-def write_trace(stem, product_id, rows):
-    path = Path("reports") / (stem + "_trace_" + quote(product_id, safe="") + ".csv")
+def write_trace(stem, product_id, rows, product_ids):
+    component = quote(product_id, safe="")
+    if any(other != product_id and quote(other, safe="").casefold() == component.casefold()
+           for other in product_ids):
+        component += "!" + product_id.encode("utf-8").hex()
+    path = Path("reports") / (stem + "_trace_" + component + ".csv")
     path.parent.mkdir(parents=True, exist_ok=True)
     with path.open("w", encoding="utf-8-sig", newline="") as target:
         writer = csv.DictWriter(target, fieldnames=TRACE_COLUMNS)

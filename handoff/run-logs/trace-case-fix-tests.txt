@@ -1,0 +1,8 @@
+$ py -m unittest discover -s tests -p test_summary.py
+.................
+----------------------------------------------------------------------
+Ran 17 tests in 2.216s
+
+OK
+
+exit_code=0; elapsed_seconds=2.413501

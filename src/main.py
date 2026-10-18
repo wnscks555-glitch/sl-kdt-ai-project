@@ -145,7 +145,8 @@ def run_recipe(input_csv: Path, recipe_path: Path, parser, equipment_path=None, 
         if traces:
             from .trace import write_trace
 
-            trace_paths = [write_trace(input_csv.stem, product_id, rows) for product_id, rows in traces]
+            product_ids = {decision.product_id for decision in analysis.decisions}
+            trace_paths = [write_trace(input_csv.stem, product_id, rows, product_ids) for product_id, rows in traces]
     except (OSError, UnicodeError, csv.Error, ValueError) as error:
         parser.exit(2, "오류: " + str(error) + "\n")
     heading = "product_id | model | 최종 상태 | 미완료 이유"
