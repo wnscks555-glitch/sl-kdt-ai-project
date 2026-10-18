@@ -1,7 +1,7 @@
 """제품별 선형 레시피 판정. 파일과 터미널 입출력은 하지 않는다."""
 
 from dataclasses import dataclass, field, replace
-from typing import Dict, Mapping
+from typing import Dict, FrozenSet, Mapping, Optional, Tuple
 
 from .recipe import ModelRecipe
 
@@ -18,14 +18,39 @@ RULE_IDS = (
 
 
 @dataclass(frozen=True)
+class InspectionAttempt:
+    seq: str
+    result: str
+    retest_number: int = 0
+
+    @property
+    def text(self) -> str:
+        suffix = "(재검사 " + str(self.retest_number) + ")" if self.retest_number else ""
+        return self.result + "@" + self.seq + suffix
+
+
+@dataclass(frozen=True)
 class RecipeProduct:
     model: str
     recipe: ModelRecipe
     completed_steps: int = 0
     inspections: Dict[str, str] = field(default_factory=dict)
+    open_requests: FrozenSet[str] = frozenset()
+    retest_counts: Dict[str, int] = field(default_factory=dict)
+    inspection_history: Dict[str, Tuple[InspectionAttempt, ...]] = field(default_factory=dict)
+    discarded_inspection: Optional[str] = None
+
+    @property
+    def history(self) -> str:
+        return "; ".join(
+            item.id + ": " + " → ".join(attempt.text for attempt in self.inspection_history[item.id])
+            for item in self.recipe.inspections if item.id in self.inspection_history
+        )
 
     @property
     def status(self) -> str:
+        if self.discarded_inspection is not None:
+            return "폐기"
         if "FAIL" in self.inspections.values():
             return "보류"
         if self.completed_steps == len(self.recipe.steps) and all(
@@ -40,13 +65,16 @@ class RecipeProduct:
 
     @property
     def incomplete_reason(self) -> str:
+        if self.discarded_inspection is not None:
+            return self.discarded_inspection + " 재검사 한도 " + str(self.recipe.retest_limit) + "회 초과 FAIL로 폐기"
         reasons = [step + " 미완료" for step in self.recipe.steps[self.completed_steps:]]
         for item in self.recipe.inspections:
             result = self.inspections.get(item.id)
             if result is None:
                 reasons.append(item.id + " 미실시")
             elif result == "FAIL":
-                reasons.append(item.id + " FAIL")
+                suffix = "(재검사 요청됨)" if item.id in self.open_requests else ""
+                reasons.append(item.id + " FAIL" + suffix)
         return "; ".join(reasons)
 
 
@@ -64,6 +92,7 @@ class Decision:
 class RecipeProcess:
     def __init__(self, models: Mapping[str, ModelRecipe]) -> None:
         self.models = models
+        self.retest_enabled = all(model.retest_limit is not None for model in models.values())
         self.products: Dict[str, RecipeProduct] = {}
 
     def apply(self, row: Mapping[str, str]) -> Decision:
@@ -84,21 +113,54 @@ class RecipeProcess:
             rule_id = "RULE_RECIPE"
         elif product is None:
             return self._decision(row, "RULE_PRESERVE", False, "미등록 제품")
-        elif event == "INSPECT":
+        elif product.discarded_inspection is not None:
+            return self._decision(row, "RULE_RETEST", False, "폐기된 제품")
+        elif event in ("INSPECT", "RETEST_REQUEST"):
+            if event == "RETEST_REQUEST" and not self.retest_enabled:
+                return self._decision(row, "RULE_RECIPE", False, "재검사 모드가 아닌 레시피")
             inspection = row["inspection"]
             item = next((item for item in product.recipe.inspections if item.id == inspection), None)
             if item is None:
                 return self._decision(row, "RULE_RECIPE", False, "제품 레시피에 없는 검사 " + inspection)
-            if product.completed_steps <= product.recipe.steps.index(item.after):
-                return self._decision(row, "RULE_INSP_PRE", False, item.after + " 미완료")
-            if inspection in product.inspections:
-                return self._decision(row, "RULE_PRESERVE", False, inspection + " 결과 이미 존재")
-            updated = replace(product, inspections={**product.inspections, inspection: row["result"]})
-            rule_id = (
-                "RULE_FAIL_HOLD"
-                if updated.status in ("보류", "레시피 모의 흐름 완료")
-                else "RULE_NOT_DONE"
-            )
+            if event == "RETEST_REQUEST":
+                if inspection in product.open_requests:
+                    return self._decision(row, "RULE_RETEST", False, "이미 열린 재검사 요청")
+                if product.inspections.get(inspection) != "FAIL":
+                    return self._decision(row, "RULE_RETEST", False, "미해결 FAIL 없음")
+                updated = replace(product, open_requests=product.open_requests | {inspection})
+                attempt = InspectionAttempt(row["seq"], "요청")
+                rule_id = "RULE_RETEST"
+            else:
+                if product.completed_steps <= product.recipe.steps.index(item.after):
+                    return self._decision(row, "RULE_INSP_PRE", False, item.after + " 미완료")
+                result = row["result"]
+                if inspection in product.inspections:
+                    if inspection not in product.open_requests:
+                        return self._decision(row, "RULE_PRESERVE", False, inspection + " 결과 이미 존재")
+                    count = product.retest_counts.get(inspection, 0) + 1
+                    updated = replace(
+                        product, inspections={**product.inspections, inspection: result},
+                        open_requests=product.open_requests - {inspection},
+                        retest_counts={**product.retest_counts, inspection: count},
+                        discarded_inspection=(
+                            inspection if count >= product.recipe.retest_limit and result == "FAIL" else None
+                        ),
+                    )
+                    attempt = InspectionAttempt(row["seq"], result, count)
+                    rule_id = "RULE_RETEST"
+                else:
+                    updated = replace(product, inspections={**product.inspections, inspection: result})
+                    attempt = InspectionAttempt(row["seq"], result)
+                    rule_id = (
+                        "RULE_FAIL_HOLD"
+                        if updated.status in ("보류", "레시피 모의 흐름 완료")
+                        else "RULE_NOT_DONE"
+                    )
+            if self.retest_enabled:
+                updated = replace(updated, inspection_history={
+                    **product.inspection_history,
+                    inspection: product.inspection_history.get(inspection, ()) + (attempt,),
+                })
         else:
             if event not in product.recipe.steps:
                 return self._decision(row, "RULE_RECIPE", False, "제품 레시피에 없는 공정 " + event)
@@ -137,6 +199,11 @@ class RecipeProcess:
                 return "inspection이 비어 있음"
             if row["result"] not in ("PASS", "FAIL"):
                 return "잘못된 result (PASS 또는 FAIL 필요)"
+        elif row["event"] == "RETEST_REQUEST":
+            if not row["inspection"]:
+                return "inspection이 비어 있음"
+            if row["result"]:
+                return "RETEST_REQUEST의 result는 빈칸이어야 함"
         elif row["inspection"] or row["result"]:
             return "INSPECT 이외의 inspection과 result는 빈칸이어야 함"
         return ""

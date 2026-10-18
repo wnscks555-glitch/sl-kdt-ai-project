@@ -908,10 +908,153 @@ reports/sample_events_v2_rows.csv: 체크아웃 바이트 동일=True
 명령: `py -m unittest discover -s tests`
 
 ```text
-.........................................
-----------------------------------------------------------------------
-Ran 41 tests in 5.376s
-
-OK
+.........................................
+----------------------------------------------------------------------
+Ran 41 tests in 5.376s
+
+OK
+```
+종료 코드: 0
+
+## ② 재검사 판정 (T23–T30)
+
+- 제품·검사별 열린 요청, 허용된 재검사 결과 횟수, 최초 FAIL을 보존하는 시도 이력, 폐기 원인을 추가. 검증을 끝낸 새 상태만 기존 한 곳에서 반영한다. 거절은 전체 제품 딕셔너리 깊은 복사와 비교한다.
+- T23–T30 및 판정 우선순위·동시 요청·물리적 순서 이력 테스트 10개를 먼저 추가. 구현 전 아래 9개 실패(요청이 기존 형식 오류로 거절됨), 구현 후 전체 51개 통과. tests/test_rules.py·tests/test_recipe.py는 그대로 사용했다.
+- **명세 이견(T32)**: 기존 1단계는 inspection이 채워진 RETEST_REQUEST를 RULE_PRESERVE로 거절했다. 현행 명세의 명시 기대 RULE_RECIPE를 우선하여 요청 형식을 따로 인식하고 재검사 모드가 아니면 RULE_RECIPE로 거절한다. T11–T22 및 기존 보고서는 유지한다. 기대표·기존 테스트는 수정하지 않는다.
+- **명세 이견(결정 근거)**: decisions.md의 “미해결 FAIL 최대 1개” 설명과 달리 T29는 복수 FAIL을 요구한다. 현행 규칙대로 제품+검사별 요청·횟수를 독립 관리하며 동시 요청도 허용한다.
+- 해석: history에는 허용된 최초 결과·요청·재검사만 남긴다. 검사 그룹은 레시피 순서, 각 그룹은 실제 입력 순서를 유지하고 seq로 정렬하지 않는다. 폐기 이유는 명세 문자열 그대로이며, 한도 2회에 도달한 FAIL에 폐기된다(세 번째 재검사를 기다리지 않음).
+
+명령: `py -m unittest discover -s tests -p test_retest.py`
+
+```text
+FFFF.FFFFF...
+======================================================================
+FAIL: test_parallel_requests_and_history_follow_recipe_and_physical_order (test_retest.RetestProcessTests)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "C:\Users\PC\Documents\ChatGPT\에스엘 KDT AI 교육 부트캠프\project\tests\test_retest.py", line 244, in test_parallel_requests_and_history_follow_recipe_and_physical_order
+    self.request("FINAL")
+  File "C:\Users\PC\Documents\ChatGPT\에스엘 KDT AI 교육 부트캠프\project\tests\test_retest.py", line 116, in request
+    return self.accept("RETEST_REQUEST", inspection=inspection, rule_id="RULE_RETEST")
+  File "C:\Users\PC\Documents\ChatGPT\에스엘 KDT AI 교육 부트캠프\project\tests\test_retest.py", line 91, in accept
+    self.assertTrue(decision.accepted, decision)
+AssertionError: False is not true : Decision(seq='11', product_id='a', input_text='RETEST_REQUEST FINAL', rule_id='RULE_PRESERVE', accepted=False, reason='INSPECT 이외의 inspection과 result는 빈칸이어야 함', state='보류')
+
+======================================================================
+FAIL: test_priority_format_registration_scrap_recipe_and_inspection_timing (test_retest.RetestProcessTests)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "C:\Users\PC\Documents\ChatGPT\에스엘 KDT AI 교육 부트캠프\project\tests\test_retest.py", line 230, in test_priority_format_registration_scrap_recipe_and_inspection_timing
+    self.scrap()
+  File "C:\Users\PC\Documents\ChatGPT\에스엘 KDT AI 교육 부트캠프\project\tests\test_retest.py", line 124, in scrap
+    self.request()
+  File "C:\Users\PC\Documents\ChatGPT\에스엘 KDT AI 교육 부트캠프\project\tests\test_retest.py", line 116, in request
+    return self.accept("RETEST_REQUEST", inspection=inspection, rule_id="RULE_RETEST")
+  File "C:\Users\PC\Documents\ChatGPT\에스엘 KDT AI 교육 부트캠프\project\tests\test_retest.py", line 91, in accept
+    self.assertTrue(decision.accepted, decision)
+AssertionError: False is not true : Decision(seq='8', product_id='a', input_text='RETEST_REQUEST LEAK', rule_id='RULE_PRESERVE', accepted=False, reason='INSPECT 이외의 inspection과 result는 빈칸이어야 함', state='보류')
+
+======================================================================
+FAIL: test_t23_request_keeps_hold_and_does_not_count_as_attempt (test_retest.RetestProcessTests)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "C:\Users\PC\Documents\ChatGPT\에스엘 KDT AI 교육 부트캠프\project\tests\test_retest.py", line 130, in test_t23_request_keeps_hold_and_does_not_count_as_attempt
+    requested = self.request()
+  File "C:\Users\PC\Documents\ChatGPT\에스엘 KDT AI 교육 부트캠프\project\tests\test_retest.py", line 116, in request
+    return self.accept("RETEST_REQUEST", inspection=inspection, rule_id="RULE_RETEST")
+  File "C:\Users\PC\Documents\ChatGPT\에스엘 KDT AI 교육 부트캠프\project\tests\test_retest.py", line 91, in accept
+    self.assertTrue(decision.accepted, decision)
+AssertionError: False is not true : Decision(seq='8', product_id='a', input_text='RETEST_REQUEST LEAK', rule_id='RULE_PRESERVE', accepted=False, reason='INSPECT 이외의 inspection과 result는 빈칸이어야 함', state='보류')
+
+======================================================================
+FAIL: test_t24_pass_releases_hold_resumes_and_preserves_original_fail (test_retest.RetestProcessTests)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "C:\Users\PC\Documents\ChatGPT\에스엘 KDT AI 교육 부트캠프\project\tests\test_retest.py", line 142, in test_t24_pass_releases_hold_resumes_and_preserves_original_fail
+    request = self.request()
+  File "C:\Users\PC\Documents\ChatGPT\에스엘 KDT AI 교육 부트캠프\project\tests\test_retest.py", line 116, in request
+    return self.accept("RETEST_REQUEST", inspection=inspection, rule_id="RULE_RETEST")
+  File "C:\Users\PC\Documents\ChatGPT\에스엘 KDT AI 교육 부트캠프\project\tests\test_retest.py", line 91, in accept
+    self.assertTrue(decision.accepted, decision)
+AssertionError: False is not true : Decision(seq='8', product_id='a', input_text='RETEST_REQUEST LEAK', rule_id='RULE_PRESERVE', accepted=False, reason='INSPECT 이외의 inspection과 result는 빈칸이어야 함', state='보류')
+
+======================================================================
+FAIL: test_t26_failed_retest_consumes_request_and_second_pass_is_allowed (test_retest.RetestProcessTests)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "C:\Users\PC\Documents\ChatGPT\에스엘 KDT AI 교육 부트캠프\project\tests\test_retest.py", line 161, in test_t26_failed_retest_consumes_request_and_second_pass_is_allowed
+    self.request()
+  File "C:\Users\PC\Documents\ChatGPT\에스엘 KDT AI 교육 부트캠프\project\tests\test_retest.py", line 116, in request
+    return self.accept("RETEST_REQUEST", inspection=inspection, rule_id="RULE_RETEST")
+  File "C:\Users\PC\Documents\ChatGPT\에스엘 KDT AI 교육 부트캠프\project\tests\test_retest.py", line 91, in accept
+    self.assertTrue(decision.accepted, decision)
+AssertionError: False is not true : Decision(seq='8', product_id='a', input_text='RETEST_REQUEST LEAK', rule_id='RULE_PRESERVE', accepted=False, reason='INSPECT 이외의 inspection과 result는 빈칸이어야 함', state='보류')
+
+======================================================================
+FAIL: test_t27_limit_fail_is_accepted_then_all_inputs_preserve_scrap (test_retest.RetestProcessTests)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "C:\Users\PC\Documents\ChatGPT\에스엘 KDT AI 교육 부트캠프\project\tests\test_retest.py", line 174, in test_t27_limit_fail_is_accepted_then_all_inputs_preserve_scrap
+    decision = self.scrap()
+  File "C:\Users\PC\Documents\ChatGPT\에스엘 KDT AI 교육 부트캠프\project\tests\test_retest.py", line 124, in scrap
+    self.request()
+  File "C:\Users\PC\Documents\ChatGPT\에스엘 KDT AI 교육 부트캠프\project\tests\test_retest.py", line 116, in request
+    return self.accept("RETEST_REQUEST", inspection=inspection, rule_id="RULE_RETEST")
+  File "C:\Users\PC\Documents\ChatGPT\에스엘 KDT AI 교육 부트캠프\project\tests\test_retest.py", line 91, in accept
+    self.assertTrue(decision.accepted, decision)
+AssertionError: False is not true : Decision(seq='8', product_id='a', input_text='RETEST_REQUEST LEAK', rule_id='RULE_PRESERVE', accepted=False, reason='INSPECT 이외의 inspection과 result는 빈칸이어야 함', state='보류')
+
+======================================================================
+FAIL: test_t28_request_rejections_preserve_every_product (test_retest.RetestProcessTests)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "C:\Users\PC\Documents\ChatGPT\에스엘 KDT AI 교육 부트캠프\project\tests\test_retest.py", line 187, in test_t28_request_rejections_preserve_every_product
+    self.reject(self.row("RETEST_REQUEST", inspection="LEAK"), "RULE_RETEST", "미해결 FAIL 없음")
+  File "C:\Users\PC\Documents\ChatGPT\에스엘 KDT AI 교육 부트캠프\project\tests\test_retest.py", line 101, in reject
+    self.assertEqual(decision.rule_id, rule_id)
+AssertionError: 'RULE_PRESERVE' != 'RULE_RETEST'
+- RULE_PRESERVE
++ RULE_RETEST
+
+
+======================================================================
+FAIL: test_t29_other_failed_inspection_keeps_hold_and_requests_are_independent (test_retest.RetestProcessTests)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "C:\Users\PC\Documents\ChatGPT\에스엘 KDT AI 교육 부트캠프\project\tests\test_retest.py", line 207, in test_t29_other_failed_inspection_keeps_hold_and_requests_are_independent
+    self.request("LIGHT")
+  File "C:\Users\PC\Documents\ChatGPT\에스엘 KDT AI 교육 부트캠프\project\tests\test_retest.py", line 116, in request
+    return self.accept("RETEST_REQUEST", inspection=inspection, rule_id="RULE_RETEST")
+  File "C:\Users\PC\Documents\ChatGPT\에스엘 KDT AI 교육 부트캠프\project\tests\test_retest.py", line 91, in accept
+    self.assertTrue(decision.accepted, decision)
+AssertionError: False is not true : Decision(seq='12', product_id='a', input_text='RETEST_REQUEST LIGHT', rule_id='RULE_PRESERVE', accepted=False, reason='INSPECT 이외의 inspection과 result는 빈칸이어야 함', state='보류')
+
+======================================================================
+FAIL: test_t30_counters_are_per_inspection_and_limit_pass_never_scraps (test_retest.RetestProcessTests)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "C:\Users\PC\Documents\ChatGPT\에스엘 KDT AI 교육 부트캠프\project\tests\test_retest.py", line 215, in test_t30_counters_are_per_inspection_and_limit_pass_never_scraps
+    self.request()
+  File "C:\Users\PC\Documents\ChatGPT\에스엘 KDT AI 교육 부트캠프\project\tests\test_retest.py", line 116, in request
+    return self.accept("RETEST_REQUEST", inspection=inspection, rule_id="RULE_RETEST")
+  File "C:\Users\PC\Documents\ChatGPT\에스엘 KDT AI 교육 부트캠프\project\tests\test_retest.py", line 91, in accept
+    self.assertTrue(decision.accepted, decision)
+AssertionError: False is not true : Decision(seq='8', product_id='a', input_text='RETEST_REQUEST LEAK', rule_id='RULE_PRESERVE', accepted=False, reason='INSPECT 이외의 inspection과 result는 빈칸이어야 함', state='보류')
+
+----------------------------------------------------------------------
+Ran 13 tests in 1.094s
+
+FAILED (failures=9)
+```
+종료 코드: 1
+
+명령: `py -m unittest discover -s tests`
+
+```text
+...................................................
+----------------------------------------------------------------------
+Ran 51 tests in 5.177s
+
+OK
 ```
 종료 코드: 0
