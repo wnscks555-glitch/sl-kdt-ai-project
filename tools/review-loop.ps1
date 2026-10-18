@@ -19,7 +19,9 @@ Claude와 Codex는 커밋하지 않는다. 커밋은 이 스크립트가 한다.
 #>
 param(
     [ValidateRange(0, 10)]
-    [int]$MaxFixes = 3
+    [int]$MaxFixes = 3,
+    # 검토에 쓰는 Claude 모델. 플랜에서 쓸 수 없으면 Claude 실행 실패로 멈춘다.
+    [string]$ReviewModel = 'claude-opus-5-5'
 )
 
 $ErrorActionPreference = 'Stop'
@@ -98,7 +100,7 @@ while ($true) {
 변경 범위는 git diff $prevReviewCommit..HEAD 로 확인한다.
 - 이전 높음/중간 항목이 해결됐는지 항목별로 판정한다.
 - handoff/gpt-log.md의 반박이 근거 있으면 받아들이고 해결로 처리한다.
-- 이번 diff와 무관한 새 지적은 높음일 때만 올린다.
+- 수정이 새 문제를 만들지 않았는지 반례로 다시 확인한다. 새 지적도 중간 이상이면 올린다.
 "@
     } else {
         $scope = "첫 검토다. 변경 범위는 git diff $baseCommit..HEAD 와 git log $baseCommit..HEAD 로 확인한다(직전 검토 이후 커밋 전체)."
@@ -107,18 +109,19 @@ while ($true) {
     $claudePrompt = @"
 CLAUDE.md의 검수자 규칙을 따른다. 자동 검토 루프의 검토 단계다.
 handoff/tasks.md 맨 위 「현행 작업」의 명세와 기대표를 기준으로 코드를 검수하라.
-v1 보존 조건(T1-T10 무수정 통과, v1 보고서 바이트 동일)도 반드시 확인한다.
+이전 단계들의 보존 조건(기존 테스트 무수정 통과, 기존 보고서 동일)도 반드시 확인한다.
 $scope
 - 테스트는 py -m unittest discover -s tests 로 직접 실행하고 명령과 결과를 붙인다.
-- 결과는 $reviewFile 하나에만 쓴다. 다른 파일은 만들거나 고치지 않는다.
-- 심각도는 높음/중간/낮음이다. 낮음은 기록만 하고 수정 요구로 세지 않는다.
+- CLAUDE.md의 「반례 탐색」대로 명세 밖 반례를 최소 5개 handoff/reviews/probes/test_probe_$num.py 에 쓰고 실행한다.
+- 결과는 $reviewFile 와 handoff/reviews/probes/test_probe_$num.py 에만 쓴다. 다른 파일은 만들거나 고치지 않는다.
+- 심각도는 CLAUDE.md의 기준(영향)으로만 정한다. 마감·일정은 심각도를 낮추는 근거가 아니다. 낮음은 기록만 하고 수정 요구로 세지 않는다.
 - 파일의 마지막 줄에는 반드시 아래 둘 중 하나만 단독으로 쓴다.
   VERDICT: PASS   (미해결 높음/중간이 없을 때)
   VERDICT: FIX    (미해결 높음/중간이 하나라도 있을 때)
 "@
 
     $claudeLog = Join-Path $logDir "$num-claude.txt"
-    $claudePrompt | claude -p --permission-mode dontAsk 2>&1 | Tee-Object -FilePath $claudeLog
+    $claudePrompt | claude -p --model $ReviewModel --permission-mode dontAsk 2>&1 | Tee-Object -FilePath $claudeLog
     if ($LASTEXITCODE -ne 0) { Stop-Loop "Claude 실행 실패 (종료 코드 $LASTEXITCODE). 로그: $claudeLog" }
 
     $verdict = Get-Verdict (Join-Path $root $reviewFile)
