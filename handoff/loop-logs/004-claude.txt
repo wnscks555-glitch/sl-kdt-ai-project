@@ -1,0 +1,16 @@
+Review 004 is written to `handoff/reviews/004-review.md` and ends with **VERDICT: PASS**. I found no high or medium issues; the 5 low ones are recorded only.
+
+- **Tests:** I ran `py -m unittest discover -s tests` myself: `Ran 73 tests in 8.623s` and `OK`.
+- **Preservation conditions (v1, stage 1, stage 2):** met.
+  - In the reviewed commits, `git diff --stat` shows no changes to `src/rules.py`, the 3 test files that must not be edited, `AGENTS.md`, or the 9 existing sample reports.
+  - T1–T10 pass unmodified.
+  - A test reruns the CLI for the v1, stage 1 and stage 2 samples and compares the output byte for byte with the committed reports. It passed.
+- **T33–T41:** all match the expected table. I cross-checked the code branches, the tests and the sample reports. I also counted LEAK-1 by hand in the sample: it stops at seq 94 after 12 counted results with 5 FAILs, which matches the report.
+- **Agreement with GPT:** I noted where the implementation is right and why. For example, stop checks sit in one place just before a row is accepted, so rejected rows can't change equipment state. And `type(value) is not int` correctly rejects `true`.
+- **Low (L1–L5):**
+  - L1: the report-writing code decides it is in equipment mode by counting the reports (4 instead of 3).
+  - L2: a stop could in principle be undone; nothing in the current code can trigger that.
+  - L3: the sample runs T39 on LEAK-1 because LEAK-2 is already stopped by then; the unit test uses LEAK-2 as the table says.
+  - L4: the expected-table heading in `tasks.md` still says "draft".
+  - L5: the exclusion lists in the README's earlier sections name features that now exist.
+- **Not verified:** I didn't rerun the CLI myself to compare reports. The permission mode blocked the command, and running it inside the repo would overwrite `reports/`. The tests above do that same comparison in a temporary folder, and they passed.
