@@ -3019,3 +3019,25 @@ exit_code=0; elapsed_seconds=11.203095
 - 상세 코드 28종은 `src/reason_codes.py`의 (규칙 ID, 정확한 문구/동적 ID 템플릿) 고정 표로 대응한다. 동적 문구는 실제 입력 ID 또는 레시피 공정으로 재구성한 문구만 일치시킨다. 미등록 문구는 summary 실패로 처리한다.
 - 최초/전체 지표는 허용된 결과만 센다. 미실시는 검사별·전체에 표시하고, 아직 배정되지 않은 설비로 귀속할 수 없어 설비별 미실시 칸은 비운다. 정지 원인은 최초 결과 창의 물리 행 인덱스와 seq·제품 ID를 별도로 보관한다.
 - 품질 파레토는 최초 FAIL 0·재검사 FAIL 양수인 조합도 함께 표시한다. 정지 설비 거절은 별도 절이며 알려진 나머지 사유는 입력 오류 파레토에 포함된다. unknown은 실패하므로 현재 other_rejections는 0이다.
+
+### 실행 기록: stage3-tests
+
+명령·출력 원문: [run-logs/stage3-tests.txt](run-logs/stage3-tests.txt)
+
+```text
+$ py -m unittest discover -s tests
+...........................................................................................
+----------------------------------------------------------------------
+Ran 91 tests in 11.542s
+
+OK
+
+exit_code=0; elapsed_seconds=11.747833
+```
+
+### trace 검증 근거·해석
+
+- T47·T48 테스트를 먼저 추가하고 `py -m unittest discover -s tests -p test_summary.py`에서 `ModuleNotFoundError: No module named 'src.trace'` / `FAILED (errors=1)`을 관측했다. 구현 후 전체 91개 통과.
+- T34 행 26–31만 원래 물리 순서로 표시하고 seq 30의 정지 설비 거절에 LEAK-2 정지 행 25/T33_P3 및 FAIL 행 14/T33_T35_A, 25/T33_P3를 연결했다. 중복·감소 seq 테스트도 물리 행 인덱스 26–31 및 원인 인덱스 14·25로 확인했다.
+- summary·trace를 모두 먼저 계산·검증한 뒤 파일을 저장한다. 요청한 trace 중 하나라도 입력에 없으면 종료 2이며 기존 4종 포함 보고서를 새로 만들지 않는다. 반복 --trace, summary 동시 사용과 기존 보고서 바이트 보존을 확인했다.
+- 입력에 행은 있으나 등록이 거절된 ID도 추적할 수 있으며 마지막 상태는 미등록으로 표시한다. 파일명에 쓸 수 없는 제품 ID 문자는 percent encoding하여 reports/ 밖 경로가 되지 않게 한다. 일반 제품 ID는 그대로 쓴다.

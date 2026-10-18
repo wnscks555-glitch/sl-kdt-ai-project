@@ -23,6 +23,7 @@ from src.main import read_events
 from src.recipe import load_recipe
 from src.recipe_rules import EQUIPMENT_INPUT_COLUMNS
 from src.summary import ASSUMPTION_NOTICE, SUMMARY_COLUMNS, build_analysis, build_summary, write_summary
+from src.trace import build_trace
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -187,6 +188,75 @@ class SummaryTests(unittest.TestCase):
         for options in (("--summary",), ("--recipe", str(ROOT / "recipes/lamp_models_retest.json"), "--summary")):
             with self.subTest(options=options), tempfile.TemporaryDirectory() as directory:
                 result = self.cli(directory, *options)
+                self.assertEqual(result.returncode, 2)
+                self.assertFalse((Path(directory) / "reports").exists())
+
+
+class TraceTests(unittest.TestCase):
+    def setUp(self):
+        self.models = load_recipe(ROOT / "recipes/lamp_models_retest.json").models
+        self.book = load_equipment(ROOT / "recipes/equipment.json", self.models)
+        self.events = read_events(ROOT / "data/sample_events_equipment.csv", EQUIPMENT_INPUT_COLUMNS)
+
+    def test_t47_other_product_stop_causes_and_final_evidence(self):
+        analysis = build_analysis(self.events, self.models, self.book)
+        rows = build_trace(analysis, "T34")
+        events = [row for row in rows if row["section"] == "event"]
+        self.assertEqual([row["seq"] for row in events], ["26", "27", "28", "29", "30", "31"])
+        self.assertTrue(all(row["product_id"] == "T34" for row in rows))
+        rejected = events[-2]
+        self.assertEqual((rejected["rule_id"], rejected["decision"], rejected["equipment"]),
+                         ("RULE_EQUIP", "거절", "LEAK-2"))
+        self.assertEqual((rejected["stop_seq"], rejected["stop_product_id"],
+                          rejected["cause_seqs"], rejected["cause_product_ids"]),
+                         ("25", "T33_P3", "14;25", "T33_T35_A;T33_P3"))
+        self.assertEqual(rows[-1]["section"], "current_state")
+        self.assertEqual(rows[-1]["state"], analysis.process.products["T34"].status)
+        self.assertIn("PASS@31[LEAK-1]", rows[-1]["history"])
+        self.assertIn("P4 미완료", rows[-1]["incomplete_reason"])
+
+    def test_t47_duplicate_decreasing_seq_keeps_physical_order_and_causes(self):
+        for index, event in enumerate(self.events):
+            event["seq"] = str(3 - index % 3)
+        analysis = build_analysis(self.events, self.models, self.book)
+        rows = build_trace(analysis, "T34")
+        events = [row for row in rows if row["section"] == "event"]
+        self.assertEqual([row["row_index"] for row in events], [26, 27, 28, 29, 30, 31])
+        self.assertEqual([row["seq"] for row in events], [self.events[i - 1]["seq"] for i in range(26, 32)])
+        self.assertEqual((events[-2]["stop_row_index"], events[-2]["cause_row_indices"]), (25, "14;25"))
+
+    def run_cli(self, directory, *options):
+        return subprocess.run(
+            ["py", "-m", "src.main", str(ROOT / "data/sample_events_equipment.csv"), *options],
+            cwd=directory, capture_output=True,
+            env={**os.environ, "PYTHONPATH": str(ROOT), "PYTHONIOENCODING": "utf-8"})
+
+    def test_t47_cli_repeated_trace_and_summary_use_separate_files(self):
+        options = ("--recipe", str(ROOT / "recipes/lamp_models_retest.json"),
+                   "--equipment", str(ROOT / "recipes/equipment.json"), "--summary",
+                   "--trace", "T34", "--trace", "T33_T35_A")
+        with tempfile.TemporaryDirectory() as directory:
+            run = self.run_cli(directory, *options)
+            self.assertEqual(run.returncode, 0, run.stderr.decode("utf-8"))
+            reports = Path(directory) / "reports"
+            before = {path.name: path.read_bytes() for path in reports.iterdir()}
+            self.assertEqual(len(before), 7)
+            self.assertIn("sample_events_equipment_trace_T34.csv", before)
+            self.assertIn("현재 상태의 근거", run.stdout.decode("utf-8"))
+            self.assertEqual(self.run_cli(directory, *options).stdout, run.stdout)
+            self.assertEqual({path.name: path.read_bytes() for path in reports.iterdir()}, before)
+            for suffix in ("rows", "products", "rejections", "equipment"):
+                name = "sample_events_equipment_" + suffix + ".csv"
+                self.assertEqual(before[name], (ROOT / "reports" / name).read_bytes())
+
+    def test_t48_unknown_trace_and_non_equipment_modes_create_no_reports(self):
+        for options in (("--trace", "T34"),
+                        ("--recipe", str(ROOT / "recipes/lamp_models_retest.json"), "--trace", "T34"),
+                        ("--recipe", str(ROOT / "recipes/lamp_models_retest.json"),
+                         "--equipment", str(ROOT / "recipes/equipment.json"), "--summary",
+                         "--trace", "T34", "--trace", "NO_SUCH_PRODUCT")):
+            with self.subTest(options=options), tempfile.TemporaryDirectory() as directory:
+                result = self.run_cli(directory, *options)
                 self.assertEqual(result.returncode, 2)
                 self.assertFalse((Path(directory) / "reports").exists())
 
