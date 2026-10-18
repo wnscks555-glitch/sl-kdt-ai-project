@@ -222,3 +222,105 @@ reports/sample_events_rejections.csv
 - 위 리뷰는 내부 Codex 검토이며 외부 모델 전송이나 Claude 실행을 한 것이 아니다. Claude의 실제 교차검수 결과는 사용자가 검수 후 남길 handoff/reviews/ 기록으로 구분한다.
 - 교훈 기록 판단(ce-compound mode:non-interactive): 상태 보존·보류 우선·결정성·실행 환경 판단은 최종 코드·테스트·README·이 로그에서 복원할 수 있어 별도 해결 문서를 만들지 않았다(Documentation skipped).
 - 검증 범위: 실제 Python 3.9.13 테스트와 CLI, 보고서 재실행 동일성, 파일 보존, 정적 코드 리뷰. 별도 lint/typecheck 설정은 없다. 출력 원문의 빈 열 뒤 공백 2곳은 그대로 보존하며, 코드·일반 문서의 공백 검사와 구분했다.
+
+## 2026-10-18 T1–T10 v2 착수 전 회귀 기준
+
+- 시작 커밋 `27e8992` / `main` / 작업 트리 깨끗함. CE 설정·`docs/solutions/` 없음. 사용자 확정 현행 절과 5단계 순서를 구현 계획으로 사용한다(계획 재작성 없음). `ce-work mode:return-to-caller`의 native 경로로 로컬 구현·검증하고 주 에이전트가 리뷰·교훈 판단을 맡는다.
+- 리뷰 001: L1 보류(v1 테스트 동결 및 사용자 보류 승인), L2 보류(v1 문구 보존), L3 보류(product_id 정확 일치 유지; v2 설명에 명시), L4 보류(당시 운영 기록이며 현재 트리 깨끗함; review-loop 실행은 범위 밖).
+- 명세 이견: v1 생성 파일과 Git 내부 blob의 엄격한 바이트 비교는 착수 전부터 불일치한다. `core.autocrlf=true`, blob LF / 체크아웃·csv.writer 출력 CRLF가 원인이다. Git 체크아웃 필터를 적용한 커밋 파일과 생성 파일은 3종 모두 바이트 동일하고, CRLF를 LF로 바꿔 비교한 blob 내용도 동일하다. v1 보존을 위해 출력 줄바꿈·Git 설정·기대표를 바꾸지 않고 이 차이를 명시한다.
+- 실제 실행 명령과 출력 원문(줄바꿈은 Markdown용 LF로 표시, 실행 환경 `PYTHONIOENCODING=utf-8`):
+
+```powershell
+py -m unittest discover -s tests
+```
+
+```text
+............
+----------------------------------------------------------------------
+Ran 12 tests in 0.330s
+
+OK
+exit=0
+```
+
+```powershell
+py -m src.main data/sample_events.csv
+```
+
+```text
+[행별 판정]
+seq | product_id | 입력 | 적용 규칙 ID | 허용/거절 | 거절 이유 | 처리 후 상태
+1 | T1 | REGISTER | RULE_SEQ | 허용 |  | 등록
+2 | T1 | PRE_ASSEMBLY | RULE_SEQ | 허용 |  | 예비 조립
+3 | T1 | MAIN_ASSEMBLY | RULE_SEQ | 허용 |  | 검사 대기
+4 | T1 | INSPECT LIGHT PASS | RULE_NOT_DONE | 허용 |  | 검사 대기
+5 | T1 | INSPECT LEAK PASS | RULE_FAIL_HOLD | 허용 |  | 선택한 두 검사까지의 모의 흐름 완료
+6 | T2 | REGISTER | RULE_SEQ | 허용 |  | 등록
+7 | T2 | MAIN_ASSEMBLY | RULE_SEQ | 거절 | PRE_ASSEMBLY 미완료 | 등록
+8 | T3 | REGISTER | RULE_SEQ | 허용 |  | 등록
+9 | T3 | PRE_ASSEMBLY | RULE_SEQ | 허용 |  | 예비 조립
+10 | T3 | INSPECT LIGHT PASS | RULE_INSP_PRE | 거절 | MAIN_ASSEMBLY 미완료 | 예비 조립
+11 | T4 | REGISTER | RULE_SEQ | 허용 |  | 등록
+12 | T4 | PRE_ASSEMBLY | RULE_SEQ | 허용 |  | 예비 조립
+13 | T4 | MAIN_ASSEMBLY | RULE_SEQ | 허용 |  | 검사 대기
+14 | T4 | INSPECT LIGHT PASS | RULE_NOT_DONE | 허용 |  | 검사 대기
+15 | T5 | REGISTER | RULE_SEQ | 허용 |  | 등록
+16 | T5 | PRE_ASSEMBLY | RULE_SEQ | 허용 |  | 예비 조립
+17 | T5 | MAIN_ASSEMBLY | RULE_SEQ | 허용 |  | 검사 대기
+18 | T5 | INSPECT LIGHT PASS | RULE_NOT_DONE | 허용 |  | 검사 대기
+19 | T5 | INSPECT LEAK FAIL | RULE_FAIL_HOLD | 허용 |  | 보류
+20 | T6 | REGISTER | RULE_SEQ | 허용 |  | 등록
+21 | T6 | PRE_ASSEMBLY | RULE_SEQ | 허용 |  | 예비 조립
+22 | T6 | MAIN_ASSEMBLY | RULE_SEQ | 허용 |  | 검사 대기
+23 | T6 | INSPECT LIGHT PASS | RULE_NOT_DONE | 허용 |  | 검사 대기
+24 | T6 | INSPECT LEAK FAIL | RULE_FAIL_HOLD | 허용 |  | 보류
+25 | T6 | INSPECT LEAK PASS | RULE_PRESERVE | 거절 | LEAK 결과 이미 존재 | 보류
+26 | T7 | REGISTER | RULE_SEQ | 허용 |  | 등록
+27 | T7 | PRE_ASSEMBLY | RULE_SEQ | 허용 |  | 예비 조립
+28 | T7 | MAIN_ASSEMBLY | RULE_SEQ | 허용 |  | 검사 대기
+29 | T7 | INSPECT LIGHT PASS | RULE_NOT_DONE | 허용 |  | 검사 대기
+30 | T7 | INSPECT LEAK PASS | RULE_FAIL_HOLD | 허용 |  | 선택한 두 검사까지의 모의 흐름 완료
+31 | T7 | INSPECT LIGHT FAIL | RULE_PRESERVE | 거절 | LIGHT 결과 이미 존재 | 선택한 두 검사까지의 모의 흐름 완료
+32 | T8 | REGISTER | RULE_SEQ | 허용 |  | 등록
+33 | T8 | PRE_ASSEMBLY | RULE_SEQ | 허용 |  | 예비 조립
+34 | T8 | PRE_ASSEMBLY | RULE_PRESERVE | 거절 | 중복 조립 이벤트 | 예비 조립
+35 | T9_UNREGISTERED | MAIN_ASSEMBLY | RULE_PRESERVE | 거절 | 미등록 제품 | 미등록
+36 | T9 | REGISTER | RULE_SEQ | 허용 |  | 등록
+37 | T9 | PRE_ASSEMBLY | RULE_SEQ | 허용 |  | 예비 조립
+38 | T9 | MAIN_ASSEMBLY | RULE_SEQ | 허용 |  | 검사 대기
+39 | T9 | INSPECT LIGHT OK | RULE_PRESERVE | 거절 | 잘못된 result (PASS 또는 FAIL 필요) | 검사 대기
+
+[제품별 최종 상태]
+product_id | 최종 상태 | 미완료 이유
+T1 | 선택한 두 검사까지의 모의 흐름 완료 | 
+T2 | 등록 | PRE_ASSEMBLY 미완료; MAIN_ASSEMBLY 미완료; LIGHT 미실시; LEAK 미실시
+T3 | 예비 조립 | MAIN_ASSEMBLY 미완료; LIGHT 미실시; LEAK 미실시
+T4 | 검사 대기 | LEAK 미실시
+T5 | 보류 | LEAK FAIL
+T6 | 보류 | LEAK FAIL
+T7 | 선택한 두 검사까지의 모의 흐름 완료 | 
+T8 | 예비 조립 | MAIN_ASSEMBLY 미완료; LIGHT 미실시; LEAK 미실시
+T9 | 검사 대기 | LIGHT 미실시; LEAK 미실시
+
+[규칙 ID별 거절 건수]
+규칙 ID | 거절 건수
+RULE_SEQ | 1
+RULE_INSP_PRE | 1
+RULE_NOT_DONE | 0
+RULE_FAIL_HOLD | 0
+RULE_PRESERVE | 5
+
+저장 파일:
+reports/sample_events_rows.csv
+reports/sample_events_products.csv
+reports/sample_events_rejections.csv
+exit=0
+```
+
+비교 명령: `git cat-file --filters HEAD:reports/sample_events_<종류>.csv` 및 `git show HEAD:reports/sample_events_<종류>.csv`의 원시 바이트를 `Path.read_bytes()`와 비교.
+
+```text
+reports/sample_events_rows.csv: checkout_byte_equal=True, blob_byte_equal=False, LF_normalized_equal=True, SHA-256=eb4042fb981c2ffe6611117a0ebb5636c552177a894d83a4406a607b08a952c8
+reports/sample_events_products.csv: checkout_byte_equal=True, blob_byte_equal=False, LF_normalized_equal=True, SHA-256=e2317c768731185c28b5040aea345eb197873e76cf3459adacf25b3ea89c86e6
+reports/sample_events_rejections.csv: checkout_byte_equal=True, blob_byte_equal=False, LF_normalized_equal=True, SHA-256=72143e7c3410b4a0ac1829f139027fcbca3fb305c7d83586cb0b2f8ac9d6c17f
+```
