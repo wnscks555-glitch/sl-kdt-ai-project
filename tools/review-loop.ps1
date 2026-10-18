@@ -66,15 +66,22 @@ function Save-Commit([string]$message, [string[]]$paths) {
     }
 }
 
+function Test-Dirty {
+    # 루프 자신의 로그(실패한 실행이 남긴 것 포함)는 변경으로 치지 않는다.
+    [bool](git status --porcelain -- . ':(exclude)handoff/loop-logs')
+}
+
 Assert-Command 'claude'
 Assert-Command 'codex'
 Assert-Command 'git'
 
-if (git status --porcelain) {
+if (Test-Dirty) {
     Stop-Loop '작업 트리에 커밋하지 않은 변경이 있습니다. Codex 작업을 먼저 커밋한 뒤 다시 실행하세요.'
 }
 
-$baseCommit = (git rev-parse HEAD).Trim()
+# 첫 검토 범위: 마지막 "review:" 커밋 이후 전체. 없으면 저장소 처음부터.
+$baseCommit = (git log --grep '^review:' -n 1 --format=%H | Out-String).Trim()
+if (-not $baseCommit) { $baseCommit = (git rev-list --max-parents=0 HEAD | Select-Object -First 1).Trim() }
 $prevReviewCommit = $null
 $prevReviewFile = $null
 $fixes = 0
@@ -94,7 +101,7 @@ while ($true) {
 - 이번 diff와 무관한 새 지적은 높음일 때만 올린다.
 "@
     } else {
-        $scope = "첫 검토다. 변경 범위는 git diff $baseCommit~1..HEAD 와 git log 로 확인한다."
+        $scope = "첫 검토다. 변경 범위는 git diff $baseCommit..HEAD 와 git log $baseCommit..HEAD 로 확인한다(직전 검토 이후 커밋 전체)."
     }
 
     $claudePrompt = @"
@@ -142,7 +149,7 @@ $reviewFile 의 높음/중간 항목만 처리하라. 낮음 항목과 새 기�
     $codexPrompt | codex exec -C $root -s workspace-write -o $codexLast - 2>&1 | Out-Host
     if ($LASTEXITCODE -ne 0) { Stop-Loop "Codex 실행 실패 (종료 코드 $LASTEXITCODE)." }
 
-    if (-not (git status --porcelain)) { Stop-Loop 'Codex가 아무 파일도 바꾸지 않았습니다. 진전이 없어 멈춥니다.' }
+    if (-not (Test-Dirty)) { Stop-Loop 'Codex가 아무 파일도 바꾸지 않았습니다. 진전이 없어 멈춥니다.' }
     $fixes++
     Save-Commit "fix: apply review $num (loop $fixes/$MaxFixes)" @('.')
 }
