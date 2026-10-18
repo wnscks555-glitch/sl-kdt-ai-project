@@ -1,0 +1,15 @@
+﻿product_id,model,state,incomplete_reason
+T11,A,레시피 모의 흐름 완료,
+T12_A,A,공정 진행 중(P4 완료),P5 미완료; LEAK 미실시; LIGHT 미실시; FINAL 미실시
+T12_B,B,레시피 모의 흐름 완료,
+T13,A,공정 진행 중(P2 완료),P3 미완료; P4 미완료; P5 미완료; LEAK 미실시; LIGHT 미실시; FINAL 미실시
+T14_LEAK,A,공정 진행 중(P2 완료),P3 미완료; P4 미완료; P5 미완료; LEAK 미실시; LIGHT 미실시; FINAL 미실시
+T14_LIGHT,A,공정 진행 중(P4 완료),P5 미완료; LEAK 미실시; LIGHT 미실시; FINAL 미실시
+T15,A,검사 대기,FINAL 미실시
+T16,A,보류,P4 미완료; P5 미완료; LEAK FAIL; LIGHT 미실시; FINAL 미실시
+T16B,A,보류,LEAK 미실시; LIGHT FAIL
+T17_A,A,등록,P1 미완료; P2 미완료; P3 미완료; P4 미완료; P5 미완료; LEAK 미실시; LIGHT 미실시; FINAL 미실시
+T17_B,B,등록,P1 미완료; P2 미완료; P3 미완료; P4 미완료; LEAK 미실시; LIGHT 미실시
+T19,B,검사 대기,LEAK 미실시; LIGHT 미실시
+T20,A,등록,P1 미완료; P2 미완료; P3 미완료; P4 미완료; P5 미완료; LEAK 미실시; LIGHT 미실시; FINAL 미실시
+T22,A,공정 진행 중(P2 완료),P3 미완료; P4 미완료; P5 미완료; LEAK 미실시; LIGHT 미실시; FINAL 미실시

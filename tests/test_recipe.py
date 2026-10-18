@@ -465,6 +465,46 @@ class RecipeCommandLineTests(unittest.TestCase):
             self.assertEqual([row["state"] for row in rows[-2:]], ["공정 진행 중(P2 완료)"] * 2)
             self.assertEqual(self.csv_rows(reports["events_products.csv"])[0]["state"], "공정 진행 중(P2 완료)")
 
+    def test_sample_v2_matches_expected_products_and_rejection_counts(self):
+        remaining_a = "P3 미완료; P4 미완료; P5 미완료; LEAK 미실시; LIGHT 미실시; FINAL 미실시"
+        remaining_p4 = "P5 미완료; LEAK 미실시; LIGHT 미실시; FINAL 미실시"
+        registered_a = "P1 미완료; P2 미완료; " + remaining_a
+        expected = {
+            "T11": ("A", "레시피 모의 흐름 완료", ""),
+            "T12_A": ("A", "공정 진행 중(P4 완료)", remaining_p4),
+            "T12_B": ("B", "레시피 모의 흐름 완료", ""),
+            "T13": ("A", "공정 진행 중(P2 완료)", remaining_a),
+            "T14_LEAK": ("A", "공정 진행 중(P2 완료)", remaining_a),
+            "T14_LIGHT": ("A", "공정 진행 중(P4 완료)", remaining_p4),
+            "T15": ("A", "검사 대기", "FINAL 미실시"),
+            "T16": ("A", "보류", "P4 미완료; P5 미완료; LEAK FAIL; LIGHT 미실시; FINAL 미실시"),
+            "T16B": ("A", "보류", "LEAK 미실시; LIGHT FAIL"),
+            "T17_A": ("A", "등록", registered_a),
+            "T17_B": ("B", "등록", "P1 미완료; P2 미완료; P3 미완료; P4 미완료; LEAK 미실시; LIGHT 미실시"),
+            "T19": ("B", "검사 대기", "LEAK 미실시; LIGHT 미실시"),
+            "T20": ("A", "등록", registered_a),
+            "T22": ("A", "공정 진행 중(P2 완료)", remaining_a),
+        }
+        with tempfile.TemporaryDirectory() as temporary:
+            cwd = Path(temporary)
+            result = self.run_cli(cwd, ROOT / "data" / "sample_events_v2.csv")
+            self.assertEqual(result.returncode, 0, result.stderr.decode("utf-8"))
+            reports = self.report_bytes(cwd)
+            products = self.csv_rows(reports["sample_events_v2_products.csv"])
+            self.assertEqual({row["product_id"]: (row["model"], row["state"], row["incomplete_reason"])
+                              for row in products}, expected)
+            rows = self.csv_rows(reports["sample_events_v2_rows.csv"])
+            self.assertEqual(len(rows), 76)
+            self.assertEqual(sum(row["decision"] == "허용" for row in rows), 64)
+            self.assertEqual(self.csv_rows(reports["sample_events_v2_rejections.csv"]), [
+                {"rule_id": "RULE_RECIPE", "rejection_count": "5"},
+                {"rule_id": "RULE_SEQ", "rejection_count": "1"},
+                {"rule_id": "RULE_INSP_PRE", "rejection_count": "2"},
+                {"rule_id": "RULE_NOT_DONE", "rejection_count": "0"},
+                {"rule_id": "RULE_FAIL_HOLD", "rejection_count": "1"},
+                {"rule_id": "RULE_PRESERVE", "rejection_count": "3"},
+            ])
+
 
 if __name__ == "__main__":
     unittest.main()

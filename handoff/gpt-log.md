@@ -376,3 +376,137 @@ exit=0
 - T21: 별도 폴더 2회와 같은 폴더 덮어쓰기 1회의 stdout·3개 CSV 바이트 일치. B의 LEAK after만 P2→P3인 fixture에서 해당 검사 행이 허용→RULE_INSP_PRE 거절로 바뀌며 검사 결과가 미저장된다.
 - v1/v2 헤더 교차 및 입력 읽기 오류는 종료 2. seq 중복/감소를 실제 CSV로 확인하고 열 수가 다른 행은 RULE_PRESERVE 거절 후 전체 제품 상태를 유지한다.
 - 해석: SHA-256은 읽은 JSON 파일 원본 바이트(BOM·줄바꿈 포함) 기준이며 표시 경로는 전달받은 Path의 POSIX 표기다. JSON 읽기 실패도 레시피 오류 3이다.
+
+## 2026-10-18 ④ 고정 샘플·보고서 (T11–T17, T19, T20, T22)
+
+- 변경: `data/sample_events_v2.csv`, `reports/sample_events_v2_*.csv`, `tests/test_recipe.py`. 명세 시나리오를 제품별로 묶은 고정 76행이며 14개 제품, 허용 64행·거절 12행이다. T16b도 포함한다. 샘플 생성기 프로그램은 산출물에 추가하지 않았다.
+- 증거: 샘플 기대값 테스트를 먼저 작성하고 샘플 파일 부재(exit=2)로 실패를 확인했다. 데이터 추가 후 14개 제품 상태/모델/미완료 사유 및 6개 거절 건수의 고정 기대값을 모두 확인했다(기존 리뷰 001 L1의 v2 대응).
+- 실제 명령 `py -m unittest discover -s tests` 출력 원문:
+
+```text
+......................................
+----------------------------------------------------------------------
+Ran 38 tests in 4.113s
+
+OK
+exit=0
+```
+- 샘플 실행 명령과 출력 원문:
+
+```powershell
+py -m src.main data/sample_events_v2.csv --recipe recipes/lamp_models.json
+```
+
+```text
+레시피: recipes/lamp_models.json | SHA-256: d7a8976ee178
+[행별 판정]
+seq | product_id | 입력 | 적용 규칙 ID | 허용/거절 | 거절 이유 | 처리 후 상태
+1 | T11 | REGISTER | RULE_RECIPE | 허용 |  | 등록
+2 | T11 | P1 | RULE_SEQ | 허용 |  | 공정 진행 중(P1 완료)
+3 | T11 | P2 | RULE_SEQ | 허용 |  | 공정 진행 중(P2 완료)
+4 | T11 | P3 | RULE_SEQ | 허용 |  | 공정 진행 중(P3 완료)
+5 | T11 | P4 | RULE_SEQ | 허용 |  | 공정 진행 중(P4 완료)
+6 | T11 | P5 | RULE_SEQ | 허용 |  | 검사 대기
+7 | T11 | INSPECT LEAK PASS | RULE_NOT_DONE | 허용 |  | 검사 대기
+8 | T11 | INSPECT LIGHT PASS | RULE_NOT_DONE | 허용 |  | 검사 대기
+9 | T11 | INSPECT FINAL PASS | RULE_FAIL_HOLD | 허용 |  | 레시피 모의 흐름 완료
+10 | T12_A | REGISTER | RULE_RECIPE | 허용 |  | 등록
+11 | T12_B | REGISTER | RULE_RECIPE | 허용 |  | 등록
+12 | T12_A | P1 | RULE_SEQ | 허용 |  | 공정 진행 중(P1 완료)
+13 | T12_B | P1 | RULE_SEQ | 허용 |  | 공정 진행 중(P1 완료)
+14 | T12_A | P2 | RULE_SEQ | 허용 |  | 공정 진행 중(P2 완료)
+15 | T12_B | P2 | RULE_SEQ | 허용 |  | 공정 진행 중(P2 완료)
+16 | T12_A | P3 | RULE_SEQ | 허용 |  | 공정 진행 중(P3 완료)
+17 | T12_B | P3 | RULE_SEQ | 허용 |  | 공정 진행 중(P3 완료)
+18 | T12_A | P4 | RULE_SEQ | 허용 |  | 공정 진행 중(P4 완료)
+19 | T12_B | P4 | RULE_SEQ | 허용 |  | 검사 대기
+20 | T12_B | INSPECT LEAK PASS | RULE_NOT_DONE | 허용 |  | 검사 대기
+21 | T12_B | INSPECT LIGHT PASS | RULE_FAIL_HOLD | 허용 |  | 레시피 모의 흐름 완료
+22 | T13 | REGISTER | RULE_RECIPE | 허용 |  | 등록
+23 | T13 | P1 | RULE_SEQ | 허용 |  | 공정 진행 중(P1 완료)
+24 | T13 | P3 | RULE_SEQ | 거절 | P2 미완료 | 공정 진행 중(P1 완료)
+25 | T13 | P2 | RULE_SEQ | 허용 |  | 공정 진행 중(P2 완료)
+26 | T14_LEAK | REGISTER | RULE_RECIPE | 허용 |  | 등록
+27 | T14_LEAK | P1 | RULE_SEQ | 허용 |  | 공정 진행 중(P1 완료)
+28 | T14_LEAK | P2 | RULE_SEQ | 허용 |  | 공정 진행 중(P2 완료)
+29 | T14_LEAK | INSPECT LEAK PASS | RULE_INSP_PRE | 거절 | P3 미완료 | 공정 진행 중(P2 완료)
+30 | T14_LIGHT | REGISTER | RULE_RECIPE | 허용 |  | 등록
+31 | T14_LIGHT | P1 | RULE_SEQ | 허용 |  | 공정 진행 중(P1 완료)
+32 | T14_LIGHT | P2 | RULE_SEQ | 허용 |  | 공정 진행 중(P2 완료)
+33 | T14_LIGHT | P3 | RULE_SEQ | 허용 |  | 공정 진행 중(P3 완료)
+34 | T14_LIGHT | P4 | RULE_SEQ | 허용 |  | 공정 진행 중(P4 완료)
+35 | T14_LIGHT | INSPECT LIGHT PASS | RULE_INSP_PRE | 거절 | P5 미완료 | 공정 진행 중(P4 완료)
+36 | T15 | REGISTER | RULE_RECIPE | 허용 |  | 등록
+37 | T15 | P1 | RULE_SEQ | 허용 |  | 공정 진행 중(P1 완료)
+38 | T15 | P2 | RULE_SEQ | 허용 |  | 공정 진행 중(P2 완료)
+39 | T15 | P3 | RULE_SEQ | 허용 |  | 공정 진행 중(P3 완료)
+40 | T15 | INSPECT LEAK PASS | RULE_NOT_DONE | 허용 |  | 공정 진행 중(P3 완료)
+41 | T15 | P4 | RULE_SEQ | 허용 |  | 공정 진행 중(P4 완료)
+42 | T15 | P5 | RULE_SEQ | 허용 |  | 검사 대기
+43 | T15 | INSPECT LIGHT PASS | RULE_NOT_DONE | 허용 |  | 검사 대기
+44 | T16 | REGISTER | RULE_RECIPE | 허용 |  | 등록
+45 | T16 | P1 | RULE_SEQ | 허용 |  | 공정 진행 중(P1 완료)
+46 | T16 | P2 | RULE_SEQ | 허용 |  | 공정 진행 중(P2 완료)
+47 | T16 | P3 | RULE_SEQ | 허용 |  | 공정 진행 중(P3 완료)
+48 | T16 | INSPECT LEAK FAIL | RULE_FAIL_HOLD | 허용 |  | 보류
+49 | T16 | P4 | RULE_FAIL_HOLD | 거절 | FAIL로 보류 중인 제품 | 보류
+50 | T16 | INSPECT LEAK PASS | RULE_PRESERVE | 거절 | LEAK 결과 이미 존재 | 보류
+51 | T16B | REGISTER | RULE_RECIPE | 허용 |  | 등록
+52 | T16B | P1 | RULE_SEQ | 허용 |  | 공정 진행 중(P1 완료)
+53 | T16B | P2 | RULE_SEQ | 허용 |  | 공정 진행 중(P2 완료)
+54 | T16B | P3 | RULE_SEQ | 허용 |  | 공정 진행 중(P3 완료)
+55 | T16B | P4 | RULE_SEQ | 허용 |  | 공정 진행 중(P4 완료)
+56 | T16B | P5 | RULE_SEQ | 허용 |  | 검사 대기
+57 | T16B | INSPECT LIGHT FAIL | RULE_FAIL_HOLD | 허용 |  | 보류
+58 | T16B | INSPECT FINAL PASS | RULE_FAIL_HOLD | 허용 |  | 보류
+59 | T17_C | REGISTER | RULE_RECIPE | 거절 | model이 비어 있거나 레시피에 없는 모델 | 미등록
+60 | T17_A | REGISTER | RULE_RECIPE | 허용 |  | 등록
+61 | T17_A | P6 | RULE_RECIPE | 거절 | 제품 레시피에 없는 공정 P6 | 등록
+62 | T17_B | REGISTER | RULE_RECIPE | 허용 |  | 등록
+63 | T17_B | INSPECT FINAL PASS | RULE_RECIPE | 거절 | 제품 레시피에 없는 검사 FINAL | 등록
+64 | T19 | REGISTER | RULE_RECIPE | 허용 |  | 등록
+65 | T19 | P1 | RULE_SEQ | 허용 |  | 공정 진행 중(P1 완료)
+66 | T19 | P2 | RULE_SEQ | 허용 |  | 공정 진행 중(P2 완료)
+67 | T19 | P3 | RULE_SEQ | 허용 |  | 공정 진행 중(P3 완료)
+68 | T19 | P4 | RULE_SEQ | 허용 |  | 검사 대기
+69 | T19 | P5 | RULE_RECIPE | 거절 | 제품 레시피에 없는 공정 P5 | 검사 대기
+70 | T20_MISSING | REGISTER | RULE_RECIPE | 거절 | model이 비어 있거나 레시피에 없는 모델 | 미등록
+71 | T20 | REGISTER | RULE_RECIPE | 허용 |  | 등록
+72 | T20 | P1 | RULE_PRESERVE | 거절 | REGISTER 이외의 model은 빈칸이어야 함 | 등록
+73 | T22 | REGISTER | RULE_RECIPE | 허용 |  | 등록
+74 | T22 | P1 | RULE_SEQ | 허용 |  | 공정 진행 중(P1 완료)
+75 | T22 | P2 | RULE_SEQ | 허용 |  | 공정 진행 중(P2 완료)
+76 | T22 | REGISTER | RULE_PRESERVE | 거절 | 이미 등록된 제품 | 공정 진행 중(P2 완료)
+
+[제품별 최종 상태]
+product_id | model | 최종 상태 | 미완료 이유
+T11 | A | 레시피 모의 흐름 완료 | 
+T12_A | A | 공정 진행 중(P4 완료) | P5 미완료; LEAK 미실시; LIGHT 미실시; FINAL 미실시
+T12_B | B | 레시피 모의 흐름 완료 | 
+T13 | A | 공정 진행 중(P2 완료) | P3 미완료; P4 미완료; P5 미완료; LEAK 미실시; LIGHT 미실시; FINAL 미실시
+T14_LEAK | A | 공정 진행 중(P2 완료) | P3 미완료; P4 미완료; P5 미완료; LEAK 미실시; LIGHT 미실시; FINAL 미실시
+T14_LIGHT | A | 공정 진행 중(P4 완료) | P5 미완료; LEAK 미실시; LIGHT 미실시; FINAL 미실시
+T15 | A | 검사 대기 | FINAL 미실시
+T16 | A | 보류 | P4 미완료; P5 미완료; LEAK FAIL; LIGHT 미실시; FINAL 미실시
+T16B | A | 보류 | LEAK 미실시; LIGHT FAIL
+T17_A | A | 등록 | P1 미완료; P2 미완료; P3 미완료; P4 미완료; P5 미완료; LEAK 미실시; LIGHT 미실시; FINAL 미실시
+T17_B | B | 등록 | P1 미완료; P2 미완료; P3 미완료; P4 미완료; LEAK 미실시; LIGHT 미실시
+T19 | B | 검사 대기 | LEAK 미실시; LIGHT 미실시
+T20 | A | 등록 | P1 미완료; P2 미완료; P3 미완료; P4 미완료; P5 미완료; LEAK 미실시; LIGHT 미실시; FINAL 미실시
+T22 | A | 공정 진행 중(P2 완료) | P3 미완료; P4 미완료; P5 미완료; LEAK 미실시; LIGHT 미실시; FINAL 미실시
+
+[규칙 ID별 거절 건수]
+규칙 ID | 거절 건수
+RULE_RECIPE | 5
+RULE_SEQ | 1
+RULE_INSP_PRE | 2
+RULE_NOT_DONE | 0
+RULE_FAIL_HOLD | 1
+RULE_PRESERVE | 3
+
+저장 파일:
+reports/sample_events_v2_rows.csv
+reports/sample_events_v2_products.csv
+reports/sample_events_v2_rejections.csv
+exit=0
+```
