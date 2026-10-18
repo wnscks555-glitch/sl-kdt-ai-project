@@ -1,0 +1,12 @@
+{
+  "bad": {
+    "steps": ["REGISTER", "INSPECT", "p1"],
+    "extra": true,
+    "inspections": [{"id": " leak", "next": "P1"}, null]
+  },
+  "B": [],
+  "C": {"steps": ["P1"], "inspections": []},
+  "D": {},
+  "E": {"steps": [123], "inspections": "LEAK"},
+  "F": {"steps": ["P1"], "inspections": {}}
+}
