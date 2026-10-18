@@ -1,0 +1,12 @@
+$ py -c exec(compile(open(r'C:\Users\PC\AppData\Local\Temp\stage4_final_verify.py','rb').read(),'stage4_final_verify','exec'))
+sample_events: exit_code=0; byte_identical_reports=3
+sample_events_v2: exit_code=0; byte_identical_reports=3
+sample_events_retest: exit_code=0; byte_identical_reports=3
+sample_events_equipment: exit_code=0; byte_identical_reports=4
+seed42: exit_code=0; byte_identical_csv_meta=2; byte_identical_reports=6
+protected_files_diff=empty
+external_changes_byte_preserved=CLAUDE.md,tools/review-loop.ps1
+gpt_log_original_prefix_byte_preserved=True
+branch=main; pushes=none
+
+exit_code=0; elapsed_seconds=1.640875

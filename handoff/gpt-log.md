@@ -3163,3 +3163,139 @@ exit_code=1; elapsed_seconds=55.292803
 - LEAK-2는 seq 1556/GEN_0012에서 정지했으며 창의 FAIL 원인은 1549/GEN_0005, 1556/GEN_0012다. 생성기가 정지 설비를 피했으므로 이 샘플의 정지 후 거절은 0이다. 교차 제품 정지 거절 trace 자체는 T47 고정 샘플에서 검증했다.
 - 대표 trace GEN_0005는 LEAK 최초 FAIL@1549[LEAK-2] → 요청@2063 → PASS@2575[LEAK-1](재검사 1) 뒤 LIGHT PASS@3861로 완료한 사례다.
 - 단계5 전체 테스트 97개 중 알려진 폐기 양수 조건 1개만 실패. 보호 파일 diff는 출력 없음. 기본값·입력 확률·기대표를 바꾸지 않았다.
+
+### 실행 기록: final-verification
+
+명령·출력 원문: [run-logs/final-verification.txt](run-logs/final-verification.txt)
+
+```text
+$ py -c exec(compile(open(r'C:\Users\PC\AppData\Local\Temp\stage4_final_verify.py','rb').read(),'stage4_final_verify','exec'))
+sample_events: exit_code=0; byte_identical_reports=3
+sample_events_v2: exit_code=0; byte_identical_reports=3
+sample_events_retest: exit_code=0; byte_identical_reports=3
+sample_events_equipment: exit_code=0; byte_identical_reports=4
+seed42: exit_code=0; byte_identical_csv_meta=2; byte_identical_reports=6
+protected_files_diff=empty
+branch=main; pushes=none
+
+exit_code=0; elapsed_seconds=1.601617
+```
+
+### 실행 기록: stage6-tests
+
+명령·출력 원문: [run-logs/stage6-tests.txt](run-logs/stage6-tests.txt)
+
+```text
+$ py -m unittest discover -s tests
+T44 seed=42 products=500 generation_seconds=0.119105 judgment_analysis_seconds=0.065684
+T44 seed=7 products=200 generation_seconds=0.044865 judgment_analysis_seconds=0.025830
+T44 seed=42 all_rows_deepcopy_invariant_seconds=38.522261
+T44 seed=7 all_rows_deepcopy_invariant_seconds=6.159791
+................................................................................................
+======================================================================
+FAIL: test_t44_seed42_nonempty_completion_hold_discard_stop_and_five_errors (test_generate.GeneratedInvariantTests) (requirement='discarded')
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "C:\Users\PC\Documents\ChatGPT\에스엘 KDT AI 교육 부트캠프\project\tests\test_generate.py", line 157, in test_t44_seed42_nonempty_completion_hold_discard_stop_and_five_errors
+    self.assertGreater(count, 0, "명세 이견: seed42 빈 검증 조건 미충족: " + requirement)
+AssertionError: 0 not greater than 0 : 명세 이견: seed42 빈 검증 조건 미충족: discarded
+
+----------------------------------------------------------------------
+Ran 97 tests in 58.413s
+
+FAILED (failures=1)
+
+exit_code=1; elapsed_seconds=58.613959
+```
+
+### 실행 기록: seed42-timing
+
+명령·출력 원문: [run-logs/seed42-timing.txt](run-logs/seed42-timing.txt)
+
+```text
+$ py -c exec(compile(open(r'C:\Users\PC\AppData\Local\Temp\stage4_timing.py','rb').read(),'stage4_timing','exec'))
+T44 seed=42 products=500 generation_seconds=0.108255 judgment_analysis_seconds=0.061041
+T44 seed=7 products=200 generation_seconds=0.043860 judgment_analysis_seconds=0.024074
+T44 seed=42 all_rows_deepcopy_invariant_seconds=36.688034
+seed42_products500_invariants_1_to_6_seconds=37.555677
+tests=6; failures=1; errors=0; skipped=0
+test_t44_seed42_nonempty_completion_hold_discard_stop_and_five_errors (test_generate.GeneratedInvariantTests) (requirement='discarded')
+Traceback (most recent call last):
+  File "C:\Users\PC\Documents\ChatGPT\에스엘 KDT AI 교육 부트캠프\project\tests\test_generate.py", line 157, in test_t44_seed42_nonempty_completion_hold_discard_stop_and_five_errors
+    self.assertGreater(count, 0, "명세 이견: seed42 빈 검증 조건 미충족: " + requirement)
+AssertionError: 0 not greater than 0 : 명세 이견: seed42 빈 검증 조건 미충족: discarded
+
+
+exit_code=1; elapsed_seconds=38.021873
+```
+
+### 실행 기록: trace-case-fix-tests
+
+명령·출력 원문: [run-logs/trace-case-fix-tests.txt](run-logs/trace-case-fix-tests.txt)
+
+```text
+$ py -m unittest discover -s tests -p test_summary.py
+.................
+----------------------------------------------------------------------
+Ran 17 tests in 2.216s
+
+OK
+
+exit_code=0; elapsed_seconds=2.413501
+```
+
+### 실행 기록: final-tests
+
+명령·출력 원문: [run-logs/final-tests.txt](run-logs/final-tests.txt)
+
+```text
+$ py -m unittest discover -s tests
+T44 seed=42 products=500 generation_seconds=0.118045 judgment_analysis_seconds=0.069694
+T44 seed=7 products=200 generation_seconds=0.049292 judgment_analysis_seconds=0.028131
+T44 seed=42 all_rows_deepcopy_invariant_seconds=37.744879
+T44 seed=7 all_rows_deepcopy_invariant_seconds=5.942913
+.................................................................................................
+======================================================================
+FAIL: test_t44_seed42_nonempty_completion_hold_discard_stop_and_five_errors (test_generate.GeneratedInvariantTests) (requirement='discarded')
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "C:\Users\PC\Documents\ChatGPT\에스엘 KDT AI 교육 부트캠프\project\tests\test_generate.py", line 157, in test_t44_seed42_nonempty_completion_hold_discard_stop_and_five_errors
+    self.assertGreater(count, 0, "명세 이견: seed42 빈 검증 조건 미충족: " + requirement)
+AssertionError: 0 not greater than 0 : 명세 이견: seed42 빈 검증 조건 미충족: discarded
+
+----------------------------------------------------------------------
+Ran 98 tests in 57.629s
+
+FAILED (failures=1)
+
+exit_code=1; elapsed_seconds=57.847985
+```
+
+### 실행 기록: final-byte-verification
+
+명령·출력 원문: [run-logs/final-byte-verification.txt](run-logs/final-byte-verification.txt)
+
+```text
+$ py -c exec(compile(open(r'C:\Users\PC\AppData\Local\Temp\stage4_final_verify.py','rb').read(),'stage4_final_verify','exec'))
+sample_events: exit_code=0; byte_identical_reports=3
+sample_events_v2: exit_code=0; byte_identical_reports=3
+sample_events_retest: exit_code=0; byte_identical_reports=3
+sample_events_equipment: exit_code=0; byte_identical_reports=4
+seed42: exit_code=0; byte_identical_csv_meta=2; byte_identical_reports=6
+protected_files_diff=empty
+external_changes_byte_preserved=CLAUDE.md,tools/review-loop.ps1
+gpt_log_original_prefix_byte_preserved=True
+branch=main; pushes=none
+
+exit_code=0; elapsed_seconds=1.640875
+```
+
+### 재개·최종 보완 (2026-10-18)
+
+- 중단 전 리뷰에서 Windows의 `p`/`P` trace 파일명 충돌이 발견됐다. **반영:** 전체 입력 제품 ID의 인코딩 파일명이 대소문자 무시 시 충돌할 때만 `!` + 원본 UTF-8 hex 접미사로 분리한다. 일반 ID의 기존 파일명은 유지하고 요청 부분집합·파일시스템 상태에 영향을 받지 않게 했다.
+- 회귀 테스트를 먼저 추가해 `py -m unittest discover -s tests -p test_summary.py -k case_colliding`에서 `AssertionError: 1 != 2`, `Ran 1 test in 0.190s`, `FAILED (failures=1)`을 관측했다. 수정 후 집중 17개 통과(원문 trace-case-fix-tests), 커밋 `ffbe89a`.
+- 재개 후 최종 전체 테스트는 **98개 중 97개 통과·1개 실패**, 57.629초, 종료 코드 1이다. 실패는 여전히 T44의 `discarded=0` 빈 검증 조건뿐이며 skip이나 expectedFailure로 감추지 않았다. 최종 원문은 final-tests에 있다.
+- 500개만 별도로 수행한 불변식 1–6 측정: 생성 0.108255초, 판정+분석 0.061041초, 불변식 6개 전체 37.555677초(그중 모든 행 deepcopy 36.688034초). 생성/최초 판정은 불변식 타이머 전에 수행했다. 이 별도 측정도 폐기 빈 검증 1개 실패이며 오류·skip은 0이다. 원문 seed42-timing 참조.
+- README의 생성기·분석·추적 절에 실행법, 지표 정의, 상세 코드 28종, 가정과 한계, 실제 시드42 수치, 실패 조건, trace 파일명 충돌 처리까지 기록했다. 보호 대상 `src/rules.py`·기존 테스트 4개·tasks·decisions·reviews·.claude는 그대로다.
+- 재개 당시 작업 범위 밖 `CLAUDE.md`, `tools/review-loop.ps1`에 새 변경이 관측됐다. 두 파일은 수정·스테이징·커밋하지 않는다. 재개 시점 SHA-256과 최종 파일이 바이트 동일함을 확인했다(final-byte-verification). 이를 이번 구현의 변경으로 포함하지 않는다. 원래 gpt-log 내용도 작업 전 원본 바이트를 prefix로 그대로 보존했다.
+- 최종 별도 임시 디렉터리에서 기존 샘플 4종의 13개 보고서를 재생성하고 체크아웃 파일과 바이트 동일함을 확인했다. 새 seed42 CSV·meta 2개와 보고서 6개도 같은 방식으로 동일했다. main 유지, push·원격 변경·설치 없음.

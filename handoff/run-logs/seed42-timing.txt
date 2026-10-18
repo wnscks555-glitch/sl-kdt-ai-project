@@ -1,0 +1,14 @@
+$ py -c exec(compile(open(r'C:\Users\PC\AppData\Local\Temp\stage4_timing.py','rb').read(),'stage4_timing','exec'))
+T44 seed=42 products=500 generation_seconds=0.108255 judgment_analysis_seconds=0.061041
+T44 seed=7 products=200 generation_seconds=0.043860 judgment_analysis_seconds=0.024074
+T44 seed=42 all_rows_deepcopy_invariant_seconds=36.688034
+seed42_products500_invariants_1_to_6_seconds=37.555677
+tests=6; failures=1; errors=0; skipped=0
+test_t44_seed42_nonempty_completion_hold_discard_stop_and_five_errors (test_generate.GeneratedInvariantTests) (requirement='discarded')
+Traceback (most recent call last):
+  File "C:\Users\PC\Documents\ChatGPT\에스엘 KDT AI 교육 부트캠프\project\tests\test_generate.py", line 157, in test_t44_seed42_nonempty_completion_hold_discard_stop_and_five_errors
+    self.assertGreater(count, 0, "명세 이견: seed42 빈 검증 조건 미충족: " + requirement)
+AssertionError: 0 not greater than 0 : 명세 이견: seed42 빈 검증 조건 미충족: discarded
+
+
+exit_code=1; elapsed_seconds=38.021873

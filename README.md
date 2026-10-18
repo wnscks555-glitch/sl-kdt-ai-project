@@ -318,3 +318,135 @@ seq,product_id,event,inspection,result,model,equipment
 ### 이번 단계 제외 범위
 
 설비 재가동·점검 이벤트, 로트 ID, 공정 설비, 정지 원인 FAIL 제품의 자동 재검사 요청, 측정값·관리한계 계산은 포함하지 않습니다. 실제 설비 제어나 실제 제조 품질 판정을 수행하지 않습니다.
+
+## 생성기·분석·추적 (v2 4단계)
+
+시드가 고정된 합성 생산 기록으로 판정기를 대량 검증하고, 최초 검사 품질·입력 오류·설비 정지 영향을 따로 분석합니다. 앞 절들은 각 개발 단계의 범위를 기록한 것입니다.
+
+**생성 데이터의 확률은 가정이며 실제 설비 진단 근거가 아니다.**
+
+### 실행
+
+프로젝트 루트에서 실행합니다. 외부 패키지는 필요하지 않습니다.
+
+```powershell
+py -m src.generate --seed 42 --products 500 --out data/generated/gen_seed42.csv
+py -m src.main data/generated/gen_seed42.csv --recipe recipes/lamp_models_retest.json --equipment recipes/equipment_generated.json --summary --trace GEN_0005
+py -m unittest discover -s tests
+```
+
+생성기의 기본값은 `--seed 42`, `--products 500`, `--config recipes/generator.json`입니다. 설정의 `recipe`, `equipment` 경로는 설정 파일이 있는 디렉터리를 기준으로 해석합니다. 기본 레시피는 `lamp_models_retest.json`, 설비는 별도의 `equipment_generated.json`이며 기존 `equipment.json`은 그대로입니다.
+
+`--summary`와 `--trace`는 `--recipe`·`--equipment`가 있는 설비 모드에서만 사용하며 아니면 종료 코드 2입니다. trace는 `--trace T34 --trace T33_T35_A`처럼 반복할 수 있습니다. 입력에 없는 제품 ID를 하나라도 요청하면 코드 2이며 기존 보고서 4종을 포함해 보고서를 새로 저장하지 않습니다. 입력에 행이 있으나 등록되지 않은 ID는 거절 이력을 추적하고 최종 상태를 `미등록`으로 표시합니다.
+
+추가 옵션이 없으면 기존 실행 경로와 보고서가 유지됩니다. summary·trace는 기존 보고서 반환 묶음에 붙이지 않고 별도의 분석·저장 경로로 처리합니다. 출력 CSV는 기존처럼 UTF-8 BOM과 CSV 줄 끝을 사용합니다.
+
+| 출력 | 내용 |
+| --- | --- |
+| `data/generated/gen_seed42.csv` | 생성된 입력 7열 |
+| `data/generated/gen_seed42.csv.meta.json` | 시드·제품 수·생성기 버전·설정/레시피/설비 원본 SHA-256·정상/전체 행 수·오류 종류별 주입 수 |
+| `reports/gen_seed42_{rows,products,rejections,equipment}.csv` | 기존 형식의 보고서 4종 |
+| `reports/gen_seed42_summary.csv` | `section,key,value,...` 긴 표 하나 |
+| `reports/gen_seed42_trace_GEN_0005.csv` | 대표 제품의 물리 행 순서·처리 후 상태·최종 근거 |
+
+### 생성 가정과 재현 조건
+
+생성기 버전은 `1.0.0`이며, **같은 시드 + 같은 설정·참조 파일 바이트 + 같은 생성기 버전**에서 CSV와 meta가 바이트 단위로 같습니다. 난수는 `random.Random(seed)` 하나만 사용하고 시각·환경·출력 경로는 난수와 메타 내용에 넣지 않습니다. 설정 파일의 줄 끝도 SHA-256 원본 바이트에 포함됩니다.
+
+| 가정 | 기본값 |
+| --- | --- |
+| 모델 비율 | A 50%, B 50%의 추출 확률 |
+| 정상 설비 FAIL | 2% |
+| 고장으로 가정한 설비 | LEAK-2, FAIL 30% |
+| FAIL 후 재검사 요청 | 매 FAIL마다 70%, 재검사 상한 2회 |
+| 입력 오류 주입 | 정상 행 수의 3%, 정수화는 내림, 5종 균등(차이 최대 1) |
+| 설비 | LEAK 3대, LIGHT·FINAL 각 2대 |
+| 정지 | 허용된 최초 결과의 최근 최대 3건 중 FAIL 2건 |
+
+제품별로 등록 → 레시피 공정 → `after` 직후 검사 순서를 만들고, 제품 사이에는 한 행씩 라운드로빈으로 섞습니다. 검사를 할 수 있는 가동 설비를 순환 선택하고, 재검사는 가능하면 해당 검사의 처음 FAIL 설비와 다른 설비를 씁니다. 생성기도 최초 결과에 같은 정지 규칙을 적용합니다. 같은 검사 설비가 모두 정지하면 그 제품의 생성을 해당 검사에서 끝냅니다. 기존 판정 상태 정의에 따라 중간 검사에서 멈춘 제품이 `공정 진행 중`으로 표시될 수 있으며 미실시 검사와 미완료 이유를 함께 확인해야 합니다.
+
+오류 5종은 미래 공정 건너뜀·`result=OK`·요청 없는 중복 결과·없는 설비 `LEAK-9`·B 제품의 `P5`입니다. 정상 행을 바꾸지 않고 당시 상태에서 거절될 위치에 추가합니다. 주입 종류의 나머지 배분과 위치 선택도 같은 난수 흐름을 씁니다. 주입률의 분모는 정상 행 수이고 최종 거절률의 분모는 오류를 포함한 전체 입력 행 수입니다. 둘은 다른 지표이며 정지 설비 거절이 추가되면 더 달라질 수 있습니다. meta가 옆에 없으면 주입 대비 절은 생략합니다.
+
+그래프·헤더/CSV 구문 오류 생성·설비 재가동은 포함하지 않습니다. 확률은 실측 추정치가 아니며 정지로 관측이 일찍 끝나는 선택 효과도 있습니다. 예를 들어 LEAK-2가 두 번 FAIL 뒤 멈췄다고 관측 FAIL률 100%를 실제 고장 확률로 해석할 수 없습니다.
+
+### 지표와 긴 표의 절
+
+| 지표/절 | 정의 |
+| --- | --- |
+| 최초 FAIL률 | 허용된 최초 FAIL 수 / 허용된 최초 결과 수. 설비별·검사별·전체, 폐기 제품의 최초 결과도 포함 |
+| 재검사 포함 FAIL률 | 허용된 모든 FAIL 수 / 허용된 모든 검사 결과 수 |
+| FPY | 모든 필수 검사를 최초 PASS하고 완료한 제품 수 / 등록된 제품 수 |
+| 상태 분포 | 완료·보류·폐기·검사 대기·공정 진행 중·등록. 등록 제품 총수는 별도 표시 |
+| 거절·미실시 | FAIL률 분모에서 제외하고 `rejected_count`, `unperformed_count`로 표시. 미실시는 검사별/전체, 미배정 설비에는 귀속하지 않음 |
+| 품질 파레토 | (검사, 설비)의 최초 FAIL 수 내림차순, 동률은 검사 ID·설비 ID 순. 전체 FAIL도 옆 열에 표시하며 재검사 FAIL만 있는 조합도 포함 |
+| 입력 오류 파레토 | 상세 사유 코드 건수 내림차순, 동률은 코드 순. 각 코드에 rule_id 표시 |
+| 설비 정지 영향 | 설비별 상태·정지 물리 행/seq/제품 ID·창의 FAIL 원인 행들·정지 후 거절 결과 수 |
+| 거절 합계 | 전체 거절 = 규칙별 거절 합 = 입력 오류 파레토 합 + 정지 설비 거절 + 기타 거절 |
+| 주입 대비 | meta의 오류 종류별 주입 수와 실제 상세 사유 코드 거절 수를 나란히 표시. TOTAL 주입률은 주입 수 / 정상 행 수 |
+
+비율은 소수 넷째 자리까지 반올림한 문자열이며 분모 0은 빈칸입니다. summary의 `product_metrics`, `status_distribution`, `inspection_metrics`, `equipment_metrics`, `quality_pareto`, `input_error_pareto`, `equipment_stops`, `rejection_totals`, `rule_rejections`, `injection_comparison`, `notice` 절에서 위 값을 확인합니다. `injection_comparison`은 meta가 있을 때만 나옵니다.
+
+### 고정 상세 사유 코드
+
+`src/reason_codes.py`가 원본 표입니다. 규칙 ID와 정확한 이유 문구의 쌍으로 변환하며 `{inspection}`, `{event}`는 실제 입력 ID, `{step}`은 레시피 공정으로 재구성한 템플릿입니다. 표에 없는 문구는 summary를 실패시켜 숨은 사유로 묶지 않습니다. `EQUIP_STOPPED`는 입력 오류 파레토에서 제외하고 설비 정지 영향 절에 셉니다. 현재 표에 해당하는 나머지는 모두 입력 오류이므로 기타 거절은 0입니다.
+
+| 상세 코드 | rule_id | 이유 문구 |
+| --- | --- | --- |
+| PRESERVE_COLUMNS | RULE_PRESERVE | CSV 열 수 또는 값 누락 |
+| PRESERVE_BAD_SEQ | RULE_PRESERVE | seq는 양의 정수여야 함 |
+| PRESERVE_EMPTY_PRODUCT | RULE_PRESERVE | product_id가 비어 있음 |
+| PRESERVE_EMPTY_EVENT | RULE_PRESERVE | event가 비어 있음 |
+| PRESERVE_MODEL_FIELD | RULE_PRESERVE | REGISTER 이외의 model은 빈칸이어야 함 |
+| PRESERVE_EMPTY_INSPECTION | RULE_PRESERVE | inspection이 비어 있음 |
+| PRESERVE_BAD_RESULT | RULE_PRESERVE | 잘못된 result (PASS 또는 FAIL 필요) |
+| PRESERVE_RETEST_RESULT | RULE_PRESERVE | RETEST_REQUEST의 result는 빈칸이어야 함 |
+| PRESERVE_INSPECTION_FIELDS | RULE_PRESERVE | INSPECT 이외의 inspection과 result는 빈칸이어야 함 |
+| PRESERVE_EMPTY_EQUIPMENT | RULE_PRESERVE | equipment가 비어 있음 |
+| PRESERVE_EQUIPMENT_FIELD | RULE_PRESERVE | INSPECT 이외의 equipment는 빈칸이어야 함 |
+| PRESERVE_DUP_REGISTER | RULE_PRESERVE | 이미 등록된 제품 |
+| PRESERVE_UNREGISTERED | RULE_PRESERVE | 미등록 제품 |
+| PRESERVE_DUP_RESULT | RULE_PRESERVE | {inspection} 결과 이미 존재 |
+| PRESERVE_PAST_STEP | RULE_PRESERVE | 이미 지난 공정 재입력 |
+| RECIPE_UNKNOWN_MODEL | RULE_RECIPE | model이 비어 있거나 레시피에 없는 모델 |
+| RECIPE_RETEST_DISABLED | RULE_RECIPE | 재검사 모드가 아닌 레시피 |
+| RECIPE_UNKNOWN_INSPECTION | RULE_RECIPE | 제품 레시피에 없는 검사 {inspection} |
+| RECIPE_UNKNOWN_STEP | RULE_RECIPE | 제품 레시피에 없는 공정 {event} |
+| SEQ_SKIP | RULE_SEQ | {step} 미완료 |
+| INSP_TOO_EARLY | RULE_INSP_PRE | {step} 미완료 |
+| FAIL_HOLD | RULE_FAIL_HOLD | FAIL로 보류 중인 제품 |
+| RETEST_DISCARDED | RULE_RETEST | 폐기된 제품 |
+| RETEST_ALREADY_OPEN | RULE_RETEST | 이미 열린 재검사 요청 |
+| RETEST_NO_FAIL | RULE_RETEST | 미해결 FAIL 없음 |
+| EQUIP_UNKNOWN | RULE_EQUIP | 등록되지 않은 설비 |
+| EQUIP_WRONG_INSPECTION | RULE_EQUIP | 검사 종류가 다른 설비 |
+| EQUIP_STOPPED | RULE_EQUIP | 정지된 설비 |
+
+### trace 읽기
+
+전체 입력 처리가 끝난 뒤 선택한 제품의 행만 **물리적 입력 순서**로 표시합니다. `row_index`는 헤더를 제외하고 1부터 센 데이터 행이며 `seq`의 중복·감소와 무관합니다. 각 행의 입력·설비·규칙·허용/거절·이유·처리 후 상태, 마지막 `current_state`의 최종 상태·미완료 이유·history를 확인합니다. 파일명에 쓸 수 없는 제품 ID 문자는 percent encoding합니다. 전체 입력에 `p`와 `P`처럼 Windows에서 파일명이 충돌하는 ID가 있으면 해당 ID에만 `!`와 원본 UTF-8 바이트의 16진수 접미사를 붙입니다. 요청한 ID의 부분집합이나 기존 파일 유무와 관계없이 같은 이름을 사용합니다.
+
+정지 설비 거절 행에는 `stop_row_index`, `stop_seq`, `stop_product_id`와 `cause_row_indices`, `cause_seqs`, `cause_product_ids`가 붙습니다. 기존 설비 샘플을 `--trace T34`로 실행하면 seq 30 거절의 근거가 정지 행 25/T33_P3, FAIL 행 14/T33_T35_A와 25/T33_P3임을 확인할 수 있습니다. 다른 제품의 원인 행은 근거 열에만 연결하므로 선택 제품의 행 순서는 유지됩니다.
+
+### 시드 42 실행 결과와 검증 한계
+
+위 명령을 이 PC에서 실행한 결과입니다. 전체 원문은 `handoff/gpt-log.md`의 완료 보고와 연결된 `handoff/run-logs/`에 있습니다.
+
+| 항목 | 실제 결과 |
+| --- | --- |
+| 등록 제품 | 500 |
+| 정상 행 / 추가 오류 행 / 전체 행 | 4,020 / 120 / 4,140 |
+| 완료 / 보류 / 폐기 | 497 / 3 / **0** |
+| FPY | 482/500 = `0.9640` |
+| 최초 FAIL률 | 18/1,246 = `0.0144` |
+| 재검사 포함 FAIL률 | 18/1,261 = `0.0143` |
+| 거절 검사 / 미실시 검사 | 72 / 2 |
+| 주입률 / 최종 거절률 | 120/4,020 = `0.0299` / 120/4,140 = `0.0290` |
+| 입력 오류 / 정지 설비 거절 / 기타 | 120 / 0 / 0 |
+| 오류 5종 | 각각 주입 24·실제 거절 24 |
+| 정지 설비 | LEAK-2, seq 1556/GEN_0012, 원인 FAIL seq 1549/GEN_0005·1556/GEN_0012 |
+
+대표 trace `GEN_0005`는 LEAK 최초 FAIL@1549[LEAK-2] → 요청@2063 → PASS@2575[LEAK-1](재검사 1), LIGHT PASS@3861 뒤 완료한 제품입니다.
+
+**전체 테스트가 모두 통과한 상태는 아닙니다.** 최종 실행은 98개 중 97개 통과·1개 실패입니다. T44의 빈 검증 조건은 시드 42에서 폐기 제품도 1개 이상 요구하지만 실제 폐기는 0개입니다. 해당 테스트는 실패로 유지하며 시드·확률·기대표·기존 테스트를 바꾸지 않았습니다. 이 결과는 `명세 이견`으로 기록했습니다. 나머지 검증과 구현은 계속 완료했습니다.
+
+`tests/test_generate.py`는 시드 42/500개와 7/200개에서 CSV·meta·기존 보고서 4종·summary·trace 재현성, 완료 제품의 모든 공정/PASS, 정지·폐기 뒤 허용 금지, 거절 합계, **모든 행마다 판정기를 deepcopy한 뒤 거절 전후 전체 제품·설비 상태 동일성**을 검사합니다. 500개 검사도 생략하지 않았습니다. `tests/test_summary.py`는 손계산 4제품 fixture(T45), 정지·입력 오류 분리(T46), 물리 순서와 교차 제품 trace(T47), 잘못된 옵션·없는 ID의 무출력 파일(T48), 미등록 이유 실패(T49)를 검사합니다. 기존 T1–T41 테스트 4개 파일과 `src/rules.py`는 수정하지 않았고 기존 샘플 보고서 13개도 재생성 바이트 비교를 통과했습니다.
