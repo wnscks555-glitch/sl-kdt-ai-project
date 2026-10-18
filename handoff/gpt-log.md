@@ -341,3 +341,20 @@ OK
 exit=0
 ```
 - 해석: UTF-8 BOM 허용. 읽기·디코딩 실패도 레시피 오류다. JSON 문법 오류는 파싱 위치를 표시하며 파싱 가능한 설정은 독립 오류를 모두 수집한다.
+
+## 2026-10-18 ② v2 판정 (T11–T17, T19–T22 중 판정 항목)
+
+- 변경: `src/recipe_rules.py`, `tests/test_recipe.py`. v1 파일을 가져다 옮기거나 고치지 않고 모델별 공정 위치·최초 검사 결과를 새 모듈로 관리한다. 모든 검증 후 제품 사전에 한 번만 반영한다.
+- 테스트 지원 에이전트는 명세로 17개 테스트를 작성하고 `py -m unittest discover -s tests -p test_recipe.py`에서 `ModuleNotFoundError: No module named 'src.recipe_rules'`, `Ran 1 test`, `FAILED (errors=1)`을 관측했다. 주 에이전트도 모듈 부재를 확인한 후 구현했다. 기대값은 구현 결과에 맞춰 수정하지 않았다.
+- T11–T17/T16b/T19/T20/T22 및 판정 우선순위·정확 일치·비숫자 공정명·배열 순서·seq 물리 행 순서 통과. 거절 테스트마다 전체 제품 사전을 deepcopy 비교하고 OTHER 제품도 확인한다. T21의 CLI 재현성은 ③에서 검증한다.
+- 해석: 빈 event/INSPECT inspection은 형식 오류, 비어 있지 않은 미등록 공정·검사 ID는 `RULE_RECIPE`. 등록 model 빈값은 지정대로 `RULE_RECIPE`. 공정 건너뜀 사유는 가장 먼저 남아 있는 공정을 표시한다. 진행 상태의 Pk 자리에는 실제 마지막 공정 ID를 쓴다. rows의 input은 v1처럼 event/inspection/result로 유지하고 모델은 products에 기록한다.
+- 실제 명령 `py -m unittest discover -s tests` 출력 원문:
+
+```text
+.................................
+----------------------------------------------------------------------
+Ran 33 tests in 0.335s
+
+OK
+exit=0
+```

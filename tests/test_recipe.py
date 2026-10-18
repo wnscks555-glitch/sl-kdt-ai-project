@@ -1,8 +1,10 @@
+import copy
 import hashlib
 from pathlib import Path
 import unittest
 
-from src.recipe import RecipeError, load_recipe
+from src.recipe import Inspection, ModelRecipe, RecipeError, load_recipe
+from src.recipe_rules import RecipeProcess
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -53,6 +55,285 @@ class RecipeLoadingTests(unittest.TestCase):
             with self.subTest(name=name), self.assertRaises(RecipeError) as caught:
                 load_recipe(FIXTURES / name)
             self.assertTrue(all(error.startswith("$:") for error in caught.exception.errors))
+
+
+class RecipeProcessTests(unittest.TestCase):
+    def setUp(self):
+        self.models = load_recipe(DEFAULT_RECIPE).models
+        self.process = RecipeProcess(self.models)
+        self.seq = 0
+        self.register("OTHER", "B")
+        self.accept("P1", "OTHER", rule_id="RULE_SEQ")
+
+    def row(self, event, product_id="a", inspection="", result="", model=""):
+        self.seq += 1
+        return {
+            "seq": str(self.seq), "product_id": product_id, "event": event,
+            "inspection": inspection, "result": result, "model": model,
+        }
+
+    def accept(self, event, product_id="a", inspection="", result="", model="", rule_id=None):
+        decision = self.process.apply(self.row(event, product_id, inspection, result, model))
+        self.assertTrue(decision.accepted, decision)
+        self.assertEqual(decision.reason, "")
+        if rule_id is not None:
+            self.assertEqual(decision.rule_id, rule_id)
+        return decision
+
+    def register(self, product_id="a", model="A"):
+        decision = self.accept("REGISTER", product_id, model=model, rule_id="RULE_RECIPE")
+        self.assertEqual(decision.state, "등록")
+        return decision
+
+    def steps(self, count, product_id="a"):
+        for number in range(1, count + 1):
+            self.accept("P" + str(number), product_id, rule_id="RULE_SEQ")
+
+    def assert_rejected_unchanged(self, row, rule_id, reason=None):
+        before = copy.deepcopy(self.process.products)
+        decision = self.process.apply(row)
+        self.assertFalse(decision.accepted)
+        self.assertEqual(decision.rule_id, rule_id)
+        self.assertTrue(decision.reason)
+        if reason is not None:
+            self.assertIn(reason, decision.reason)
+        self.assertEqual(self.process.products, before)
+        self.assertEqual(self.process.products["OTHER"].model, "B")
+        self.assertEqual(self.process.products["OTHER"].completed_steps, 1)
+        self.assertEqual(self.process.products["OTHER"].inspections, {})
+        return decision
+
+    def test_t11_model_a_completes_all_steps_and_required_inspections(self):
+        self.register()
+        self.assertEqual(self.process.products["a"].recipe, self.models["A"])
+        self.steps(5)
+        for inspection in ("LEAK", "LIGHT"):
+            decision = self.accept("INSPECT", inspection=inspection, result="PASS", rule_id="RULE_NOT_DONE")
+            self.assertEqual(decision.state, "검사 대기")
+        decision = self.accept("INSPECT", inspection="FINAL", result="PASS", rule_id="RULE_FAIL_HOLD")
+        self.assertEqual(decision.state, "레시피 모의 흐름 완료")
+        product = self.process.products["a"]
+        self.assertEqual(product.model, "A")
+        self.assertEqual(product.completed_steps, 5)
+        self.assertEqual(product.inspections, {"LEAK": "PASS", "LIGHT": "PASS", "FINAL": "PASS"})
+        self.assertEqual(product.status, "레시피 모의 흐름 완료")
+        self.assertEqual(product.incomplete_reason, "")
+
+    def test_t12_interleaved_models_keep_independent_progress_and_inspections(self):
+        self.register()
+        self.register("b", "B")
+        for event in ("P1", "P2", "P3", "P4"):
+            self.accept(event, rule_id="RULE_SEQ")
+            self.accept(event, "b", rule_id="RULE_SEQ")
+        self.accept("INSPECT", "b", "LEAK", "PASS", rule_id="RULE_NOT_DONE")
+        decision = self.accept("INSPECT", "b", "LIGHT", "PASS", rule_id="RULE_FAIL_HOLD")
+        self.assertEqual(decision.state, "레시피 모의 흐름 완료")
+        self.assertEqual(self.process.products["b"].completed_steps, 4)
+        self.assertEqual(self.process.products["b"].inspections, {"LEAK": "PASS", "LIGHT": "PASS"})
+        self.assertEqual(self.process.products["a"].status, "공정 진행 중(P4 완료)")
+        self.assertEqual(self.process.products["a"].inspections, {})
+        self.assertEqual(
+            self.process.products["a"].incomplete_reason,
+            "P5 미완료; LEAK 미실시; LIGHT 미실시; FINAL 미실시",
+        )
+
+    def test_t13_skipped_step_is_rejected_then_correct_next_step_is_accepted(self):
+        self.register()
+        self.accept("P1", rule_id="RULE_SEQ")
+        decision = self.assert_rejected_unchanged(self.row("P3"), "RULE_SEQ", "P2 미완료")
+        self.assertEqual(decision.state, "공정 진행 중(P1 완료)")
+        self.assertEqual(self.process.products["a"].completed_steps, 1)
+        self.accept("P2", rule_id="RULE_SEQ")
+        self.assertEqual(self.process.products["a"].status, "공정 진행 중(P2 완료)")
+
+    def test_t14_each_inspection_requires_its_own_after_step(self):
+        self.register()
+        self.steps(2)
+        self.assert_rejected_unchanged(
+            self.row("INSPECT", inspection="LEAK", result="PASS"), "RULE_INSP_PRE", "P3 미완료"
+        )
+        self.register("c")
+        self.steps(4, "c")
+        self.assert_rejected_unchanged(
+            self.row("INSPECT", "c", "LIGHT", "PASS"), "RULE_INSP_PRE", "P5 미완료"
+        )
+        self.assertEqual(self.process.products["a"].inspections, {})
+        self.assertEqual(self.process.products["c"].inspections, {})
+
+    def test_t15_midprocess_pass_and_remaining_final_inspection(self):
+        self.register()
+        self.steps(3)
+        decision = self.accept("INSPECT", inspection="LEAK", result="PASS", rule_id="RULE_NOT_DONE")
+        self.assertEqual(decision.state, "공정 진행 중(P3 완료)")
+        self.accept("P4", rule_id="RULE_SEQ")
+        self.accept("P5", rule_id="RULE_SEQ")
+        self.accept("INSPECT", inspection="LIGHT", result="PASS", rule_id="RULE_NOT_DONE")
+        self.assertEqual(self.process.products["a"].status, "검사 대기")
+        self.assertEqual(self.process.products["a"].incomplete_reason, "FINAL 미실시")
+
+    def test_t16_fail_blocks_next_step_and_cannot_be_replaced_by_pass(self):
+        self.register()
+        self.steps(3)
+        decision = self.accept("INSPECT", inspection="LEAK", result="FAIL", rule_id="RULE_FAIL_HOLD")
+        self.assertEqual(decision.state, "보류")
+        self.assert_rejected_unchanged(self.row("P4"), "RULE_FAIL_HOLD")
+        self.assert_rejected_unchanged(
+            self.row("INSPECT", inspection="LEAK", result="PASS"), "RULE_PRESERVE"
+        )
+        product = self.process.products["a"]
+        self.assertEqual(product.completed_steps, 3)
+        self.assertEqual(product.inspections, {"LEAK": "FAIL"})
+        self.assertEqual(product.status, "보류")
+        self.assertEqual(product.incomplete_reason, "P4 미완료; P5 미완료; LEAK FAIL; LIGHT 미실시; FINAL 미실시")
+
+    def test_t16b_first_result_for_other_inspection_is_allowed_during_hold(self):
+        self.register()
+        self.steps(5)
+        self.accept("INSPECT", inspection="LIGHT", result="FAIL", rule_id="RULE_FAIL_HOLD")
+        decision = self.accept("INSPECT", inspection="FINAL", result="PASS", rule_id="RULE_FAIL_HOLD")
+        self.assertEqual(decision.state, "보류")
+        self.assertEqual(self.process.products["a"].inspections, {"LIGHT": "FAIL", "FINAL": "PASS"})
+        self.assertEqual(self.process.products["a"].incomplete_reason, "LEAK 미실시; LIGHT FAIL")
+
+    def test_t17_unknown_model_step_or_model_specific_inspection(self):
+        decision = self.assert_rejected_unchanged(self.row("REGISTER", "c", model="C"), "RULE_RECIPE")
+        self.assertEqual(decision.state, "미등록")
+        self.assertNotIn("c", self.process.products)
+        self.register()
+        self.assert_rejected_unchanged(self.row("P6"), "RULE_RECIPE")
+        self.register("b", "B")
+        self.assert_rejected_unchanged(self.row("INSPECT", "b", "FINAL", "PASS"), "RULE_RECIPE")
+
+    def test_t19_model_b_does_not_allow_model_a_fifth_step(self):
+        self.register("b", "B")
+        self.steps(4, "b")
+        decision = self.assert_rejected_unchanged(self.row("P5", "b"), "RULE_RECIPE")
+        self.assertEqual(decision.state, "검사 대기")
+        self.assertEqual(self.process.products["b"].completed_steps, 4)
+
+    def test_t20_missing_registration_model_and_model_on_other_events(self):
+        self.assert_rejected_unchanged(self.row("REGISTER", "new"), "RULE_RECIPE")
+        self.assertNotIn("new", self.process.products)
+        self.register()
+        self.assert_rejected_unchanged(self.row("P1", model="A"), "RULE_PRESERVE")
+        self.steps(3)
+        self.assert_rejected_unchanged(
+            self.row("INSPECT", inspection="LEAK", result="PASS", model="A"), "RULE_PRESERVE"
+        )
+
+    def test_t22_reregistration_cannot_change_model_or_progress(self):
+        self.register()
+        self.steps(2)
+        self.assert_rejected_unchanged(self.row("REGISTER", model="B"), "RULE_PRESERVE", "이미 등록된 제품")
+        self.assertEqual(self.process.products["a"].model, "A")
+        self.assertEqual(self.process.products["a"].completed_steps, 2)
+        self.assertEqual(self.process.products["a"].status, "공정 진행 중(P2 완료)")
+
+    def test_duplicate_or_earlier_steps_and_second_inspection_preserve_completion(self):
+        self.register()
+        self.steps(5)
+        for inspection in ("LEAK", "LIGHT", "FINAL"):
+            self.accept("INSPECT", inspection=inspection, result="PASS")
+        for event in ("P1", "P5"):
+            with self.subTest(event=event):
+                self.assert_rejected_unchanged(self.row(event), "RULE_PRESERVE")
+        decision = self.assert_rejected_unchanged(
+            self.row("INSPECT", inspection="LIGHT", result="FAIL"), "RULE_PRESERVE"
+        )
+        self.assertEqual(decision.state, "레시피 모의 흐름 완료")
+        self.assertEqual(self.process.products["a"].inspections["LIGHT"], "PASS")
+
+    def test_invalid_columns_seq_product_result_and_blank_field_rules_precede_recipe_lookup(self):
+        self.register()
+        self.steps(3)
+        invalid_rows = []
+        for seq in ("0", "-1", "1.5", " 1", "１", ""):
+            row = self.row("INSPECT", inspection="NOT_IN_RECIPE", result="PASS")
+            row["seq"] = seq
+            invalid_rows.append(row)
+        for product_id in ("", "   "):
+            invalid_rows.append(self.row("P6", product_id))
+        for result in ("OK", "pass", "PASS ", ""):
+            invalid_rows.append(self.row("INSPECT", inspection="NOT_IN_RECIPE", result=result))
+        invalid_rows.extend([
+            self.row("REGISTER", "new", inspection="LEAK", result="PASS", model="C"),
+            self.row("P6", inspection="LEAK", result="PASS"),
+            self.row("P6", "UNKNOWN", model="A"),
+            self.row("INSPECT", inspection="", result="PASS"),
+            self.row(""),
+        ])
+        missing_column = self.row("P6")
+        del missing_column["model"]
+        invalid_rows.append(missing_column)
+        extra_column = self.row("P6")
+        extra_column["extra"] = ""
+        invalid_rows.append(extra_column)
+        missing_value = self.row("P6")
+        missing_value["model"] = None
+        invalid_rows.append(missing_value)
+        for row in invalid_rows:
+            with self.subTest(row=row):
+                self.assert_rejected_unchanged(row, "RULE_PRESERVE")
+
+    def test_rule_priority_registration_then_unregistered_then_recipe_then_hold_or_sequence(self):
+        self.register()
+        self.assert_rejected_unchanged(self.row("REGISTER", model="C"), "RULE_PRESERVE")
+        self.assert_rejected_unchanged(self.row("REGISTER"), "RULE_PRESERVE")
+        self.assert_rejected_unchanged(self.row("P6", "UNKNOWN"), "RULE_PRESERVE")
+        self.assert_rejected_unchanged(
+            self.row("INSPECT", "UNKNOWN", "NOT_IN_RECIPE", "PASS"), "RULE_PRESERVE"
+        )
+        self.register("b", "B")
+        self.steps(2, "b")
+        self.accept("INSPECT", "b", "LEAK", "FAIL", rule_id="RULE_FAIL_HOLD")
+        self.assert_rejected_unchanged(self.row("P5", "b"), "RULE_RECIPE")
+        self.assert_rejected_unchanged(self.row("INSPECT", "b", "FINAL", "PASS"), "RULE_RECIPE")
+        self.assert_rejected_unchanged(self.row("P1", "b"), "RULE_PRESERVE")
+        self.assert_rejected_unchanged(self.row("P4", "b"), "RULE_FAIL_HOLD")
+        self.assert_rejected_unchanged(self.row("INSPECT", "b", "LIGHT", "PASS"), "RULE_INSP_PRE", "P4 미완료")
+
+    def test_recipe_identifiers_are_matched_without_case_or_whitespace_normalization(self):
+        for model in ("a", " A", "A "):
+            with self.subTest(model=model):
+                self.assert_rejected_unchanged(self.row("REGISTER", "new", model=model), "RULE_RECIPE")
+        self.register()
+        for event in ("p1", " P1", "P1 "):
+            with self.subTest(event=event):
+                self.assert_rejected_unchanged(self.row(event), "RULE_RECIPE")
+        self.steps(3)
+        for inspection in ("leak", " LEAK", "LEAK "):
+            with self.subTest(inspection=inspection):
+                self.assert_rejected_unchanged(self.row("INSPECT", inspection=inspection, result="PASS"), "RULE_RECIPE")
+
+    def test_seq_labels_do_not_reorder_or_deduplicate_physical_rows(self):
+        for row, rule_id in (
+            ({"seq": "20", "product_id": "a", "event": "REGISTER", "inspection": "", "result": "", "model": "A"}, "RULE_RECIPE"),
+            ({"seq": "3", "product_id": "a", "event": "P1", "inspection": "", "result": "", "model": ""}, "RULE_SEQ"),
+            ({"seq": "3", "product_id": "a", "event": "P2", "inspection": "", "result": "", "model": ""}, "RULE_SEQ"),
+        ):
+            decision = self.process.apply(row)
+            self.assertTrue(decision.accepted, decision)
+            self.assertEqual(decision.rule_id, rule_id)
+        row = self.row("P4")
+        row["seq"] = "2"
+        self.assert_rejected_unchanged(row, "RULE_SEQ", "P3 미완료")
+        self.assertEqual(self.process.products["a"].completed_steps, 2)
+
+    def test_recipe_array_order_and_early_all_pass_do_not_require_numeric_step_names(self):
+        models = dict(self.models)
+        models["CUSTOM"] = ModelRecipe(("FINISH", "START"), (Inspection("CHECK", "FINISH"),))
+        self.process = RecipeProcess(models)
+        self.register("OTHER", "B")
+        self.accept("P1", "OTHER", rule_id="RULE_SEQ")
+        self.register("a", "CUSTOM")
+        self.assert_rejected_unchanged(self.row("START"), "RULE_SEQ", "FINISH 미완료")
+        self.accept("FINISH", rule_id="RULE_SEQ")
+        decision = self.accept("INSPECT", inspection="CHECK", result="PASS", rule_id="RULE_NOT_DONE")
+        self.assertEqual(decision.state, "공정 진행 중(FINISH 완료)")
+        self.assertEqual(self.process.products["a"].incomplete_reason, "START 미완료")
+        decision = self.accept("START", rule_id="RULE_SEQ")
+        self.assertEqual(decision.state, "레시피 모의 흐름 완료")
+        self.assertEqual(self.process.products["a"].incomplete_reason, "")
 
 
 if __name__ == "__main__":
