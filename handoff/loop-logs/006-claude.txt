@@ -1,0 +1,22 @@
+The re-review is done, and the verdict is **FIX**: H1 from review 005 is still open, and there is one new medium-severity finding. The results are in `handoff/reviews/006-review.md`, and the counterexamples I wrote to try to break the code are in `handoff/reviews/probes/test_probe_006.py`.
+
+**Tests (`py -m unittest discover -s tests`):** 100 of 101 passed. The one failure is the same T44 check as last time (`discarded`: 0 not greater than 0). The 3 regression tests Codex added for M1–M3 all passed. Codex could not run any tests in its own environment (`No installed Python found!`), so this run is the first time these fixes were actually executed.
+
+**Preservation conditions:** all met. Protected files and existing test expected values are unchanged. I re-ran the 4 existing samples and regenerated the seed-42 CSV, meta and reports in a temp folder, and all 19 reports, the CSV and the meta are byte-identical to the checked-in files. The rounding change did not alter any existing output.
+
+**Review 005 items:**
+
+| Item | Status | Notes |
+| --- | --- | --- |
+| H1 (T44: seed 42 produces 0 discarded products) | **Open** | Codex didn't argue against the finding; it put it on hold until you decide. I agree with how it was handled (the failure was kept and reported, not hidden), but it stays open because there is no decision yet in `decisions.md`. |
+| M1 (rounding on exact ties) | Fixed | Now rounds half up (`1/32` → `0.0313`); my boundary cases also passed. |
+| M2 (malformed meta crashed with exit code 1) | Fixed | NaN, Infinity, a directory instead of a file, broken JSON and nested values all now exit with code 2, without a traceback. |
+| M3 (small product counts fail without explanation) | Fixed | I tried 480 combinations of product count and seed. The 3 that failed all gave the reason in the message and wrote no files, and existing output was not overwritten. |
+
+**New findings:**
+- **Medium M1:** `src/main.py:135–138` and `src/summary.py:201–207`. If `injected_errors` in the meta file contains a key that isn't one of the 5 error types (e.g. `FOO`), it passes validation and is added only to the TOTAL row. In my probe, the per-type rows summed to 1 but TOTAL showed 6, and the extra key appears nowhere in the table. This only happens with a hand-edited meta file; the generator never writes such a key.
+- **Low L1:** The ratio can still round wrongly when the exact value has 29 or more significant digits. That would take around 10³³ rows, so it can't happen in practice. Recorded only.
+
+Two of the 9 probes failed, and those two are the findings above. One probe failed on the first run because of my own mistake (it used a product ID that isn't in the test input). I fixed the probe, re-ran it, and noted this in the review.
+
+To get to PASS, you need to choose how to resolve H1 (the options are listed in review 005), and Codex needs to fix the new M1.
