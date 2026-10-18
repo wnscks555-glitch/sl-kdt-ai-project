@@ -12,6 +12,7 @@ Input Pareto ties sort PRESERVE_DUP_RESULT then SEQ_SKIP, one row each.
 """
 
 from dataclasses import replace
+import json
 from pathlib import Path
 import os
 import subprocess
@@ -22,7 +23,7 @@ from src.equipment import load_equipment
 from src.main import read_events
 from src.recipe import load_recipe
 from src.recipe_rules import EQUIPMENT_INPUT_COLUMNS
-from src.summary import ASSUMPTION_NOTICE, SUMMARY_COLUMNS, build_analysis, build_summary, write_summary
+from src.summary import ASSUMPTION_NOTICE, SUMMARY_COLUMNS, _ratio, build_analysis, build_summary, write_summary
 from src.trace import build_trace
 
 
@@ -82,6 +83,14 @@ class SummaryTests(unittest.TestCase):
         self.assertEqual((comparison["normal_rows"], comparison["injected_count"], comparison["injection_rate"],
                           comparison["actual_rejections"]), (24, 1, "0.0417", 1))
         self.assertEqual(self.find(rows, "rejection_totals", "rejection_rate")["value"], "0.0769")
+
+    def test_review005_m1_ratio_rounds_half_up(self):
+        for numerator, denominator, expected in ((1, 32, "0.0313"), (1, 160, "0.0063"),
+                                                  (1, 800, "0.0013"), (3124, 100000, "0.0312"),
+                                                  (3126, 100000, "0.0313"), (0, 32, "0.0000"),
+                                                  (0, 0, "")):
+            with self.subTest(numerator=numerator, denominator=denominator):
+                self.assertEqual(_ratio(numerator, denominator), expected)
 
     def test_t46_stopped_equipment_causes_and_error_separation(self):
         events = read_events(ROOT / "data/sample_events_equipment.csv", EQUIPMENT_INPUT_COLUMNS)
@@ -189,6 +198,28 @@ class SummaryTests(unittest.TestCase):
             with self.subTest(options=options), tempfile.TemporaryDirectory() as directory:
                 result = self.cli(directory, *options)
                 self.assertEqual(result.returncode, 2)
+                self.assertFalse((Path(directory) / "reports").exists())
+
+    def test_review005_m2_invalid_meta_exits_2_without_reports(self):
+        invalid = [[], None, {}, {"normal_rows": 24}, {"injected_errors": {}},
+                   *({"normal_rows": value, "injected_errors": {}}
+                     for value in ("24", 24.0, True, -1)),
+                   {"normal_rows": 24, "injected_errors": []},
+                   *({"normal_rows": 24, "injected_errors": {"SEQ_SKIP": value}}
+                     for value in ("1", 1.0, True, None, -1))]
+        for meta in invalid:
+            with self.subTest(meta=meta), tempfile.TemporaryDirectory() as directory:
+                source = Path(directory) / "events.csv"
+                source.write_bytes((ROOT / "tests/fixtures/summary_events.csv").read_bytes())
+                Path(str(source) + ".meta.json").write_text(json.dumps(meta), encoding="utf-8")
+                result = subprocess.run(
+                    ["py", "-m", "src.main", str(source), "--recipe",
+                     str(ROOT / "recipes/lamp_models_retest.json"), "--equipment",
+                     str(ROOT / "recipes/equipment.json"), "--summary"], cwd=directory, capture_output=True,
+                    env={**os.environ, "PYTHONPATH": str(ROOT), "PYTHONIOENCODING": "utf-8"})
+                self.assertEqual(result.returncode, 2, result.stderr.decode("utf-8"))
+                self.assertIn("meta.json", result.stderr.decode("utf-8"))
+                self.assertNotIn(b"Traceback", result.stderr)
                 self.assertFalse((Path(directory) / "reports").exists())
 
 

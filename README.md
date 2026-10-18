@@ -367,6 +367,10 @@ py -m unittest discover -s tests
 
 오류 5종은 미래 공정 건너뜀·`result=OK`·요청 없는 중복 결과·없는 설비 `LEAK-9`·B 제품의 `P5`입니다. 정상 행을 바꾸지 않고 당시 상태에서 거절될 위치에 추가합니다. 주입 종류의 나머지 배분과 위치 선택도 같은 난수 흐름을 씁니다. 주입률의 분모는 정상 행 수이고 최종 거절률의 분모는 오류를 포함한 전체 입력 행 수입니다. 둘은 다른 지표이며 정지 설비 거절이 추가되면 더 달라질 수 있습니다. meta가 옆에 없으면 주입 대비 절은 생략합니다.
 
+제품 수가 양수여도 배정된 오류 종류마다 유효한 주입 위치가 있어야 생성할 수 있습니다. 모델은 확률로 추출하므로 고정된 최소 제품 수로 이 조건을 보장할 수 없습니다. 예를 들어 `--seed 39 --products 4`는 B 제품이 없는데 B의 `P5` 오류가 1건 배정되어 실패합니다. 이 경우 다른 종류로 재배분하지 않고, 오류 종류·배정 수·후보 부재 이유를 표시하며 종료 코드 2로 끝납니다. CSV와 meta를 쓰기 전에 중단하므로 기존 출력도 덮어쓰지 않습니다.
+
+옆에 있는 meta.json은 객체이고 `normal_rows`가 0 이상의 정수이며 `injected_errors`가 값이 0 이상의 정수인 객체여야 합니다. 구조나 값 타입이 잘못되면 메시지와 함께 종료 코드 2로 끝나며 보고서를 쓰지 않습니다.
+
 그래프·헤더/CSV 구문 오류 생성·설비 재가동은 포함하지 않습니다. 확률은 실측 추정치가 아니며 정지로 관측이 일찍 끝나는 선택 효과도 있습니다. 예를 들어 LEAK-2가 두 번 FAIL 뒤 멈췄다고 관측 FAIL률 100%를 실제 고장 확률로 해석할 수 없습니다.
 
 ### 지표와 긴 표의 절
@@ -384,7 +388,7 @@ py -m unittest discover -s tests
 | 거절 합계 | 전체 거절 = 규칙별 거절 합 = 입력 오류 파레토 합 + 정지 설비 거절 + 기타 거절 |
 | 주입 대비 | meta의 오류 종류별 주입 수와 실제 상세 사유 코드 거절 수를 나란히 표시. TOTAL 주입률은 주입 수 / 정상 행 수 |
 
-비율은 소수 넷째 자리까지 반올림한 문자열이며 분모 0은 빈칸입니다. summary의 `product_metrics`, `status_distribution`, `inspection_metrics`, `equipment_metrics`, `quality_pareto`, `input_error_pareto`, `equipment_stops`, `rejection_totals`, `rule_rejections`, `injection_comparison`, `notice` 절에서 위 값을 확인합니다. `injection_comparison`은 meta가 있을 때만 나옵니다.
+비율은 소수 넷째 자리까지 사사오입한 문자열이며(예: `1/32 = 0.03125` → `0.0313`) 분모 0은 빈칸입니다. summary의 `product_metrics`, `status_distribution`, `inspection_metrics`, `equipment_metrics`, `quality_pareto`, `input_error_pareto`, `equipment_stops`, `rejection_totals`, `rule_rejections`, `injection_comparison`, `notice` 절에서 위 값을 확인합니다. `injection_comparison`은 meta가 있을 때만 나옵니다.
 
 ### 고정 상세 사유 코드
 

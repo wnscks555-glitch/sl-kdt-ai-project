@@ -47,6 +47,20 @@ class GeneratorTests(unittest.TestCase):
             generate(43, 500, b, CONFIG)
             self.assertNotEqual(a.read_bytes(), b.read_bytes())
 
+    def test_review005_m3_missing_candidate_explains_failure_without_output(self):
+        with tempfile.TemporaryDirectory() as directory:
+            target = Path(directory) / "small.csv"
+            result = subprocess.run(
+                ["py", "-m", "src.generate", "--seed", "39", "--products", "4", "--out", str(target),
+                 "--config", str(CONFIG)], cwd=directory, capture_output=True,
+                env={**os.environ, "PYTHONPATH": str(ROOT), "PYTHONIOENCODING": "utf-8"})
+            self.assertEqual(result.returncode, 2, result.stderr.decode("utf-8"))
+            for text in ("RECIPE_UNKNOWN_STEP", "배정 1건", "후보 0개", "B 제품 없음"):
+                self.assertIn(text, result.stderr.decode("utf-8"))
+            self.assertNotIn(b"Traceback", result.stderr)
+            self.assertFalse(target.exists())
+            self.assertFalse(Path(str(target) + ".meta.json").exists())
+
 
 class GeneratedInvariantTests(unittest.TestCase):
     @classmethod

@@ -131,7 +131,11 @@ class Generator:
         insertions = defaultdict(list)
         for kind in ERROR_KINDS:
             if counts[kind] and not candidates[kind]:
-                raise ValueError("오류 주입 위치 없음: " + kind)
+                reason = "현재 제품·공정·검사·설비 상태에 유효한 주입 위치가 없음"
+                if kind == "RECIPE_UNKNOWN_STEP" and not any(
+                        row["event"] == "REGISTER" and row["model"] == "B" for row in normal):
+                    reason = "B 제품 없음: B 제품의 P5 행을 주입할 수 없음"
+                raise ValueError(f"오류 주입 위치 없음: {kind} (배정 {counts[kind]}건, 후보 0개; {reason})")
             for _ in range(counts[kind]):
                 position, row = self.rng.choice(candidates[kind])
                 insertions[position].append(dict(row))

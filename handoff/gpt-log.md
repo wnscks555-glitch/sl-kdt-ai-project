@@ -3367,3 +3367,52 @@ exit_code=0; elapsed_seconds=1.640875
 - ce-work mode:return-to-caller의 구현/로컬 검증을 마치고 주 에이전트가 간소화·리뷰·통합을 수행했다. 구현 항목은 전부 완료했지만 T44 수용 조건 전체를 충족한 상태로 보고하지 않는다. 구현 경로 native, 외부 실행 엔진 없음, 게시 단계 생략.
 - ce-compound mode:non-interactive 판단: 해결한 파일명 충돌은 최종 코드·회귀 테스트·README에서 바로 복원할 수 있고, 폐기 빈 검증 이견은 미해결이다. 별도 영구 해결 문서를 만들 근거가 없어 생성하지 않았다. **Documentation skipped — 추가로 보존할 검증된 비자명한 해결 지식 없음.**
 - 최종 ce-code-review 취합·validator empty-batch·report 기록까지 완료했다. 원문 [final-review.json](run-logs/final-review.json)의 잔여 actionable finding은 0이며 `full_compliance=false`, T44 부분 충족, 완료 리뷰 7개/사용량 제한으로 실패한 reliability 리뷰 1개를 명시한다. 파일명 충돌 수정은 검토·검증됐지만 이를 전체 테스트 통과나 명세 완전 충족으로 해석하지 않는다.
+
+## 리뷰 005 수정 단계 (2026-10-18)
+
+대상은 `handoff/reviews/005-review.md`의 H1·M1·M2·M3뿐이다. 낮음 L1–L3와 새 기능은 처리하지 않았다. 착수 시 작업 트리는 깨끗했다. 현재 요청의 커밋 금지를 우선해 커밋·스테이징·브랜치 변경·push를 하지 않았다.
+
+### 항목별 판단과 변경
+
+| 항목 | 판단 | 이유·처리 |
+| --- | --- | --- |
+| H1 (T44) | **보류** | 리뷰 005와 기존 완료 보고에서 확인한 seed42 폐기 0건은 명세 설정 충돌이다. `tasks.md` 불변식 6과 `decisions.md`의 빈 검증 방지 결정은 이 경우 실패를 유지하고 명세 이견으로 보고하도록 명시한다. 시드·확률·재검사 설비 선택·기대값을 바꾸지 않았다. 폐기 조건이나 생성 확률 정책 변경에는 사용자 결정이 필요하며, T44 충족·전체 통과로 보고하지 않는다. 이번 환경에서는 이 실패를 재실행으로 확인하지 못했다. |
+| M1 (T45) | **반영, 실행 검증 미완료** | 명세의 반올림을 통상적인 사사오입으로 해석했다. `src/summary.py::_ratio`를 `Decimal`과 `ROUND_HALF_UP`으로 바꾸고 README에 동점 예시를 명시했다. 1/32→`0.0313`, 1/160→`0.0063`, 1/800→`0.0013`, 경계 앞뒤·0·분모 0의 독립 기대값 테스트를 추가했다. 기존 테스트 기대값은 바꾸지 않았다. |
+| M2 (T45) | **반영, 실행 검증 미완료** | `src/main.py`에서 meta를 읽은 직후 최상위 객체, `normal_rows`의 0 이상 정수, `injected_errors`의 객체 및 각 값의 0 이상 정수를 검사한다. bool도 정수로 받지 않는다. 위반은 기존 `ValueError` 처리로 메시지·종료 2가 되고, 검사 위치는 보고서 쓰기 전이다. 배열·null·누락·문자열·실수·bool·음수에 대해 종료 코드·메시지·트레이스백 부재·보고서 미생성을 검사하는 CLI 회귀를 추가했다. |
+| M3 (T42–T43) | **반영(리뷰 제안 ②), 실행 검증 미완료** | 현재 실패 정책을 유지하고 README에 필요한 조건을 공개했다. 배정된 종류마다 유효 후보가 있어야 하며, 확률 추출이므로 고정된 최소 제품 수로 보장할 수 없다. `seed39/products4`에서 B 부재로 P5 주입이 불가능한 사례는 리뷰 P3의 관측을 인용했다. 오류 메시지에 종류·배정 수·후보 0·B 부재 이유를 추가하고 해당 실패의 CLI 회귀를 추가했다. 후보 없는 종류의 재배분은 5종 균등·3% 조건을 바꾸므로 하지 않았다. 성공 경로의 난수 소비·배분·버전·설정은 그대로다. |
+
+M3의 판단은 읽기 전용 하위 에이전트의 독립 명세 대조와 일치했다. 주 에이전트가 모든 변경과 로그를 통합했다. 다른 읽기 전용 하위 에이전트가 최종 6개 코드·테스트·README 파일을 정적으로 검토했으며, 수정으로 생긴 중간 이상 결함은 발견하지 못했다. 이는 실행 검증이나 공식 리뷰 PASS를 뜻하지 않는다.
+
+### 실제 실행과 검증 한계
+
+수정 전에 회귀 테스트를 추가한 뒤 실행을 시도했지만, 다음 두 명령 모두 테스트 수집 전에 종료됐다. 따라서 red 실패를 관측했다고 보고하지 않는다.
+
+```text
+$ py -m unittest discover -s tests -p test_summary.py
+No installed Python found!
+[exit code 1]
+
+$ py -m unittest discover -s tests -p test_generate.py -k review005
+No installed Python found!
+[exit code 1]
+```
+
+수정 후 사용자가 지정한 전체 테스트 명령의 실제 출력:
+
+```text
+$ py -m unittest discover -s tests
+No installed Python found!
+[exit code 1]
+```
+
+`py` 런처는 존재하지만 `py --list-paths`도 `No installed Pythons found!`를 반환했고, `uv python list --only-installed --offline --no-cache`에도 설치된 인터프리터가 표시되지 않았다. 확인한 Python311 디렉터리에는 `python.exe`가 없었다. 패키지·인터프리터 설치, 전역 설정 변경, `python` 별칭 실행은 하지 않았다. 이 환경 결과는 이전 리뷰의 98개 중 97개 통과·T44 1개 실패와 구분한다. 이번에는 테스트가 0개 수집됐으므로 통과·실패 개수와 실행 시간을 새로 보고할 수 없다.
+
+- `git diff --check`: 종료 0. 변경 파일과 보호 경계는 diff로 확인했다.
+- `handoff/tasks.md`, `handoff/decisions.md`, `handoff/reviews/`, `CLAUDE.md`, `.claude/`, `src/rules.py`, 기존 테스트 4개, 설정·데이터·보고서 파일에는 변경이 없다. 기존 테스트 본문의 기대값은 그대로 두고 새 회귀만 추가했다.
+- 기존 샘플·seed42 산출물 파일은 수정하지 않았다. 재생성 후 바이트 동일 여부와 기존 T1–T50의 실행 회귀는 Python 부재로 **미검증**이다.
+- `practical-work-operation`으로 범위·보존·독립 검토를 조율했다. 기존 리뷰가 수정 항목과 검증 기준을 제공하므로 별도 계획 파일은 만들지 않았다. `ce-work mode:return-to-caller`의 로컬 수정 결과는 검증 차단 상태로 반환했다. 커밋·게시 단계는 현재 사용자 지시에 따라 생략했다.
+- `ce-simplify-code mode:pipeline`의 재사용·품질·효율·테스트 가치 기준으로 작은 diff를 인라인 점검했다. 필요한 경계 검증과 회귀 테스트를 유지하고 추가 단순화는 하지 않았다. lint/typecheck 설정은 발견되지 않았으며, 실행 테스트는 위와 같이 차단됐다.
+- `ce-code-review`의 필수 scope 도구도 `py .../ce-code-review/scripts/review-scope.py --base HEAD --docs-root docs`에서 `No installed Python found!`·종료 1로 중단됐다. 정식 절차의 완료·리뷰 receipt 생성·PASS를 주장하지 않는다. 보완 정적 검토만 수행했다.
+- `ce-compound mode:non-interactive` 판단: 실행으로 검증된 새 해결 지식이 없고 H1은 미해결이다. **Documentation skipped — 미검증 변경이나 명세 이견을 영구 해결 문서로 기록하지 않음.**
+
+남은 일은 Python 실행 환경에서 위 전체 명령을 재실행해 새 회귀와 기존 보존 조건을 검증하는 것, 그리고 H1의 사용자 결정이다. 변경은 커밋하지 않은 상태로 루프 스크립트에 남긴다.

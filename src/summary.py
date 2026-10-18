@@ -3,6 +3,7 @@
 from collections import Counter, defaultdict
 import csv
 from dataclasses import dataclass
+from decimal import Decimal, ROUND_HALF_UP
 from pathlib import Path
 
 from .recipe_rules import RecipeProcess
@@ -86,7 +87,10 @@ def build_analysis(events, models, equipment_book):
 
 
 def _ratio(numerator, denominator):
-    return format(numerator / denominator, ".4f") if denominator else ""
+    if not denominator:
+        return ""
+    value = Decimal(numerator) / Decimal(denominator)
+    return format(value.quantize(Decimal("0.0001"), rounding=ROUND_HALF_UP), ".4f")
 
 
 def _row(section, key, **fields):

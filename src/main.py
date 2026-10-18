@@ -128,6 +128,14 @@ def run_recipe(input_csv: Path, recipe_path: Path, parser, equipment_path=None, 
             meta_path = Path(str(input_csv) + ".meta.json")
             try:
                 meta = json.loads(meta_path.read_text(encoding="utf-8-sig"))
+                if not isinstance(meta, dict):
+                    raise ValueError("meta.json은 객체여야 함")
+                if type(meta.get("normal_rows")) is not int or meta["normal_rows"] < 0:
+                    raise ValueError("meta.json의 normal_rows는 0 이상의 정수여야 함")
+                injected = meta.get("injected_errors")
+                if not isinstance(injected, dict) or any(
+                        type(count) is not int or count < 0 for count in injected.values()):
+                    raise ValueError("meta.json의 injected_errors는 값이 0 이상의 정수인 객체여야 함")
             except FileNotFoundError:
                 meta = None
             summary_rows = build_summary(analysis, meta)
