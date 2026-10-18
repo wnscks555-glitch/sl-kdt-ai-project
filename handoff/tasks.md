@@ -1,4 +1,91 @@
-# 현행 작업: v2 2단계 — 재검사·폐기
+# 현행 작업: v2 3단계 — 검사 설비 이상 감지·정지
+
+상태: **사용자 확정** (2026-10-18). 결정 근거는 `handoff/decisions.md`. **사용자가 이 줄을 "사용자 확정"으로 바꾼 뒤에 구현을 시작한다.**
+1·2단계(아래 명세)는 완료(리뷰 002·003 PASS)이며, 그 동작과 테스트는 보존한다.
+
+## 목표와 경계
+- 검사 결과마다 어느 검사 설비에서 쟀는지 기록한다. 같은 설비에서 최초 검사 FAIL이 몰리면 **제품이 아니라 설비를 의심**해 그 설비를 정지하고, 이후 그 설비의 결과를 받지 않는다.
+- 정지 기준(최근 3건 중 2건 FAIL)은 SPC 관리도의 Western Electric 규칙 중 "연속 3점 중 2점" 패턴을 PASS/FAIL 데이터에 맞게 단순화한 **가상 규칙**이다. 실제 SL 기준이나 통계적 관리한계가 아니다.
+- 이번 단계 제외: 설비 재가동·점검 이벤트, 로트 ID, 공정 설비, 정지 원인 FAIL 제품의 자동 재검사 요청, 측정값·관리한계 계산.
+
+## 보존 조건 (가장 먼저 지킬 것)
+- v1, 1단계, 2단계의 동작·출력·테스트는 바뀌지 않는다. `--equipment`가 없으면 2단계까지와 완전히 같다.
+- `src/rules.py`, `tests/test_rules.py`, `tests/test_recipe.py`, `tests/test_retest.py`는 수정하지 않는다. 3단계 테스트는 `tests/test_equipment.py`에 둔다.
+- 기존 샘플 보고서(`reports/sample_events_*.csv`, `_v2_*`, `_retest_*`)는 다시 만들었을 때 체크아웃된 파일과 같아야 한다.
+
+## 실행
+- `py -m src.main <입력CSV> --recipe <레시피JSON> --equipment <설비JSON>`
+- `--equipment`는 `--recipe`와 함께만 쓴다. 없이 쓰면 종료 코드 2. 재검사 레시피와 함께 쓰면 재검사 규칙도 그대로 적용된다.
+- 기본 설비 파일: `recipes/equipment.json`
+
+## 설비 파일 형식
+```json
+{
+  "stop_rule": {"window": 3, "fails": 2},
+  "equipment": {
+    "LEAK-1": "LEAK",
+    "LEAK-2": "LEAK",
+    "LIGHT-1": "LIGHT",
+    "FINAL-1": "FINAL"
+  }
+}
+```
+- `equipment`: 설비 ID → 그 설비가 할 수 있는 검사 ID. 설비 ID 형식은 `^[A-Z][A-Z0-9_-]*$`.
+- 검증 오류(레시피와 같이 모든 오류 표시, 종료 코드 3): 허용하지 않은 키, `window`·`fails`가 정수가 아니거나(`true` 불가) `1 ≤ fails ≤ window ≤ 20`을 어김, `equipment`가 비어 있음, 설비 ID 형식 위반, 레시피 어느 모델에도 없는 검사 ID를 가리킴.
+
+## 입력 (설비 모드 CSV, 7열)
+`seq,product_id,event,inspection,result,model,equipment`
+- `equipment`는 `INSPECT` 행에만 필수. 다른 행에서는 빈칸.
+- `--equipment`를 줬는데 헤더가 7열이 아니거나, 주지 않았는데 7열이면 CSV 헤더 오류(종료 코드 2).
+
+## 규칙
+- 신규 `RULE_EQUIP`: 설비 관련 거절. 거절 집계는 기존 규칙 뒤에 `RULE_EQUIP`를 붙인다(재검사 모드면 8개, 아니면 7개).
+- **정지 판정**: 설비마다 **허용된 최초 검사 결과**만 순서대로 센다(재검사 결과·거절 행은 세지 않음). 어떤 행을 허용한 뒤 그 설비의 최근 `window`건 중 FAIL이 `fails`건 이상이면 그 설비를 정지한다. **정지를 일으킨 행 자체는 허용**하고 제품 결과에도 반영한다. 정지는 실행이 끝날 때까지 유지된다.
+- **INSPECT 행의 설비 검사** (형식·미등록·폐기·레시피 검사 다음, 검사 시점 검사 전):
+  | 조건 | 결과 |
+  | --- | --- |
+  | 설비 파일에 없는 설비 | 거절 `RULE_EQUIP` (`등록되지 않은 설비`) |
+  | 그 검사를 할 수 없는 설비(예: `LIGHT-1`로 LEAK) | 거절 `RULE_EQUIP` (`검사 종류가 다른 설비`) |
+  | 정지된 설비 | 거절 `RULE_EQUIP` (`정지된 설비`). 최초 검사든 재검사든 같음. **열린 재검사 요청은 소진되지 않는다** |
+- 형식 오류: `INSPECT`의 `equipment` 빈칸, 다른 행의 `equipment` 기입 → `RULE_PRESERVE`.
+- 상태 불변: 거절 행은 제품 상태·검사 이력·열린 요청·재검사 횟수·설비 기록·정지 여부를 바꾸지 않는다.
+
+## 보고서 (설비 모드)
+- 기존 3종에 더해 `reports/<입력파일명>_equipment.csv`: `equipment,inspection,counted_results,fail_count,state,stopped_at_seq` (설비 파일 순서, state는 `가동`/`정지`, 정지 전이면 stopped_at_seq 빈칸).
+- rows의 input 표시에 설비를 붙인다: `INSPECT LEAK FAIL @LEAK-2`.
+- 재검사 모드의 history에도 설비를 붙인다: `LEAK: FAIL@5[LEAK-2] → 요청@7 → PASS@9[LEAK-1](재검사 1)`.
+- 터미널에 설비 파일 경로와 SHA-256 앞 12자리를 레시피와 함께 출력한다.
+
+## 사전 기대표 (초안 – 사용자 확정 전)
+기본: `recipes/lamp_models_retest.json` + `recipes/equipment.json`. 「조립 완료(A)」 = 등록 후 P1~P3까지 진행(LEAK 가능 시점).
+
+| ID | 입력 | 기대 결과 |
+| --- | --- | --- |
+| T33 | 조립 완료 제품 p1, p2, p3의 LEAK를 차례로 LEAK-2에서 FAIL, PASS, FAIL | 세 행 모두 허용. 세 번째 행 뒤 LEAK-2 = 정지(stopped_at_seq = 그 행). p1·p3 보류, p2 진행 가능 |
+| T34 | T33 뒤 p4 LEAK PASS @LEAK-2 → p4 LEAK PASS @LEAK-1 | 첫 행 `RULE_EQUIP` 거절(`정지된 설비`), p4 LEAK 결과 없음. 둘째 행 허용 |
+| T35 | a의 LEAK FAIL @LEAK-2 → 요청 → (다른 제품 결과로 LEAK-2 정지) → a 재검사 PASS @LEAK-2 → a 재검사 PASS @LEAK-1 | 정지 설비 재검사는 `RULE_EQUIP` 거절, 보류 유지, 요청은 열린 채 유지. LEAK-1 재검사는 허용(재검사 1), 보류 해소 |
+| T36 | 한 제품이 LEAK-1에서 최초 FAIL → 요청 → FAIL @LEAK-1 → 요청 → FAIL @LEAK-1 | 제품 폐기. LEAK-1은 **가동 유지**(최초 검사 FAIL 1건만 셈) |
+| T37 | LEAK-1 최초 검사 결과 순서 FAIL, PASS, PASS, FAIL (서로 다른 제품) | 정지되지 않음. 최근 3건(PASS, PASS, FAIL) 중 FAIL 1건 |
+| T38 | ① 없는 설비 `LEAK-9` ② `LIGHT-1`로 LEAK ③ INSPECT의 equipment 빈칸 ④ 공정 행에 equipment 기입 | ①② `RULE_EQUIP` ③④ `RULE_PRESERVE`. 모두 제품·설비 상태 불변 |
+| T39 | LEAK-2에서 FAIL(허용) → 시점이 안 된 제품의 FAIL(`RULE_INSP_PRE` 거절) → PASS(허용) → FAIL(허용) | 거절 행은 세지 않음. 네 번째 행 뒤에 정지(최근 3건 FAIL, PASS, FAIL) |
+| T40 | 설비 파일을 각각 ① `window: 0` ② `fails: 4, window: 3` ③ `"window": "3"` ④ 알 수 없는 키 ⑤ 빈 `equipment` ⑥ 레시피에 없는 검사 `AIM`을 가리킴 | 모두 종료 코드 3, 오류 위치 표시, 보고서 미생성 |
+| T41 | ① `--equipment` 없이 기존 샘플 3종 실행 ② `--recipe` 없이 `--equipment`만 ③ 7열 CSV를 `--equipment` 없이 ④ 같은 입력을 설비 모드로 두 번 | ① 기존 보고서와 동일 ②③ 종료 코드 2 ④ 보고서 4종·터미널 출력 바이트 동일 |
+
+## 산출물
+- `recipes/equipment.json`, `tests/test_equipment.py`(T33–T41, 거절은 제품·설비 전체 상태 불변까지 assert), T40용 파일은 `tests/fixtures/`
+- `data/sample_events_equipment.csv`(T33–T39를 담은 고정 입력)와 `reports/sample_events_equipment_*.csv` 4종
+- README에 「설비 모드」 절 추가(켜는 법, 정지 기준과 그 출처·한계, 규칙 표, 제외 범위)
+
+## 완료 보고 (반드시 포함)
+- 실제로 실행한 명령과 출력 원문(v1·1·2단계 회귀, 3단계 테스트, 샘플 실행)
+- 기대표와 실제가 다르면 숨기지 말고 보고. 기대표·기존 테스트를 고쳐서 통과시키지 않는다
+- 명세가 모호해 내린 해석·가정, 명세 이견
+
+---
+
+# v2 2단계 명세 (완료, 2026-10-18 · 리뷰 003 PASS)
+
+## 작업: 재검사·폐기
 
 상태: **구현 후 확정** (2026-10-18). 기대표 T23–T32는 구현 전에 작성했고 구현 중 변경 없음. 상태 줄 확정 표시는 구현·리뷰 003 뒤에 했다. 결정 근거는 `handoff/decisions.md`.
 1단계(아래 「v2 1단계 명세」)는 완료(리뷰 002 PASS)이며, 그 동작과 테스트는 보존한다.
