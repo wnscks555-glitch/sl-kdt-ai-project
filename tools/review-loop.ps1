@@ -99,7 +99,8 @@ while ($true) {
 
     $claudePrompt = @"
 CLAUDE.md의 검수자 규칙을 따른다. 자동 검토 루프의 검토 단계다.
-handoff/tasks.md의 명세와 기대표 T1-T10을 기준으로 코드를 검수하라.
+handoff/tasks.md 맨 위 「현행 작업」의 명세와 기대표를 기준으로 코드를 검수하라.
+v1 보존 조건(T1-T10 무수정 통과, v1 보고서 바이트 동일)도 반드시 확인한다.
 $scope
 - 테스트는 py -m unittest discover -s tests 로 직접 실행하고 명령과 결과를 붙인다.
 - 결과는 $reviewFile 하나에만 쓴다. 다른 파일은 만들거나 고치지 않는다.
