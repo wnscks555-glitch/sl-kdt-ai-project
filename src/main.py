@@ -82,7 +82,7 @@ def print_reports(reports, paths, product_heading="product_id | 최종 상태 | 
         print(path.as_posix())
 
 
-def run_recipe(input_csv: Path, recipe_path: Path, parser) -> int:
+def run_recipe(input_csv: Path, recipe_path: Path, parser, equipment_path=None) -> int:
     from .recipe import RecipeError, load_recipe
     from .recipe_reports import PRODUCT_COLUMNS as RECIPE_PRODUCT_COLUMNS, RETEST_PRODUCT_COLUMNS, build_recipe_reports
     from .recipe_rules import INPUT_COLUMNS as RECIPE_INPUT_COLUMNS
@@ -91,6 +91,13 @@ def run_recipe(input_csv: Path, recipe_path: Path, parser) -> int:
         book = load_recipe(recipe_path)
     except RecipeError as error:
         parser.exit(3, "레시피 오류:\n" + "\n".join(error.errors) + "\n")
+    if equipment_path is not None:
+        from .equipment import EquipmentError, load_equipment
+
+        try:
+            load_equipment(equipment_path, book.models)
+        except EquipmentError as error:
+            parser.exit(3, "설비 오류:\n" + "\n".join(error.errors) + "\n")
     print("레시피: " + recipe_path.as_posix() + " | SHA-256: " + book.sha256[:12])
     try:
         reports = build_recipe_reports(read_events(input_csv, RECIPE_INPUT_COLUMNS), book.models)
@@ -109,9 +116,12 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
     parser = argparse.ArgumentParser(description="교육용 가상 조립·검사 공정의 진행 조건 판정기")
     parser.add_argument("input_csv", type=Path, help="seq,product_id,event,inspection,result CSV")
     parser.add_argument("--recipe", type=Path, help="v2 모델별 선형 공정 레시피 JSON (CSV에 model 열 추가)")
+    parser.add_argument("--equipment", type=Path, help="검사 설비·정지 규칙 JSON (--recipe 필수)")
     args = parser.parse_args(argv)
+    if args.equipment is not None and args.recipe is None:
+        parser.error("--equipment는 --recipe와 함께만 사용 가능")
     if args.recipe is not None:
-        return run_recipe(args.input_csv, args.recipe, parser)
+        return run_recipe(args.input_csv, args.recipe, parser, args.equipment)
     try:
         reports = build_reports(read_events(args.input_csv))
         paths = write_reports(args.input_csv.stem, reports)

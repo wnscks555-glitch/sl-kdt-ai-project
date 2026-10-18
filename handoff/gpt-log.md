@@ -2084,3 +2084,72 @@ reports/sample_events_retest_rejections.csv
 - L2 반영 확인: 사용자가 2단계 사후 확정·3단계 사전 사용자 확정을 기록했다. 보호 문서는 수정하지 않는다.
 - L3 보류: 기존 폐기 이유 원문과 샘플 보존을 위해 변경하지 않음.
 - L4 보류: 기존 테스트는 명세 충족·사용자 보호 대상이므로 수정하지 않음. 새 설비 검증은 별도 tests/test_equipment.py에서 검증.
+
+### ① T40 검증 추가 후 구현 전 실패 확인
+
+명령: `py -m unittest discover -s tests -p test_equipment.py`
+
+```text
+E
+======================================================================
+ERROR: test_equipment (unittest.loader._FailedTest)
+----------------------------------------------------------------------
+ImportError: Failed to import test module: test_equipment
+Traceback (most recent call last):
+  File "C:\Users\PC\anaconda3\lib\unittest\loader.py", line 436, in _find_test_path
+    module = self._get_module_from_name(name)
+  File "C:\Users\PC\anaconda3\lib\unittest\loader.py", line 377, in _get_module_from_name
+    __import__(name)
+  File "C:\Users\PC\Documents\ChatGPT\������ KDT AI ���� ��Ʈķ��\project\tests\test_equipment.py", line 11, in <module>
+    from src.equipment import EquipmentError, load_equipment
+ModuleNotFoundError: No module named 'src.equipment'
+
+
+----------------------------------------------------------------------
+Ran 1 test in 0.000s
+
+FAILED (errors=1)
+```
+종료 코드: 1
+
+### ① T40 구현 전 실패 확인(출력 인코딩 보정 후)
+
+명령: `py -m unittest discover -s tests -p test_equipment.py`
+
+```text
+E
+======================================================================
+ERROR: test_equipment (unittest.loader._FailedTest)
+----------------------------------------------------------------------
+ImportError: Failed to import test module: test_equipment
+Traceback (most recent call last):
+  File "C:\Users\PC\anaconda3\lib\unittest\loader.py", line 436, in _find_test_path
+    module = self._get_module_from_name(name)
+  File "C:\Users\PC\anaconda3\lib\unittest\loader.py", line 377, in _get_module_from_name
+    __import__(name)
+  File "C:\Users\PC\Documents\ChatGPT\에스엘 KDT AI 교육 부트캠프\project\tests\test_equipment.py", line 11, in <module>
+    from src.equipment import EquipmentError, load_equipment
+ModuleNotFoundError: No module named 'src.equipment'
+
+
+----------------------------------------------------------------------
+Ran 1 test in 0.000s
+
+FAILED (errors=1)
+```
+종료 코드: 1
+
+### ① 설비 파일 검증 T40: 전체 회귀
+
+명령: `py -m unittest discover -s tests`
+
+```text
+..........................................................
+----------------------------------------------------------------------
+Ran 58 tests in 6.826s
+
+OK
+```
+종료 코드: 0
+
+① 완료(T40): 설비 JSON 전체 오류·타입(bool 제외)·경계·ID·레시피 검사 참조·파일/JSON 오류를 검증. 신규 테스트 4개, 기존 54개 무수정 통과. CLI에서 설비 오류는 입력 읽기와 출력/보고서 생성 전에 코드 3. 기본 설정과 오류 fixture 7종 추가. 구현 전 신규 모듈 부재 실패를 확인했다. 최초 실패 로그 수집 때 cp949 출력 오류가 발생하여 테스트 하위 프로세스 인코딩을 UTF-8로 고정하고 원문을 다시 기록했다.

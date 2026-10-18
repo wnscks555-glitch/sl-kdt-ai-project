@@ -1,0 +1,10 @@
+{
+  "stop_rule": {
+    "window": true,
+    "fails": 0
+  },
+  "equipment": {
+    "bad id": "LEAK",
+    "X": "AIM"
+  }
+}

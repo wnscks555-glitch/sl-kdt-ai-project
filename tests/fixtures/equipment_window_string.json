@@ -1,0 +1,9 @@
+{
+  "stop_rule": {
+    "window": "3",
+    "fails": 2
+  },
+  "equipment": {
+    "LEAK-1": "LEAK"
+  }
+}
