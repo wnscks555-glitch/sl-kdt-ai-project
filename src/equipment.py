@@ -1,11 +1,11 @@
 """검사 설비 설정 로딩과 전체 오류 검증."""
 
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 import hashlib
 import json
 from pathlib import Path
 import re
-from typing import Dict, Mapping
+from typing import Dict, Mapping, Optional, Tuple
 
 from .recipe import ModelRecipe
 
@@ -16,6 +16,26 @@ class EquipmentBook:
     fails: int
     equipment: Dict[str, str]
     sha256: str
+
+
+@dataclass(frozen=True)
+class EquipmentState:
+    counted_results: int = 0
+    fail_count: int = 0
+    recent_results: Tuple[str, ...] = ()
+    stopped_at_seq: Optional[str] = None
+
+    @property
+    def state(self) -> str:
+        return "정지" if self.stopped_at_seq is not None else "가동"
+
+    def record(self, result: str, seq: str, book: EquipmentBook):
+        recent = (self.recent_results + (result,))[-book.window:]
+        return replace(
+            self, counted_results=self.counted_results + 1,
+            fail_count=self.fail_count + (result == "FAIL"), recent_results=recent,
+            stopped_at_seq=seq if recent.count("FAIL") >= book.fails else None,
+        )
 
 
 class EquipmentError(ValueError):

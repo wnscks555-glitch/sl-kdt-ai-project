@@ -4,9 +4,11 @@ from dataclasses import dataclass, field, replace
 from typing import Dict, FrozenSet, Mapping, Optional, Tuple
 
 from .recipe import ModelRecipe
+from .equipment import EquipmentBook, EquipmentState
 
 
 INPUT_COLUMNS = ("seq", "product_id", "event", "inspection", "result", "model")
+EQUIPMENT_INPUT_COLUMNS = INPUT_COLUMNS + ("equipment",)
 RULE_IDS = (
     "RULE_RECIPE",
     "RULE_SEQ",
@@ -90,10 +92,12 @@ class Decision:
 
 
 class RecipeProcess:
-    def __init__(self, models: Mapping[str, ModelRecipe]) -> None:
+    def __init__(self, models: Mapping[str, ModelRecipe], equipment_book: Optional[EquipmentBook] = None) -> None:
         self.models = models
         self.retest_enabled = all(model.retest_limit is not None for model in models.values())
         self.products: Dict[str, RecipeProduct] = {}
+        self.equipment_book = equipment_book
+        self.equipment = {name: EquipmentState() for name in equipment_book.equipment} if equipment_book else {}
 
     def apply(self, row: Mapping[str, str]) -> Decision:
         invalid = self._invalid_fields(row)
@@ -131,6 +135,14 @@ class RecipeProcess:
                 attempt = InspectionAttempt(row["seq"], "요청")
                 rule_id = "RULE_RETEST"
             else:
+                if self.equipment_book is not None:
+                    equipment = row["equipment"]
+                    if equipment not in self.equipment:
+                        return self._decision(row, "RULE_EQUIP", False, "등록되지 않은 설비")
+                    if self.equipment_book.equipment[equipment] != inspection:
+                        return self._decision(row, "RULE_EQUIP", False, "검사 종류가 다른 설비")
+                    if self.equipment[equipment].stopped_at_seq is not None:
+                        return self._decision(row, "RULE_EQUIP", False, "정지된 설비")
                 if product.completed_steps <= product.recipe.steps.index(item.after):
                     return self._decision(row, "RULE_INSP_PRE", False, item.after + " 미완료")
                 result = row["result"]
@@ -176,13 +188,16 @@ class RecipeProcess:
             updated = replace(product, completed_steps=product.completed_steps + 1)
             rule_id = "RULE_SEQ"
 
+        if self.equipment_book is not None and event == "INSPECT" and row["inspection"] not in product.inspections:
+            equipment = row["equipment"]
+            self.equipment[equipment] = self.equipment[equipment].record(row["result"], row["seq"], self.equipment_book)
         self.products[product_id] = updated
         return self._decision(row, rule_id, True, "")
 
-    @staticmethod
-    def _invalid_fields(row: Mapping[str, str]) -> str:
-        if set(row) != set(INPUT_COLUMNS) or any(
-            not isinstance(row.get(name), str) for name in INPUT_COLUMNS
+    def _invalid_fields(self, row: Mapping[str, str]) -> str:
+        columns = EQUIPMENT_INPUT_COLUMNS if self.equipment_book is not None else INPUT_COLUMNS
+        if set(row) != set(columns) or any(
+            not isinstance(row.get(name), str) for name in columns
         ):
             return "CSV 열 수 또는 값 누락"
         seq = row["seq"]
@@ -206,6 +221,11 @@ class RecipeProcess:
                 return "RETEST_REQUEST의 result는 빈칸이어야 함"
         elif row["inspection"] or row["result"]:
             return "INSPECT 이외의 inspection과 result는 빈칸이어야 함"
+        if self.equipment_book is not None:
+            if row["event"] == "INSPECT" and not row["equipment"]:
+                return "equipment가 비어 있음"
+            if row["event"] != "INSPECT" and row["equipment"]:
+                return "INSPECT 이외의 equipment는 빈칸이어야 함"
         return ""
 
     def _decision(self, row: Mapping[str, str], rule_id: str, accepted: bool, reason: str) -> Decision:

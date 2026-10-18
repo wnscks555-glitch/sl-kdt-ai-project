@@ -2153,3 +2153,109 @@ OK
 종료 코드: 0
 
 ① 완료(T40): 설비 JSON 전체 오류·타입(bool 제외)·경계·ID·레시피 검사 참조·파일/JSON 오류를 검증. 신규 테스트 4개, 기존 54개 무수정 통과. CLI에서 설비 오류는 입력 읽기와 출력/보고서 생성 전에 코드 3. 기본 설정과 오류 fixture 7종 추가. 구현 전 신규 모듈 부재 실패를 확인했다. 최초 실패 로그 수집 때 cp949 출력 오류가 발생하여 테스트 하위 프로세스 인코딩을 UTF-8로 고정하고 원문을 다시 기록했다.
+
+### ② T33–T39 구현 전 실패 확인
+
+명령: `py -m unittest discover -s tests -p test_equipment.py`
+
+```text
+....EEEEEEEEEE
+======================================================================
+ERROR: test_equipment_also_works_without_retest_mode (test_equipment.EquipmentProcessTests)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "C:\Users\PC\Documents\ChatGPT\에스엘 KDT AI 교육 부트캠프\project\tests\test_equipment.py", line 111, in setUp
+    self.process = RecipeProcess(self.models, self.book)
+TypeError: __init__() takes 2 positional arguments but 3 were given
+
+======================================================================
+ERROR: test_partial_window_threshold_and_physical_order_not_seq_sorting (test_equipment.EquipmentProcessTests)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "C:\Users\PC\Documents\ChatGPT\에스엘 KDT AI 교육 부트캠프\project\tests\test_equipment.py", line 111, in setUp
+    self.process = RecipeProcess(self.models, self.book)
+TypeError: __init__() takes 2 positional arguments but 3 were given
+
+======================================================================
+ERROR: test_priority_format_registration_discard_recipe_equipment_timing_duplicate (test_equipment.EquipmentProcessTests)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "C:\Users\PC\Documents\ChatGPT\에스엘 KDT AI 교육 부트캠프\project\tests\test_equipment.py", line 111, in setUp
+    self.process = RecipeProcess(self.models, self.book)
+TypeError: __init__() takes 2 positional arguments but 3 were given
+
+======================================================================
+ERROR: test_t33_triggering_result_is_accepted_and_stops_only_its_equipment (test_equipment.EquipmentProcessTests)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "C:\Users\PC\Documents\ChatGPT\에스엘 KDT AI 교육 부트캠프\project\tests\test_equipment.py", line 111, in setUp
+    self.process = RecipeProcess(self.models, self.book)
+TypeError: __init__() takes 2 positional arguments but 3 were given
+
+======================================================================
+ERROR: test_t34_stopped_reject_then_other_equipment_accepts (test_equipment.EquipmentProcessTests)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "C:\Users\PC\Documents\ChatGPT\에스엘 KDT AI 교육 부트캠프\project\tests\test_equipment.py", line 111, in setUp
+    self.process = RecipeProcess(self.models, self.book)
+TypeError: __init__() takes 2 positional arguments but 3 were given
+
+======================================================================
+ERROR: test_t35_stopped_retest_keeps_request_then_other_equipment_releases_hold (test_equipment.EquipmentProcessTests)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "C:\Users\PC\Documents\ChatGPT\에스엘 KDT AI 교육 부트캠프\project\tests\test_equipment.py", line 111, in setUp
+    self.process = RecipeProcess(self.models, self.book)
+TypeError: __init__() takes 2 positional arguments but 3 were given
+
+======================================================================
+ERROR: test_t36_repeated_retest_fails_scrap_product_without_stopping_equipment (test_equipment.EquipmentProcessTests)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "C:\Users\PC\Documents\ChatGPT\에스엘 KDT AI 교육 부트캠프\project\tests\test_equipment.py", line 111, in setUp
+    self.process = RecipeProcess(self.models, self.book)
+TypeError: __init__() takes 2 positional arguments but 3 were given
+
+======================================================================
+ERROR: test_t37_sliding_window_is_separate_from_cumulative_report_counts (test_equipment.EquipmentProcessTests)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "C:\Users\PC\Documents\ChatGPT\에스엘 KDT AI 교육 부트캠프\project\tests\test_equipment.py", line 111, in setUp
+    self.process = RecipeProcess(self.models, self.book)
+TypeError: __init__() takes 2 positional arguments but 3 were given
+
+======================================================================
+ERROR: test_t38_equipment_and_format_rejections_preserve_all_state (test_equipment.EquipmentProcessTests)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "C:\Users\PC\Documents\ChatGPT\에스엘 KDT AI 교육 부트캠프\project\tests\test_equipment.py", line 111, in setUp
+    self.process = RecipeProcess(self.models, self.book)
+TypeError: __init__() takes 2 positional arguments but 3 were given
+
+======================================================================
+ERROR: test_t39_rejected_early_result_never_counts_or_stops (test_equipment.EquipmentProcessTests)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "C:\Users\PC\Documents\ChatGPT\에스엘 KDT AI 교육 부트캠프\project\tests\test_equipment.py", line 111, in setUp
+    self.process = RecipeProcess(self.models, self.book)
+TypeError: __init__() takes 2 positional arguments but 3 were given
+
+----------------------------------------------------------------------
+Ran 14 tests in 1.273s
+
+FAILED (errors=10)
+```
+종료 코드: 1
+
+### ② 설비 판정과 정지 T33–T39: 전체 회귀
+
+명령: `py -m unittest discover -s tests`
+
+```text
+....................................................................
+----------------------------------------------------------------------
+Ran 68 tests in 6.763s
+
+OK
+```
+종료 코드: 0
