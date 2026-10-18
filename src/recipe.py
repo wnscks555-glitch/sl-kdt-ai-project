@@ -3,7 +3,7 @@ import hashlib
 import json
 from pathlib import Path
 import re
-from typing import Dict, Tuple
+from typing import Dict, Optional, Tuple
 
 
 @dataclass(frozen=True)
@@ -16,12 +16,17 @@ class Inspection:
 class ModelRecipe:
     steps: Tuple[str, ...]
     inspections: Tuple[Inspection, ...]
+    retest_limit: Optional[int] = None
 
 
 @dataclass(frozen=True)
 class RecipeBook:
     models: Dict[str, ModelRecipe]
     sha256: str
+
+    @property
+    def retest_enabled(self) -> bool:
+        return all(model.retest_limit is not None for model in self.models.values())
 
 
 class RecipeError(ValueError):
@@ -55,13 +60,19 @@ def load_recipe(path: Path) -> RecipeBook:
     if not data:
         raise RecipeError(["$: 모델이 1개 이상 필요함"])
 
+    retest_enabled = any(isinstance(body, dict) and "retest_limit" in body for body in data.values())
     models = {}
     for model, body in data.items():
         check_id(model, model)
         if not isinstance(body, dict):
             errors.append(model + ": 모델 설정은 객체여야 함")
             continue
-        check_keys(body, ("steps", "inspections"), model)
+        check_keys(body, ("steps", "inspections", "retest_limit"), model)
+        limit = body.get("retest_limit")
+        if retest_enabled and "retest_limit" not in body:
+            errors.append(model + ".retest_limit: 모든 모델에 설정해야 함")
+        elif "retest_limit" in body and (type(limit) is not int or not 1 <= limit <= 5):
+            errors.append(model + ".retest_limit: 1–5 정수여야 함 (bool·문자열 불가)")
         steps = body.get("steps")
         valid_steps = set()
         if not isinstance(steps, list) or not steps or any(
@@ -75,7 +86,7 @@ def load_recipe(path: Path) -> RecipeBook:
                     continue
                 if step in valid_steps:
                     errors.append(location + ": 공정 ID 중복 " + step)
-                if step in ("REGISTER", "INSPECT"):
+                if step in ("REGISTER", "INSPECT", "RETEST_REQUEST"):
                     errors.append(location + ": 예약어는 공정 ID로 사용할 수 없음 " + step)
                 valid_steps.add(step)
 
@@ -101,7 +112,7 @@ def load_recipe(path: Path) -> RecipeBook:
 
         if not errors:
             models[model] = ModelRecipe(
-                tuple(steps), tuple(Inspection(item["id"], item["after"]) for item in inspections)
+                tuple(steps), tuple(Inspection(item["id"], item["after"]) for item in inspections), limit
             )
 
     if errors:
