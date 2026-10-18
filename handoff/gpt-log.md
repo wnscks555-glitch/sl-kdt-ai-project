@@ -2259,3 +2259,63 @@ Ran 68 tests in 6.763s
 OK
 ```
 종료 코드: 0
+
+### ③ CLI·보고서 T41 구현 전 실패 확인
+
+명령: `py -m unittest discover -s tests -p test_equipment.py`
+
+```text
+..............FFF.
+======================================================================
+FAIL: test_t41_equipment_with_stage_one_has_seven_rules_and_no_history (test_equipment.EquipmentReportTests)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "C:\Users\PC\Documents\ChatGPT\에스엘 KDT AI 교육 부트캠프\project\tests\test_equipment.py", line 374, in test_t41_equipment_with_stage_one_has_seven_rules_and_no_history
+    self.assertEqual(result.returncode, 0, result.stderr)
+AssertionError: 2 != 0 : b'\xec\x98\xa4\xeb\xa5\x98: CSV \xed\x97\xa4\xeb\x8d\x94\xeb\x8a\x94 seq,product_id,event,inspection,result,model \xec\x9d\xb4\xec\x96\xb4\xec\x95\xbc \xed\x95\xa8\r\n'
+
+======================================================================
+FAIL: test_t41_four_reports_history_equipment_order_and_byte_reproducibility (test_equipment.EquipmentReportTests)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "C:\Users\PC\Documents\ChatGPT\에스엘 KDT AI 교육 부트캠프\project\tests\test_equipment.py", line 310, in test_t41_four_reports_history_equipment_order_and_byte_reproducibility
+    self.assertEqual(first.returncode, 0, first.stderr.decode("utf-8"))
+AssertionError: 2 != 0 : 오류: CSV 헤더는 seq,product_id,event,inspection,result,model 이어야 함
+
+
+======================================================================
+FAIL: test_t41_option_dependency_and_mode_specific_headers (test_equipment.EquipmentReportTests)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "C:\Users\PC\Documents\ChatGPT\에스엘 KDT AI 교육 부트캠프\project\tests\test_equipment.py", line 353, in test_t41_option_dependency_and_mode_specific_headers
+    self.assertEqual(result.returncode, 2, result.stderr)
+AssertionError: 0 != 2 : b''
+
+----------------------------------------------------------------------
+Ran 18 tests in 3.255s
+
+FAILED (failures=3)
+```
+종료 코드: 1
+
+### ③ CLI·보고서·설비 표시 T41: 전체 회귀
+
+명령: `py -m unittest discover -s tests`
+
+```text
+........................................................................
+----------------------------------------------------------------------
+Ran 72 tests in 9.175s
+
+OK
+```
+종료 코드: 0
+
+② 완료(T33–T39): 허용된 최초 결과만 설비별 집계하고 원인 행 반영 뒤 정지. 설비 판정은 형식·등록·폐기·레시피 뒤, 시점·중복 검사 앞에 둠. 재검사·거절은 설비 기록 미반영. 거절 helper는 모든 제품과 모든 설비의 deepcopy 전후 동등 비교. 신규 판정 테스트 10개와 전체 68개 통과. 이전 기록 추가용 stdin 스크립트가 인코딩 오류로 실행되지 않아 이 항목을 이번 커밋에 기록함(검증 원문은 이전 커밋에 보존).
+
+### 해석·가정 / 명세 이견
+- 해석: 최근 window건은 결과가 window개 미만이면 현재까지의 최대 window건이다. 기본 설정의 최초 두 결과가 FAIL, FAIL이면 둘째 뒤 정지한다. 별도의 창 충족 대기는 명세에 없다. seq 정렬 없이 물리적 허용 순서로 계산한다.
+- 해석: equipment.csv의 counted_results/fail_count는 허용된 최초 결과 누적 건수/누적 FAIL 건수다. 정지 판단용 최근 창과 별개다. T37은 4,2,가동이며 이후 FAIL이면 5,3,정지가 된다.
+- 명세 이견: 현재 3단계 요구·기대표와 충돌하여 다르게 구현한 사항 없음. 위 두 항목은 미명시 범위의 해석으로 공개한다. 기존 승인된 T32·폐기 문구 이견은 변경하지 않음.
+
+③ 완료(T41): 7열 CSV를 설비 모드에만 허용, --equipment는 --recipe 필수. 보고서 4종·설비 파일 순서·미사용 설비·BOM·7/8개 규칙 순서·원본 SHA-256·rows 및 history 설비 표시를 검사. 같은 경로 2회와 별도 출력 폴더 1회에서 stdout/4종 CSV 바이트 동일. --equipment 없는 기존 샘플 3종의 보고서 9개도 바이트 동일. 구현 전 헤더·출력 관련 3개 테스트 실패 확인 후 전체 72개 통과.

@@ -161,6 +161,7 @@ class EquipmentProcessTests(unittest.TestCase):
         self.register("p4")
         self.reject(self.row("INSPECT", "p4", inspection="LEAK", result="PASS", equipment="LEAK-2"),
                     "RULE_EQUIP", "정지된 설비")
+
         self.assertEqual(self.process.products["p4"].inspections, {})
         self.inspect("PASS", "p4", "LEAK-1")
         self.assertEqual(self.process.products["p4"].inspections, {"LEAK": "PASS"})
@@ -277,3 +278,104 @@ class EquipmentProcessTests(unittest.TestCase):
         self.register("p4")
         self.reject(self.row("INSPECT", "p4", inspection="LEAK", result="PASS", equipment="LEAK-2"),
                     "RULE_EQUIP", "정지된 설비")
+
+
+class EquipmentReportTests(unittest.TestCase):
+    def write_input(self, directory):
+        events = []
+
+        def add(product_id, event, inspection="", result="", model="", equipment=""):
+            events.append((str(len(events) + 1), product_id, event, inspection, result, model, equipment))
+
+        for product_id, result in (("a", "FAIL"), ("b", "PASS"), ("c", "FAIL")):
+            add(product_id, "REGISTER", model="A")
+            for step in ("P1", "P2", "P3"):
+                add(product_id, step)
+            add(product_id, "INSPECT", "LEAK", result, equipment="LEAK-2")
+            if product_id == "a":
+                add("a", "RETEST_REQUEST", "LEAK")
+        add("a", "INSPECT", "LEAK", "PASS", equipment="LEAK-2")
+        add("a", "INSPECT", "LEAK", "PASS", equipment="LEAK-1")
+        path = Path(directory) / "events.csv"
+        with path.open("w", encoding="utf-8", newline="") as target:
+            writer = csv.writer(target)
+            writer.writerow(("seq", "product_id", "event", "inspection", "result", "model", "equipment"))
+            writer.writerows(events)
+        return path
+
+    def test_t41_four_reports_history_equipment_order_and_byte_reproducibility(self):
+        with tempfile.TemporaryDirectory() as directory, tempfile.TemporaryDirectory() as second:
+            path = self.write_input(directory)
+            first = run_cli(directory, path)
+            self.assertEqual(first.returncode, 0, first.stderr.decode("utf-8"))
+            reports = Path(directory) / "reports"
+            before = {item.name: item.read_bytes() for item in reports.iterdir()}
+            self.assertEqual(set(before), {"events_" + suffix + ".csv" for suffix in ("rows", "products", "rejections", "equipment")})
+            again = run_cli(directory, path)
+            other = run_cli(second, path)
+            for result, output in ((again, reports), (other, Path(second) / "reports")):
+                self.assertEqual(result.returncode, 0, result.stderr)
+                self.assertEqual(result.stdout, first.stdout)
+                self.assertEqual({item.name: item.read_bytes() for item in output.iterdir()}, before)
+            stdout = first.stdout.decode("utf-8")
+            self.assertIn("설비: " + EQUIPMENT.as_posix() + " | SHA-256: " + hashlib.sha256(EQUIPMENT.read_bytes()).hexdigest()[:12], stdout)
+            self.assertIn("[설비별 최종 상태]", stdout)
+            self.assertIn("INSPECT LEAK FAIL @LEAK-2", stdout)
+            self.assertIn("LEAK: FAIL@5[LEAK-2] → 요청@6 → PASS@18[LEAK-1](재검사 1)", stdout)
+            with (reports / "events_equipment.csv").open(encoding="utf-8-sig", newline="") as source:
+                rows = list(csv.reader(source))
+            self.assertEqual(rows, [
+                ["equipment", "inspection", "counted_results", "fail_count", "state", "stopped_at_seq"],
+                ["LEAK-1", "LEAK", "0", "0", "가동", ""],
+                ["LEAK-2", "LEAK", "3", "2", "정지", "16"],
+                ["LIGHT-1", "LIGHT", "0", "0", "가동", ""],
+                ["FINAL-1", "FINAL", "0", "0", "가동", ""],
+            ])
+            with (reports / "events_rejections.csv").open(encoding="utf-8-sig", newline="") as source:
+                counts = list(csv.reader(source))
+            self.assertEqual([row[0] for row in counts[1:]], ["RULE_RECIPE", "RULE_SEQ", "RULE_INSP_PRE", "RULE_NOT_DONE", "RULE_FAIL_HOLD", "RULE_PRESERVE", "RULE_RETEST", "RULE_EQUIP"])
+            self.assertEqual(counts[-1], ["RULE_EQUIP", "1"])
+            self.assertTrue(all(value.startswith(b"\xef\xbb\xbf") for value in before.values()))
+
+    def test_t41_option_dependency_and_mode_specific_headers(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path = self.write_input(directory)
+            cases = [(None, EQUIPMENT), (None, None), (RECIPE, None)]
+            for recipe, equipment in cases:
+                with self.subTest(recipe=recipe, equipment=equipment):
+                    result = run_cli(directory, path, recipe, equipment)
+                    self.assertEqual(result.returncode, 2, result.stderr)
+                    self.assertFalse((Path(directory) / "reports").exists())
+            for header in ("seq,product_id,event,inspection,result", "seq,product_id,event,inspection,result,model",
+                           "seq,product_id,event,inspection,result,equipment,model", "seq,product_id,event,inspection,result,model,equipment,extra"):
+                path.write_text(header + "\n", encoding="utf-8")
+                result = run_cli(directory, path)
+                self.assertEqual(result.returncode, 2, result.stderr)
+                self.assertIn("CSV 헤더", result.stderr.decode("utf-8"))
+                self.assertFalse((Path(directory) / "reports").exists())
+
+    def test_t41_without_equipment_all_nine_legacy_reports_unchanged(self):
+        for name, recipe in (("sample_events", None), ("sample_events_v2", STAGE_ONE), ("sample_events_retest", RECIPE)):
+            with self.subTest(name=name), tempfile.TemporaryDirectory() as directory:
+                result = run_cli(directory, ROOT / "data" / (name + ".csv"), recipe, None)
+                self.assertEqual(result.returncode, 0, result.stderr)
+                output = Path(directory) / "reports"
+                self.assertEqual(len(list(output.iterdir())), 3)
+                for suffix in ("rows", "products", "rejections"):
+                    path = name + "_" + suffix + ".csv"
+                    self.assertEqual((output / path).read_bytes(), (ROOT / "reports" / path).read_bytes())
+                self.assertNotIn("설비:", result.stdout.decode("utf-8"))
+
+    def test_t41_equipment_with_stage_one_has_seven_rules_and_no_history(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "events.csv"
+            path.write_text("seq,product_id,event,inspection,result,model,equipment\n1,a,REGISTER,,,A,\n", encoding="utf-8")
+            result = run_cli(directory, path, STAGE_ONE)
+            self.assertEqual(result.returncode, 0, result.stderr)
+            reports = Path(directory) / "reports"
+            with (reports / "events_rejections.csv").open(encoding="utf-8-sig", newline="") as source:
+                rules = list(csv.reader(source))
+            self.assertEqual(len(rules), 8)
+            self.assertEqual(rules[-1], ["RULE_EQUIP", "0"])
+            with (reports / "events_products.csv").open(encoding="utf-8-sig", newline="") as source:
+                self.assertEqual(next(csv.reader(source)), ["product_id", "model", "state", "incomplete_reason"])

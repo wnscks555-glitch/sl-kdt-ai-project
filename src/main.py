@@ -51,9 +51,16 @@ def write_reports(stem: str, reports, product_columns=PRODUCT_COLUMNS):
     directory = Path("reports")
     directory.mkdir(exist_ok=True)
     paths = []
+    suffixes = ("rows", "products", "rejections")
+    report_columns = (ROW_COLUMNS, product_columns, REJECTION_COLUMNS)
+    if len(reports) == 4:
+        from .recipe_reports import EQUIPMENT_COLUMNS
+
+        suffixes += ("equipment",)
+        report_columns += (EQUIPMENT_COLUMNS,)
     for suffix, columns, rows in zip(
-        ("rows", "products", "rejections"),
-        (ROW_COLUMNS, product_columns, REJECTION_COLUMNS),
+        suffixes,
+        report_columns,
         reports,
     ):
         path = directory / (stem + "_" + suffix + ".csv")
@@ -71,6 +78,8 @@ def print_reports(reports, paths, product_heading="product_id | 최종 상태 | 
         ("제품별 최종 상태", product_heading),
         ("규칙 ID별 거절 건수", "규칙 ID | 거절 건수"),
     )
+    if len(reports) == 4:
+        sections += (("설비별 최종 상태", "equipment | inspection | counted_results | fail_count | state | stopped_at_seq"),)
     for (title, heading), rows in zip(sections, reports):
         print("[" + title + "]")
         print(heading)
@@ -85,22 +94,26 @@ def print_reports(reports, paths, product_heading="product_id | 최종 상태 | 
 def run_recipe(input_csv: Path, recipe_path: Path, parser, equipment_path=None) -> int:
     from .recipe import RecipeError, load_recipe
     from .recipe_reports import PRODUCT_COLUMNS as RECIPE_PRODUCT_COLUMNS, RETEST_PRODUCT_COLUMNS, build_recipe_reports
-    from .recipe_rules import INPUT_COLUMNS as RECIPE_INPUT_COLUMNS
+    from .recipe_rules import INPUT_COLUMNS as RECIPE_INPUT_COLUMNS, EQUIPMENT_INPUT_COLUMNS
 
     try:
         book = load_recipe(recipe_path)
     except RecipeError as error:
         parser.exit(3, "레시피 오류:\n" + "\n".join(error.errors) + "\n")
+    equipment_book = None
     if equipment_path is not None:
         from .equipment import EquipmentError, load_equipment
 
         try:
-            load_equipment(equipment_path, book.models)
+            equipment_book = load_equipment(equipment_path, book.models)
         except EquipmentError as error:
             parser.exit(3, "설비 오류:\n" + "\n".join(error.errors) + "\n")
     print("레시피: " + recipe_path.as_posix() + " | SHA-256: " + book.sha256[:12])
+    if equipment_book is not None:
+        print("설비: " + equipment_path.as_posix() + " | SHA-256: " + equipment_book.sha256[:12])
     try:
-        reports = build_recipe_reports(read_events(input_csv, RECIPE_INPUT_COLUMNS), book.models)
+        input_columns = EQUIPMENT_INPUT_COLUMNS if equipment_book is not None else RECIPE_INPUT_COLUMNS
+        reports = build_recipe_reports(read_events(input_csv, input_columns), book.models, equipment_book)
         columns = RETEST_PRODUCT_COLUMNS if book.retest_enabled else RECIPE_PRODUCT_COLUMNS
         paths = write_reports(input_csv.stem, reports, columns)
     except (OSError, UnicodeError, csv.Error, ValueError) as error:

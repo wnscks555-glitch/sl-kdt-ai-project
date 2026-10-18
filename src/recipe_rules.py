@@ -24,11 +24,13 @@ class InspectionAttempt:
     seq: str
     result: str
     retest_number: int = 0
+    equipment: str = ""
 
     @property
     def text(self) -> str:
         suffix = "(재검사 " + str(self.retest_number) + ")" if self.retest_number else ""
-        return self.result + "@" + self.seq + suffix
+        equipment = "[" + self.equipment + "]" if self.equipment else ""
+        return self.result + "@" + self.seq + equipment + suffix
 
 
 @dataclass(frozen=True)
@@ -158,11 +160,11 @@ class RecipeProcess:
                             inspection if count >= product.recipe.retest_limit and result == "FAIL" else None
                         ),
                     )
-                    attempt = InspectionAttempt(row["seq"], result, count)
+                    attempt = InspectionAttempt(row["seq"], result, count, row.get("equipment", ""))
                     rule_id = "RULE_RETEST"
                 else:
                     updated = replace(product, inspections={**product.inspections, inspection: result})
-                    attempt = InspectionAttempt(row["seq"], result)
+                    attempt = InspectionAttempt(row["seq"], result, equipment=row.get("equipment", ""))
                     rule_id = (
                         "RULE_FAIL_HOLD"
                         if updated.status in ("보류", "레시피 모의 흐름 완료")
@@ -231,12 +233,15 @@ class RecipeProcess:
     def _decision(self, row: Mapping[str, str], rule_id: str, accepted: bool, reason: str) -> Decision:
         product_id = str(row.get("product_id") or "")
         product = self.products.get(product_id)
+        equipment = ""
+        if self.equipment_book is not None and row.get("event") == "INSPECT" and row.get("equipment"):
+            equipment = " @" + str(row["equipment"])
         return Decision(
             seq=str(row.get("seq") or ""),
             product_id=product_id,
             input_text=" ".join(
                 str(row.get(name) or "") for name in ("event", "inspection", "result")
-            ).rstrip(),
+            ).rstrip() + equipment,
             rule_id=rule_id,
             accepted=accepted,
             reason=reason,
