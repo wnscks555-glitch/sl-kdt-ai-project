@@ -1,0 +1,252 @@
+{
+  "status": "complete",
+  "verdict": "Ready to merge",
+  "verdict_reason": "No actionable code defects remain after the caller correction ffbe89a. Readiness is limited to the explicitly directed exception: T44 positive-discard nonvacuity remains unmet (seed42 discarded=0), and the final full suite is 97 passing plus 1 retained failure out of 98 tests. This is not full specification compliance or an all-tests-passed result. The seed, probabilities, expectations, and failing assertion must remain unchanged under the recorded instruction.",
+  "scope": {
+    "base": "0931cd9278c8a03aa62c80fef98cedcfe63030cc",
+    "branch": "main",
+    "head_sha": "9863432fa22a52688dbdb370caa01ed3791dae57",
+    "pr_url": null,
+    "files_changed": 28,
+    "mode": "standalone",
+    "corrective_commit_reviewed": "ffbe89a",
+    "readme_commit_reviewed": "26d1382",
+    "excluded_concurrent_paths": [
+      "CLAUDE.md",
+      "tools/review-loop.ps1"
+    ]
+  },
+  "intent": "Implement the complete user-approved v2 stage 4: seeded round-robin synthetic events and provenance metadata; separate equipment-mode summary metrics, Pareto tables and strict reason codes; physical-order product trace with cross-product equipment-stop causes. Preserve stages 1–3, protected source/tests and legacy report bytes, and report measured invariant failures honestly without tuning seeds, probabilities or expectations.",
+  "intent_confidence": "explicit",
+  "reviewers": [
+    "correctness",
+    "adversarial",
+    "testing",
+    "project-standards",
+    "maintainability",
+    "performance",
+    "security",
+    "reliability"
+  ],
+  "findings": [],
+  "actionable_findings": [],
+  "triage_groups": [],
+  "pre_existing_findings": [],
+  "requirements_completeness": {
+    "plan_path": "handoff/tasks.md",
+    "plan_source": "explicit",
+    "full_compliance": false,
+    "requirements": [
+      {
+        "id": "R1",
+        "requirement": "T42: seed42 twice yields byte-identical CSV/meta including seed, SHA-256, version and injection counts.",
+        "status": "met"
+      },
+      {
+        "id": "R2",
+        "requirement": "T43: seeds42 and43 produce different CSV.",
+        "status": "met"
+      },
+      {
+        "id": "R3",
+        "requirement": "T44: generated seeds42/500 and7/200 satisfy deterministic output, completion/pass, post-discard/stop acceptance, rejection-accounting, rejection-state-copy, and nonvacuity invariants. Seed42 must have completion/hold/discard/stopped-equipment/all-five-errors each positive; if not, retain failing test and report 명세 이견 without changing seed/probabilities/expectations.",
+        "status": "partially addressed",
+        "evidence": "handoff/run-logs/final-tests.txt: 98 tests, 1 failure, seed42 discarded=0. Determinism and remaining invariant assertions pass. The unmet positive-discard criterion is intentionally retained and reported under the explicit user instruction.",
+        "intentional_unmet_condition": true
+      },
+      {
+        "id": "R4",
+        "requirement": "T45: fixed four-product summary fixture with one initial FAIL, one retest PASS and two rejected rows matches handwritten metric/Pareto expectations.",
+        "status": "met"
+      },
+      {
+        "id": "R5",
+        "requirement": "T46: equipment sample summary exposes LEAK-2 stop row and FAIL causes, excluding stopped-equipment rejection from input-error Pareto.",
+        "status": "met"
+      },
+      {
+        "id": "R6",
+        "requirement": "T47: equipment sample product trace uses physical order and stopped-equipment rejection exposes other products' stop/cause seq and IDs.",
+        "status": "met"
+      },
+      {
+        "id": "R7",
+        "requirement": "T48: nonexistent trace ID or non-equipment --summary exits2 with no reports generated.",
+        "status": "met"
+      },
+      {
+        "id": "R8",
+        "requirement": "T49: summary fails on a rejected reason absent from the fixed source reason-code table.",
+        "status": "met"
+      },
+      {
+        "id": "R9",
+        "requirement": "T50: all four legacy sample executions without new options regenerate byte-identical checked-out reports.",
+        "status": "met"
+      },
+      {
+        "id": "R10",
+        "requirement": "Generator: one random.Random(seed), versioned byte reproducibility, source SHA metadata, configured 50/50 models, 2% normal FAIL, LEAK-2 30%, 70% retest request and two-retest cap, one-row round-robin ordering, same stop rule and active-equipment avoidance, five extra error types uniformly allocated at3% normal-row count.",
+        "status": "met"
+      },
+      {
+        "id": "R11",
+        "requirement": "Summary: separate path from four legacy reports, explicit equipment mode, post-input metrics/FPY/status, four-decimal ratios/empty zero denominator, initial/all FAIL, rejected and unperformed separately, deterministic quality and error Pareto, stop-impact and optional metadata injection comparison, mandatory assumption disclaimer.",
+        "status": "met"
+      },
+      {
+        "id": "R12",
+        "requirement": "Trace: post-input repeatable --trace, physical row order allowing duplicate/decreasing seq, event decision/post-state, final basis/history/incomplete reason, cross-product stop provenance, distinct reproducible safe per-product filenames.",
+        "status": "met"
+      },
+      {
+        "id": "R13",
+        "requirement": "Deliverables: seed42 CSV/meta, four legacy reports plus summary and representative trace, stage4 tests in test_generate.py/test_summary.py, summary fixture, README usage/definitions/reason table/assumptions/measured seed42 summary.",
+        "status": "met"
+      },
+      {
+        "id": "R14",
+        "requirement": "Completion report: actual command/output evidence, regression basis, preserved explicit spec disagreement, interpretations, generator/judgment/invariant timings, per-stage commits on main, no push.",
+        "status": "met"
+      }
+    ],
+    "implementation_units": [],
+    "unrequested_behavior_rules": [],
+    "intentional_unmet_conditions": [
+      "R3/T44: seed42/500 produces zero discarded products, so positive-discard nonvacuity is unmet. The assertion remains failing and the specification disagreement is reported as directed."
+    ],
+    "settled_decisions": [
+      {
+        "decision": "Retain seed42 discarded=0 failing nonvacuity test and report 명세 이견; do not tune seed, probabilities or expected result.",
+        "class": "user-directed",
+        "rejected_alternative": "Change seeds/probabilities/expectations to force all invariants green."
+      }
+    ]
+  },
+  "learnings": [],
+  "agent_native_gaps": [],
+  "deployment_notes": [],
+  "residual_risks": [
+    "T44 nonvacuity remains unmet: seed 42 with 500 products yields zero discarded products. The final caller-run suite records 98 tests, 97 passing and 1 deliberately retained failure in 57.629 seconds. The approved response is to preserve the failing assertion, seed, probabilities, and expectations and report the specification disagreement; this is not an actionable instruction to tune the generator."
+  ],
+  "testing_gaps": [],
+  "coverage": {
+    "depth": "full",
+    "completed_reviewers": [
+      "correctness",
+      "adversarial",
+      "testing",
+      "project-standards",
+      "maintainability",
+      "performance",
+      "security"
+    ],
+    "failed_reviewers": [
+      {
+        "reviewer": "reliability",
+        "reason": "Original /root/final_code_review/reliability terminated with a usage-limit error; no reviewer artifact was produced."
+      }
+    ],
+    "reviewer_count": {
+      "selected": 8,
+      "completed": 7,
+      "failed": 1
+    },
+    "standards": {
+      "criteria": [
+        "AGENTS.md",
+        "CLAUDE.md (preexisting task criteria; concurrent unrelated edits excluded)"
+      ],
+      "fallback_named": false,
+      "not_run_reason": null
+    },
+    "compound_packs": {
+      "roots": [],
+      "errors": [],
+      "warnings": []
+    },
+    "suppressed_by_confidence": {},
+    "mode_aware_demotions": 0,
+    "settled_preference_suppressed": 0,
+    "first_evidence_backfilled": 1,
+    "first_evidence_missing_demotions": 0,
+    "malformed_findings": 0,
+    "malformed_returns": 0,
+    "validator": {
+      "outcome": "empty-batch",
+      "reason": "No surviving primary findings after caller corrected the original trace-filename defect; the explicitly retained T44 nonvacuity failure remains documented in requirements and residual risks.",
+      "selected": 0,
+      "confirmed": 0,
+      "rejected": 0,
+      "unresolved": 0,
+      "malformed": 0,
+      "failed": 0,
+      "shortcut_skipped": 0,
+      "protected_subject_reclassifications": 0,
+      "batch_launched": false,
+      "degraded_blockers": []
+    },
+    "tests": {
+      "source": "handoff/run-logs/final-tests.txt",
+      "executed_by_report_leaf": false,
+      "total": 98,
+      "passed": 97,
+      "failed": 1,
+      "elapsed_seconds": 57.629,
+      "retained_failure": "T44 seed42 discarded=0 violates positive-discard nonvacuity; retained by user direction.",
+      "targeted_fix_evidence": "handoff/run-logs/trace-case-fix-tests.txt: 17 summary tests pass."
+    },
+    "regressions": {
+      "source": "handoff/run-logs/final-verification.txt",
+      "legacy_reports_byte_identical": [
+        3,
+        3,
+        3,
+        4
+      ],
+      "seed42_csv_meta_byte_identical": 2,
+      "seed42_reports_byte_identical": 6,
+      "protected_files_diff": "empty",
+      "branch": "main",
+      "pushed": false
+    },
+    "resolved_before_finish": [
+      {
+        "original_number": 1,
+        "title": "Case-distinct product traces overwrite each other on Windows",
+        "corrective_commit": "ffbe89a",
+        "resolution": "Collision detection covers every input product ID using percent-encoded casefolded names; only collisions receive a distinct UTF-8 hex suffix. Filename and content stability for individual versus combined requests is covered by the saved targeted test evidence.",
+        "evidence": [
+          "src/trace.py:57-63",
+          "src/main.py:148-149",
+          "tests/test_summary.py:263-285",
+          "handoff/run-logs/trace-case-fix-tests.txt:17 tests OK",
+          "handoff/run-logs/final-tests.txt:98 tests,97 pass,1 retained unrelated T44 failure"
+        ]
+      }
+    ],
+    "notes": [
+      "Resumed the interrupted final review from seven existing persona JSON artifacts; no persona source review or full test suite was repeated.",
+      "Original select-stage log recorded reviewers=8. Seven named reviewer artifacts were recovered; root confirmed original /root/final_code_review/reliability terminated with a usage-limit error and produced no artifact. Coverage is seven completed plus one failed reviewer; reliability was not rerun.",
+      "Existing adversarial finding about p/P trace filenames was corrected by caller in ffbe89a before finish: all analysis product IDs now participate in quote(...).casefold collision detection, only collisions gain ! plus UTF-8 hex, and the same source input maps each ID consistently whether requested singly or together. This corrective diff was statically verified; trace-case-fix-tests.txt attests 17 summary tests pass, with caller-confirmed original reproduction before fix.",
+      "Scope snapshot refreshed only within the already authorized stage4 paths plus README and caller's p/P correction. Concurrent unrelated CLAUDE.md and tools/review-loop.ps1 edits are excluded and must not be attributed to this change.",
+      "Original dispatch head was 9863432; caller committed the verified p/P correction as ffbe89a while finish resumed. Review metadata must retain original dispatch head and disclose the corrective commit in coverage.",
+      "Latest caller-run full suite is handoff/run-logs/final-tests.txt:98 tests,97 pass,1 retained failure (seed42 discarded count0),57.629s. No test execution was repeated by this finish coordinator.",
+      "Final regression evidence handoff/run-logs/final-verification.txt:legacy reports3+3+3+4 byte-identical; seed42 CSV/meta2 and reports6 byte-identical; protected-files diff empty; main branch; no push.",
+      "Requirements must show T44 nonvacuity (discarded positive) unmet while recognizing the explicit user-directed response is retain failure and report. Do not claim all tests passed or create an actionable instruction to modify protected expectations, seeds or probabilities.",
+      "Cross-model review was not run because external-model/network transfer was prohibited for this resumed task; the collected in-process adversarial review covered that lens instead.",
+      "Static current-source inspection verified src/trace.py:57-63 checks percent-encoded names against all product IDs using casefold and adds an injective UTF-8 hex suffix only for collisions; src/main.py supplies the complete input ID set. The literal ! delimiter cannot appear in percent-encoded base components. tests/test_summary.py's regression verifies two distinct files and byte-identical filenames/content when IDs are subsequently requested singly.",
+      "The original p/P overwrite claim describes code corrected in ffbe89a before finish and is omitted from current primary findings. No source or test was changed by this merge leaf, and no tests were rerun.",
+      "README usage, filename policy, measured seed42 results, and the retained T44 failure were read in their current state after caller commit 26d1382. Metadata must continue to use original dispatch HEAD 9863432fa22a52688dbdb370caa01ed3791dae57.",
+      "Initial mechanics backfilled first_evidence for 1 original finding; 0 findings were demoted for a missing quote. Final primary findings=0; malformed returns=0; malformed findings=0; confidence suppression=0; mode-aware demotions=0.",
+      "Validator selection=0 and shortcut-skipped=0. No independently verified cross-model evidence was available, and no validator is necessary for the empty primary set.",
+      "Stage 5b consumed an empty-batch outcome: zero selected, zero shortcut-skipped, and no validator launch. Stage 5c was skipped because this is mode:agent with apply_local=false. The report leaf changed only run-directory artifacts and ran no tests, reviewers, models, or network operations."
+    ]
+  },
+  "peer": {
+    "outcome": "in-process-fallback",
+    "coverage": "Cross-model review was not run because external-model/network transfer was prohibited for this resumed task; the collected in-process adversarial review covered that lens instead."
+  },
+  "artifact_path": "C:/Users/PC/AppData/Local/Temp/compound-engineering-PC/ce-code-review/20261018-final-e914ff9d",
+  "run_id": "20261018-final-e914ff9d"
+}

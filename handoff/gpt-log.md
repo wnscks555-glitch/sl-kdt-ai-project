@@ -3299,3 +3299,71 @@ exit_code=0; elapsed_seconds=1.640875
 - README의 생성기·분석·추적 절에 실행법, 지표 정의, 상세 코드 28종, 가정과 한계, 실제 시드42 수치, 실패 조건, trace 파일명 충돌 처리까지 기록했다. 보호 대상 `src/rules.py`·기존 테스트 4개·tasks·decisions·reviews·.claude는 그대로다.
 - 재개 당시 작업 범위 밖 `CLAUDE.md`, `tools/review-loop.ps1`에 새 변경이 관측됐다. 두 파일은 수정·스테이징·커밋하지 않는다. 재개 시점 SHA-256과 최종 파일이 바이트 동일함을 확인했다(final-byte-verification). 이를 이번 구현의 변경으로 포함하지 않는다. 원래 gpt-log 내용도 작업 전 원본 바이트를 prefix로 그대로 보존했다.
 - 최종 별도 임시 디렉터리에서 기존 샘플 4종의 13개 보고서를 재생성하고 체크아웃 파일과 바이트 동일함을 확인했다. 새 seed42 CSV·meta 2개와 보고서 6개도 같은 방식으로 동일했다. main 유지, push·원격 변경·설치 없음.
+
+## v2 4단계 완료 보고 (2026-10-18)
+
+현행 절 전체의 생성기·meta·summary·상세 사유 코드·trace·불변식 테스트·생성 샘플·보고서·README 구현을 마쳤다. **검증은 전체 통과가 아니다. 최종 98개 중 97개 통과·1개 실패이며, T44 빈 검증의 폐기 양수 조건이 미충족이다.** 이 실패를 유지하라는 명세에 따라 기대표·기존 테스트·시드·확률을 바꾸지 않고 실제 결과를 보고한다.
+
+### 기대표와 불변식 대조
+
+| ID | 실제 결과 |
+| --- | --- |
+| T42 | 충족: seed42 CSV·meta 바이트 재현, 시드·제품 수·3종 SHA-256·버전·행 수·5종 주입 개수 기록 |
+| T43 | 충족: seed42와 seed43 CSV가 다름 |
+| T44 | **불일치:** 불변식 1–5는 seed42/500개와 seed7/200개에서 통과. 불변식 6의 폐기 1개 이상은 실제 0개로 실패. 완료 497·보류 3·정지 설비 1·5종 오류 각 24로 나머지 양수 조건은 충족 |
+| T45 | 충족: 수기 fixture 4제품, 최초 FAIL 1/5=`0.2000`, 전체 FAIL 1/6=`0.1667`, FPY 1/4=`0.2500`, 거절 2, 미실시 5와 파레토 일치 |
+| T46 | 충족: LEAK-2 정지 seq25, 원인 FAIL seq14·25, 정지 설비 거절 2건을 입력 오류 파레토에서 분리 |
+| T47 | 충족: T34의 행만 물리 순서로 표시, 정지 행/FAIL 원인의 다른 제품 ID 연결. seq 중복·감소, 반복 trace, Windows p/P 파일 보존도 검사 |
+| T48 | 충족: 없는 ID 또는 비설비 summary/trace는 종료 2, 보고서 미생성. 여러 ID 중 하나만 없어도 저장 전에 중단 |
+| T49 | 충족: 인위적 미등록 이유 문구에서 summary 실패 |
+| T50 | 충족: 기존 샘플 4종을 추가 옵션 없이 재실행, 기존 보고서 13개와 바이트 동일 |
+
+기존 T1–T41 고정 테스트 73개는 수정하지 않고 통과했다. 불변식 5는 200개로 줄이지 않고 500개·200개 모두 **매 물리 행 전에 전체 판정기를 deepcopy**해서 거절 시 전체 제품·설비 상태를 비교했다. 원래 gpt-log 내용과 보호 파일도 보존했다.
+
+### 실제 명령과 출력 원문 위치
+
+수정 전 `py -m unittest discover -s tests`의 73개 통과 출력과 기존 샘플 재생성 3+3+3+4개 바이트 비교 결과는 이 파일의 「v2 4단계 착수·회귀 기준」에 원문으로 기록했다. 이후 원문은 아래 파일에 명령·전체 stdout·stderr·종료 코드·실측 시간을 함께 저장했고 각 단계 절에도 연결했다. 대량 CLI 행 출력도 생략 없이 원문 파일에 있다.
+
+| 실행 | 원문 |
+| --- | --- |
+| 단계 ① 전체 테스트 75개 PASS | [stage1-tests.txt](run-logs/stage1-tests.txt) |
+| 단계 ② 전체 테스트 87개 PASS | [stage2-tests.txt](run-logs/stage2-tests.txt) |
+| 단계 ③ 전체 테스트 91개 PASS | [stage3-tests.txt](run-logs/stage3-tests.txt) |
+| 단계 ④ 전체 테스트 97개·1개 FAIL | [stage4-tests.txt](run-logs/stage4-tests.txt) |
+| 간소화 후 생성기 집중 테스트 2개 PASS | [stage4-simplify-tests.txt](run-logs/stage4-simplify-tests.txt) |
+| `py -m src.generate --seed 42 --products 500 --out data/generated/gen_seed42.csv` | [stage5-generate.txt](run-logs/stage5-generate.txt) |
+| `py -m src.main data/generated/gen_seed42.csv --recipe recipes/lamp_models_retest.json --equipment recipes/equipment_generated.json --summary --trace GEN_0005` | [stage5-summary-trace.txt](run-logs/stage5-summary-trace.txt) |
+| 단계 ⑤ 전체 테스트 97개·1개 FAIL | [stage5-tests.txt](run-logs/stage5-tests.txt) |
+| 단계 ⑥ 전체 테스트 97개·1개 FAIL (최종 파일 충돌 회귀 추가 전) | [stage6-tests.txt](run-logs/stage6-tests.txt) |
+| 파일 충돌 수정 후 summary/trace 집중 17개 PASS | [trace-case-fix-tests.txt](run-logs/trace-case-fix-tests.txt) |
+| 최종 `py -m unittest discover -s tests`: **98개·97 PASS·1 FAIL**, 57.629초 | [final-tests.txt](run-logs/final-tests.txt) |
+| 500개 불변식 1–6 별도 측정: 6개·1 FAIL | [seed42-timing.txt](run-logs/seed42-timing.txt) |
+| 최종 기존 13개·새 CSV/meta 2개·보고서 6개 바이트 비교 및 보호 확인 | [final-byte-verification.txt](run-logs/final-byte-verification.txt) |
+
+### 실측 시간과 해석·명세 이견
+
+같은 PC에서 시행한 별도 500개 측정값이며 CLI 프로세스 시작 시간과 구분한다.
+
+| 대상 | 초 |
+| --- | --- |
+| seed42·500개 생성 (CSV/meta 저장 포함) | 0.108255 |
+| 500개 입력 판정 + 추적용 분석 기록 | 0.061041 |
+| 500개 불변식 1–6 전체 (별도 생성/최초 판정 이후, 재현성 CLI 실행 포함) | 37.555677 |
+| 위 불변식 중 매 행 deepcopy 상태 불변 검사 | 36.688034 |
+
+- **명세 이견, 미해결:** seed42에서 폐기 제품이 0이다. 정상 FAIL 2%, LEAK-2 FAIL 30%, FAIL마다 요청 70%, 다른 설비 우선, 재검사 상한 2, 고장 설비의 빠른 정지를 그대로 적용한 결과다. 폐기 양수를 얻으려고 난수 소비·시드·확률을 조정하지 않았다. 생성기의 폐기 로직은 구현됐고 기존 T36/재검사 테스트 및 summary의 폐기 최초 결과 포함 테스트로 확인했지만 지정 seed42의 폐기 가지는 비어 있다.
+- 모델 50:50은 추출 확률이다. 주입 수는 정상 행 수의 3%를 내림하고 종류별 차이 최대 1로 배분한다. 주입률 분모는 정상 행, 거절률 분모는 전체 입력이다. 이번 샘플은 120/4020=`0.0299`와 120/4140=`0.0290`이다.
+- 중간 검사에서 가동 설비가 없어 멈춘 경우에도 기존 판정기의 상태 문구를 바꾸지 않는다. 미실시 검사·미완료 이유로 설명한다. 동적 이유 문구는 고정 템플릿과 실제 ID로 엄격히 대응한다.
+- seed42의 FPY는 `0.9640`, 최초 FAIL률은 `0.0144`, 전체 FAIL률은 `0.0143`이다. **생성 데이터의 확률은 가정이며 실제 설비 진단 근거가 아니다.**
+
+### 산출물·커밋·리뷰 처리
+
+- 코드/설정: `src/generate.py`, `src/summary.py`, `src/reason_codes.py`, `src/trace.py`, `src/main.py`, `recipes/generator.json`, `recipes/equipment_generated.json`.
+- 검증: `tests/test_generate.py`, `tests/test_summary.py`, `tests/fixtures/summary_events.csv`. 기존 테스트 4개와 기대표는 수정하지 않았다.
+- 생성물: `data/generated/gen_seed42.csv`, `.csv.meta.json`, `reports/gen_seed42_{rows,products,rejections,equipment,summary}.csv`, `reports/gen_seed42_trace_GEN_0005.csv`. README 「생성기·분석·추적」에 설명과 실제 값 수록.
+- main에서 단계별 커밋: `1872f39` T42·43 → `e5ccb32` T45·46·49 → `df20244` T47·48 → `f9e5cef` T44 → `9863432` 생성 샘플 → `ffbe89a` trace 충돌 수정 → `26d1382` README. 이 완료 보고도 별도 커밋한다. push·원격 설정 변경·패키지 설치는 하지 않았다.
+- 리뷰004 L1 반영, L2·L4·L5 보류와 L3 기존 반영 근거는 착수 절에 항목별로 기록했다. 최종 리뷰의 p/P trace 덮어쓰기 지적은 `ffbe89a`로 반영하고 수정 전 실패·수정 후 17개 PASS·최종 전체 98개 결과로 확인했다. 그 밖에 수집된 7개 리뷰 자료에는 새 수정 지적이 없다. reliability 독립 리뷰 1개는 사용량 제한으로 실패했으므로 그 렌즈를 완료했다고 주장하지 않는다. 외부 모델로 코드 전송 없이 native 검토만 사용했다.
+- 재개 중 확인된 별도 `CLAUDE.md`, `tools/review-loop.ps1` 변경은 손대지 않고 커밋에서 제외했다. 최종 상태에서도 재개 시점 바이트를 보존했다.
+- ce-work mode:return-to-caller의 구현/로컬 검증을 마치고 주 에이전트가 간소화·리뷰·통합을 수행했다. 구현 항목은 전부 완료했지만 T44 수용 조건 전체를 충족한 상태로 보고하지 않는다. 구현 경로 native, 외부 실행 엔진 없음, 게시 단계 생략.
+- ce-compound mode:non-interactive 판단: 해결한 파일명 충돌은 최종 코드·회귀 테스트·README에서 바로 복원할 수 있고, 폐기 빈 검증 이견은 미해결이다. 별도 영구 해결 문서를 만들 근거가 없어 생성하지 않았다. **Documentation skipped — 추가로 보존할 검증된 비자명한 해결 지식 없음.**
+- 최종 ce-code-review 취합·validator empty-batch·report 기록까지 완료했다. 원문 [final-review.json](run-logs/final-review.json)의 잔여 actionable finding은 0이며 `full_compliance=false`, T44 부분 충족, 완료 리뷰 7개/사용량 제한으로 실패한 reliability 리뷰 1개를 명시한다. 파일명 충돌 수정은 검토·검증됐지만 이를 전체 테스트 통과나 명세 완전 충족으로 해석하지 않는다.
