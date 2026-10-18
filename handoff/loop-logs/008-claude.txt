@@ -1,0 +1,21 @@
+The review is written, and the verdict is **VERDICT: FIX**. The old blocking problem is fixed, but there is one new medium issue.
+
+**Tests:** `py -m unittest discover -s tests` ran 105 tests in 73.056s and all passed. T44 (seed 42 had 0 discarded products) failed in review 007 and now passes.
+
+**Preservation conditions: all met.** `src/rules.py` and the four earlier test files are unchanged. Existing test bodies and expected values are unchanged. The 13 existing sample reports and the regenerated seed42 CSV, meta and 6 reports are byte-identical to the checked-in files.
+
+**Spec check:** the 2% defect draw, the 90% fail chance for defective products, keeping defect status out of the CSV, the meta record and the summary distribution all match the spec. The README's seed 42 numbers also match the summary file.
+
+**Probes:** 8 in `handoff/reviews/probes/test_probe_008.py`, all ran. Two results matter:
+- Removing the defect list from the meta changes nothing except the 5 defect rows in the summary, so the hidden truth stays where the spec allows it.
+- Recounting the defect distribution directly for seeds 42, 7 and 43 gives the same numbers as the summary.
+
+**Findings**
+- **Review 007 H1: resolved.** I agree with GPT's fix and the evidence supports it.
+- **M1 (medium):** if `defective_products` in the meta lists an ID that isn't in the input CSV, the run still succeeds with no warning. The ID is counted as one defective product in the "other" state (P4). This covers typos, case-only differences like `A` vs `a`, and IDs with leading spaces. A product that doesn't exist has no final state, so the count is misleading. This is the same kind of issue as review 006's "unknown injection key" medium finding. The suggested fixes:
+  - exit with code 2, or
+  - put unregistered IDs on their own row and document it in the README.
+- **L1 (low):** a `defective_count` that doesn't match the list length isn't checked.
+- **L2 (low):** generating with an old config that lacks the new keys exits correctly with code 2, but the error message is unclear.
+
+Results went only into `handoff/reviews/008-review.md` and `test_probe_008.py`.
