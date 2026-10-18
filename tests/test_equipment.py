@@ -281,6 +281,38 @@ class EquipmentProcessTests(unittest.TestCase):
 
 
 class EquipmentReportTests(unittest.TestCase):
+    def test_sample_t33_to_t39_reports_and_all_rejected_state_unchanged(self):
+        sample = ROOT / "data" / "sample_events_equipment.csv"
+        models = load_recipe(RECIPE).models
+        process = RecipeProcess(models, load_equipment(EQUIPMENT, models))
+        with sample.open(encoding="utf-8-sig", newline="") as source:
+            events = list(csv.DictReader(source))
+        rejected = []
+        for row in events:
+            before = copy.deepcopy((process.products, process.equipment))
+            decision = process.apply(row)
+            if not decision.accepted:
+                self.assertEqual((process.products, process.equipment), before)
+                rejected.append(decision.rule_id)
+        self.assertEqual(len(events), 94)
+        self.assertEqual(rejected, ["RULE_EQUIP", "RULE_EQUIP", "RULE_EQUIP", "RULE_EQUIP",
+                                    "RULE_PRESERVE", "RULE_PRESERVE", "RULE_INSP_PRE"])
+        self.assertEqual(process.products["T36"].status, "폐기")
+        self.assertEqual(process.products["T33_T35_A"].retest_counts, {"LEAK": 1})
+        self.assertEqual(process.products["T33_T35_A"].status, "공정 진행 중(P3 완료)")
+        self.assertEqual(process.products["T34"].inspections, {"LEAK": "PASS"})
+        self.assertEqual(process.products["T38"].inspections, {})
+        self.assertEqual(process.products["T39_EARLY"].inspections, {})
+        self.assertEqual((process.equipment["LEAK-1"].counted_results, process.equipment["LEAK-1"].fail_count), (12, 5))
+        self.assertEqual((process.equipment["LEAK-2"].counted_results, process.equipment["LEAK-2"].fail_count), (3, 2))
+        self.assertEqual([state.state for state in process.equipment.values()], ["정지", "정지", "가동", "가동"])
+        with tempfile.TemporaryDirectory() as directory:
+            result = run_cli(directory, sample)
+            self.assertEqual(result.returncode, 0, result.stderr)
+            for suffix in ("rows", "products", "rejections", "equipment"):
+                name = "sample_events_equipment_" + suffix + ".csv"
+                self.assertEqual((Path(directory) / "reports" / name).read_bytes(), (ROOT / "reports" / name).read_bytes())
+
     def write_input(self, directory):
         events = []
 

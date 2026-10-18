@@ -1,0 +1,18 @@
+﻿product_id,model,state,incomplete_reason,history
+T36,A,폐기,LEAK 재검사 한도 2회 초과 FAIL로 폐기,LEAK: FAIL@5[LEAK-1] → 요청@6 → FAIL@7[LEAK-1](재검사 1) → 요청@8 → FAIL@9[LEAK-1](재검사 2)
+T33_T35_A,A,공정 진행 중(P3 완료),P4 미완료; P5 미완료; LIGHT 미실시; FINAL 미실시,LEAK: FAIL@14[LEAK-2] → 요청@15 → PASS@33[LEAK-1](재검사 1)
+T33_P2,A,공정 진행 중(P3 완료),P4 미완료; P5 미완료; LIGHT 미실시; FINAL 미실시,LEAK: PASS@20[LEAK-2]
+T33_P3,A,보류,P4 미완료; P5 미완료; LEAK FAIL; LIGHT 미실시; FINAL 미실시,LEAK: FAIL@25[LEAK-2]
+T34,A,공정 진행 중(P3 완료),P4 미완료; P5 미완료; LIGHT 미실시; FINAL 미실시,LEAK: PASS@31[LEAK-1]
+BUFFER_BEFORE_T37,A,공정 진행 중(P3 완료),P4 미완료; P5 미완료; LIGHT 미실시; FINAL 미실시,LEAK: PASS@38[LEAK-1]
+T37_1,A,보류,P4 미완료; P5 미완료; LEAK FAIL; LIGHT 미실시; FINAL 미실시,LEAK: FAIL@43[LEAK-1]
+T37_2,A,공정 진행 중(P3 완료),P4 미완료; P5 미완료; LIGHT 미실시; FINAL 미실시,LEAK: PASS@48[LEAK-1]
+T37_3,A,공정 진행 중(P3 완료),P4 미완료; P5 미완료; LIGHT 미실시; FINAL 미실시,LEAK: PASS@53[LEAK-1]
+T37_4,A,보류,P4 미완료; P5 미완료; LEAK FAIL; LIGHT 미실시; FINAL 미실시,LEAK: FAIL@58[LEAK-1]
+T38,A,공정 진행 중(P3 완료),P4 미완료; P5 미완료; LEAK 미실시; LIGHT 미실시; FINAL 미실시,
+BUFFER_BEFORE_T39_1,A,공정 진행 중(P3 완료),P4 미완료; P5 미완료; LIGHT 미실시; FINAL 미실시,LEAK: PASS@71[LEAK-1]
+BUFFER_BEFORE_T39_2,A,공정 진행 중(P3 완료),P4 미완료; P5 미완료; LIGHT 미실시; FINAL 미실시,LEAK: PASS@76[LEAK-1]
+T39_1,A,보류,P4 미완료; P5 미완료; LEAK FAIL; LIGHT 미실시; FINAL 미실시,LEAK: FAIL@81[LEAK-1]
+T39_EARLY,A,공정 진행 중(P1 완료),P2 미완료; P3 미완료; P4 미완료; P5 미완료; LEAK 미실시; LIGHT 미실시; FINAL 미실시,
+T39_2,A,공정 진행 중(P3 완료),P4 미완료; P5 미완료; LIGHT 미실시; FINAL 미실시,LEAK: PASS@89[LEAK-1]
+T39_3,A,보류,P4 미완료; P5 미완료; LEAK FAIL; LIGHT 미실시; FINAL 미실시,LEAK: FAIL@94[LEAK-1]

@@ -2319,3 +2319,191 @@ OK
 - 명세 이견: 현재 3단계 요구·기대표와 충돌하여 다르게 구현한 사항 없음. 위 두 항목은 미명시 범위의 해석으로 공개한다. 기존 승인된 T32·폐기 문구 이견은 변경하지 않음.
 
 ③ 완료(T41): 7열 CSV를 설비 모드에만 허용, --equipment는 --recipe 필수. 보고서 4종·설비 파일 순서·미사용 설비·BOM·7/8개 규칙 순서·원본 SHA-256·rows 및 history 설비 표시를 검사. 같은 경로 2회와 별도 출력 폴더 1회에서 stdout/4종 CSV 바이트 동일. --equipment 없는 기존 샘플 3종의 보고서 9개도 바이트 동일. 구현 전 헤더·출력 관련 3개 테스트 실패 확인 후 전체 72개 통과.
+
+### ④ 샘플 산출물 생성 전 부재 확인
+
+명령: `py -m unittest discover -s tests -p test_equipment.py`
+
+```text
+..............E....
+======================================================================
+ERROR: test_sample_t33_to_t39_reports_and_all_rejected_state_unchanged (test_equipment.EquipmentReportTests)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "C:\Users\PC\Documents\ChatGPT\에스엘 KDT AI 교육 부트캠프\project\tests\test_equipment.py", line 288, in test_sample_t33_to_t39_reports_and_all_rejected_state_unchanged
+    with sample.open(encoding="utf-8-sig", newline="") as source:
+  File "C:\Users\PC\anaconda3\lib\pathlib.py", line 1252, in open
+    return io.open(self, mode, buffering, encoding, errors, newline,
+  File "C:\Users\PC\anaconda3\lib\pathlib.py", line 1120, in _opener
+    return self._accessor.open(self, flags, mode)
+FileNotFoundError: [Errno 2] No such file or directory: 'C:\\Users\\PC\\Documents\\ChatGPT\\에스엘 KDT AI 교육 부트캠프\\project\\data\\sample_events_equipment.csv'
+
+----------------------------------------------------------------------
+Ran 19 tests in 3.489s
+
+FAILED (errors=1)
+```
+종료 코드: 1
+
+명령: `py -m src.main data/sample_events_equipment.csv --recipe recipes/lamp_models_retest.json --equipment recipes/equipment.json`
+
+```text
+레시피: recipes/lamp_models_retest.json | SHA-256: 438229b58c9e
+설비: recipes/equipment.json | SHA-256: 2e1252ba2c8d
+[행별 판정]
+seq | product_id | 입력 | 적용 규칙 ID | 허용/거절 | 거절 이유 | 처리 후 상태
+1 | T36 | REGISTER | RULE_RECIPE | 허용 |  | 등록
+2 | T36 | P1 | RULE_SEQ | 허용 |  | 공정 진행 중(P1 완료)
+3 | T36 | P2 | RULE_SEQ | 허용 |  | 공정 진행 중(P2 완료)
+4 | T36 | P3 | RULE_SEQ | 허용 |  | 공정 진행 중(P3 완료)
+5 | T36 | INSPECT LEAK FAIL @LEAK-1 | RULE_FAIL_HOLD | 허용 |  | 보류
+6 | T36 | RETEST_REQUEST LEAK | RULE_RETEST | 허용 |  | 보류
+7 | T36 | INSPECT LEAK FAIL @LEAK-1 | RULE_RETEST | 허용 |  | 보류
+8 | T36 | RETEST_REQUEST LEAK | RULE_RETEST | 허용 |  | 보류
+9 | T36 | INSPECT LEAK FAIL @LEAK-1 | RULE_RETEST | 허용 |  | 폐기
+10 | T33_T35_A | REGISTER | RULE_RECIPE | 허용 |  | 등록
+11 | T33_T35_A | P1 | RULE_SEQ | 허용 |  | 공정 진행 중(P1 완료)
+12 | T33_T35_A | P2 | RULE_SEQ | 허용 |  | 공정 진행 중(P2 완료)
+13 | T33_T35_A | P3 | RULE_SEQ | 허용 |  | 공정 진행 중(P3 완료)
+14 | T33_T35_A | INSPECT LEAK FAIL @LEAK-2 | RULE_FAIL_HOLD | 허용 |  | 보류
+15 | T33_T35_A | RETEST_REQUEST LEAK | RULE_RETEST | 허용 |  | 보류
+16 | T33_P2 | REGISTER | RULE_RECIPE | 허용 |  | 등록
+17 | T33_P2 | P1 | RULE_SEQ | 허용 |  | 공정 진행 중(P1 완료)
+18 | T33_P2 | P2 | RULE_SEQ | 허용 |  | 공정 진행 중(P2 완료)
+19 | T33_P2 | P3 | RULE_SEQ | 허용 |  | 공정 진행 중(P3 완료)
+20 | T33_P2 | INSPECT LEAK PASS @LEAK-2 | RULE_NOT_DONE | 허용 |  | 공정 진행 중(P3 완료)
+21 | T33_P3 | REGISTER | RULE_RECIPE | 허용 |  | 등록
+22 | T33_P3 | P1 | RULE_SEQ | 허용 |  | 공정 진행 중(P1 완료)
+23 | T33_P3 | P2 | RULE_SEQ | 허용 |  | 공정 진행 중(P2 완료)
+24 | T33_P3 | P3 | RULE_SEQ | 허용 |  | 공정 진행 중(P3 완료)
+25 | T33_P3 | INSPECT LEAK FAIL @LEAK-2 | RULE_FAIL_HOLD | 허용 |  | 보류
+26 | T34 | REGISTER | RULE_RECIPE | 허용 |  | 등록
+27 | T34 | P1 | RULE_SEQ | 허용 |  | 공정 진행 중(P1 완료)
+28 | T34 | P2 | RULE_SEQ | 허용 |  | 공정 진행 중(P2 완료)
+29 | T34 | P3 | RULE_SEQ | 허용 |  | 공정 진행 중(P3 완료)
+30 | T34 | INSPECT LEAK PASS @LEAK-2 | RULE_EQUIP | 거절 | 정지된 설비 | 공정 진행 중(P3 완료)
+31 | T34 | INSPECT LEAK PASS @LEAK-1 | RULE_NOT_DONE | 허용 |  | 공정 진행 중(P3 완료)
+32 | T33_T35_A | INSPECT LEAK PASS @LEAK-2 | RULE_EQUIP | 거절 | 정지된 설비 | 보류
+33 | T33_T35_A | INSPECT LEAK PASS @LEAK-1 | RULE_RETEST | 허용 |  | 공정 진행 중(P3 완료)
+34 | BUFFER_BEFORE_T37 | REGISTER | RULE_RECIPE | 허용 |  | 등록
+35 | BUFFER_BEFORE_T37 | P1 | RULE_SEQ | 허용 |  | 공정 진행 중(P1 완료)
+36 | BUFFER_BEFORE_T37 | P2 | RULE_SEQ | 허용 |  | 공정 진행 중(P2 완료)
+37 | BUFFER_BEFORE_T37 | P3 | RULE_SEQ | 허용 |  | 공정 진행 중(P3 완료)
+38 | BUFFER_BEFORE_T37 | INSPECT LEAK PASS @LEAK-1 | RULE_NOT_DONE | 허용 |  | 공정 진행 중(P3 완료)
+39 | T37_1 | REGISTER | RULE_RECIPE | 허용 |  | 등록
+40 | T37_1 | P1 | RULE_SEQ | 허용 |  | 공정 진행 중(P1 완료)
+41 | T37_1 | P2 | RULE_SEQ | 허용 |  | 공정 진행 중(P2 완료)
+42 | T37_1 | P3 | RULE_SEQ | 허용 |  | 공정 진행 중(P3 완료)
+43 | T37_1 | INSPECT LEAK FAIL @LEAK-1 | RULE_FAIL_HOLD | 허용 |  | 보류
+44 | T37_2 | REGISTER | RULE_RECIPE | 허용 |  | 등록
+45 | T37_2 | P1 | RULE_SEQ | 허용 |  | 공정 진행 중(P1 완료)
+46 | T37_2 | P2 | RULE_SEQ | 허용 |  | 공정 진행 중(P2 완료)
+47 | T37_2 | P3 | RULE_SEQ | 허용 |  | 공정 진행 중(P3 완료)
+48 | T37_2 | INSPECT LEAK PASS @LEAK-1 | RULE_NOT_DONE | 허용 |  | 공정 진행 중(P3 완료)
+49 | T37_3 | REGISTER | RULE_RECIPE | 허용 |  | 등록
+50 | T37_3 | P1 | RULE_SEQ | 허용 |  | 공정 진행 중(P1 완료)
+51 | T37_3 | P2 | RULE_SEQ | 허용 |  | 공정 진행 중(P2 완료)
+52 | T37_3 | P3 | RULE_SEQ | 허용 |  | 공정 진행 중(P3 완료)
+53 | T37_3 | INSPECT LEAK PASS @LEAK-1 | RULE_NOT_DONE | 허용 |  | 공정 진행 중(P3 완료)
+54 | T37_4 | REGISTER | RULE_RECIPE | 허용 |  | 등록
+55 | T37_4 | P1 | RULE_SEQ | 허용 |  | 공정 진행 중(P1 완료)
+56 | T37_4 | P2 | RULE_SEQ | 허용 |  | 공정 진행 중(P2 완료)
+57 | T37_4 | P3 | RULE_SEQ | 허용 |  | 공정 진행 중(P3 완료)
+58 | T37_4 | INSPECT LEAK FAIL @LEAK-1 | RULE_FAIL_HOLD | 허용 |  | 보류
+59 | T38 | REGISTER | RULE_RECIPE | 허용 |  | 등록
+60 | T38 | P1 | RULE_SEQ | 허용 |  | 공정 진행 중(P1 완료)
+61 | T38 | P2 | RULE_SEQ | 허용 |  | 공정 진행 중(P2 완료)
+62 | T38 | P3 | RULE_SEQ | 허용 |  | 공정 진행 중(P3 완료)
+63 | T38 | INSPECT LEAK PASS @LEAK-9 | RULE_EQUIP | 거절 | 등록되지 않은 설비 | 공정 진행 중(P3 완료)
+64 | T38 | INSPECT LEAK PASS @LIGHT-1 | RULE_EQUIP | 거절 | 검사 종류가 다른 설비 | 공정 진행 중(P3 완료)
+65 | T38 | INSPECT LEAK PASS | RULE_PRESERVE | 거절 | equipment가 비어 있음 | 공정 진행 중(P3 완료)
+66 | T38 | P4 | RULE_PRESERVE | 거절 | INSPECT 이외의 equipment는 빈칸이어야 함 | 공정 진행 중(P3 완료)
+67 | BUFFER_BEFORE_T39_1 | REGISTER | RULE_RECIPE | 허용 |  | 등록
+68 | BUFFER_BEFORE_T39_1 | P1 | RULE_SEQ | 허용 |  | 공정 진행 중(P1 완료)
+69 | BUFFER_BEFORE_T39_1 | P2 | RULE_SEQ | 허용 |  | 공정 진행 중(P2 완료)
+70 | BUFFER_BEFORE_T39_1 | P3 | RULE_SEQ | 허용 |  | 공정 진행 중(P3 완료)
+71 | BUFFER_BEFORE_T39_1 | INSPECT LEAK PASS @LEAK-1 | RULE_NOT_DONE | 허용 |  | 공정 진행 중(P3 완료)
+72 | BUFFER_BEFORE_T39_2 | REGISTER | RULE_RECIPE | 허용 |  | 등록
+73 | BUFFER_BEFORE_T39_2 | P1 | RULE_SEQ | 허용 |  | 공정 진행 중(P1 완료)
+74 | BUFFER_BEFORE_T39_2 | P2 | RULE_SEQ | 허용 |  | 공정 진행 중(P2 완료)
+75 | BUFFER_BEFORE_T39_2 | P3 | RULE_SEQ | 허용 |  | 공정 진행 중(P3 완료)
+76 | BUFFER_BEFORE_T39_2 | INSPECT LEAK PASS @LEAK-1 | RULE_NOT_DONE | 허용 |  | 공정 진행 중(P3 완료)
+77 | T39_1 | REGISTER | RULE_RECIPE | 허용 |  | 등록
+78 | T39_1 | P1 | RULE_SEQ | 허용 |  | 공정 진행 중(P1 완료)
+79 | T39_1 | P2 | RULE_SEQ | 허용 |  | 공정 진행 중(P2 완료)
+80 | T39_1 | P3 | RULE_SEQ | 허용 |  | 공정 진행 중(P3 완료)
+81 | T39_1 | INSPECT LEAK FAIL @LEAK-1 | RULE_FAIL_HOLD | 허용 |  | 보류
+82 | T39_EARLY | REGISTER | RULE_RECIPE | 허용 |  | 등록
+83 | T39_EARLY | P1 | RULE_SEQ | 허용 |  | 공정 진행 중(P1 완료)
+84 | T39_EARLY | INSPECT LEAK FAIL @LEAK-1 | RULE_INSP_PRE | 거절 | P3 미완료 | 공정 진행 중(P1 완료)
+85 | T39_2 | REGISTER | RULE_RECIPE | 허용 |  | 등록
+86 | T39_2 | P1 | RULE_SEQ | 허용 |  | 공정 진행 중(P1 완료)
+87 | T39_2 | P2 | RULE_SEQ | 허용 |  | 공정 진행 중(P2 완료)
+88 | T39_2 | P3 | RULE_SEQ | 허용 |  | 공정 진행 중(P3 완료)
+89 | T39_2 | INSPECT LEAK PASS @LEAK-1 | RULE_NOT_DONE | 허용 |  | 공정 진행 중(P3 완료)
+90 | T39_3 | REGISTER | RULE_RECIPE | 허용 |  | 등록
+91 | T39_3 | P1 | RULE_SEQ | 허용 |  | 공정 진행 중(P1 완료)
+92 | T39_3 | P2 | RULE_SEQ | 허용 |  | 공정 진행 중(P2 완료)
+93 | T39_3 | P3 | RULE_SEQ | 허용 |  | 공정 진행 중(P3 완료)
+94 | T39_3 | INSPECT LEAK FAIL @LEAK-1 | RULE_FAIL_HOLD | 허용 |  | 보류
+
+[제품별 최종 상태]
+product_id | model | 최종 상태 | 미완료 이유 | history
+T36 | A | 폐기 | LEAK 재검사 한도 2회 초과 FAIL로 폐기 | LEAK: FAIL@5[LEAK-1] → 요청@6 → FAIL@7[LEAK-1](재검사 1) → 요청@8 → FAIL@9[LEAK-1](재검사 2)
+T33_T35_A | A | 공정 진행 중(P3 완료) | P4 미완료; P5 미완료; LIGHT 미실시; FINAL 미실시 | LEAK: FAIL@14[LEAK-2] → 요청@15 → PASS@33[LEAK-1](재검사 1)
+T33_P2 | A | 공정 진행 중(P3 완료) | P4 미완료; P5 미완료; LIGHT 미실시; FINAL 미실시 | LEAK: PASS@20[LEAK-2]
+T33_P3 | A | 보류 | P4 미완료; P5 미완료; LEAK FAIL; LIGHT 미실시; FINAL 미실시 | LEAK: FAIL@25[LEAK-2]
+T34 | A | 공정 진행 중(P3 완료) | P4 미완료; P5 미완료; LIGHT 미실시; FINAL 미실시 | LEAK: PASS@31[LEAK-1]
+BUFFER_BEFORE_T37 | A | 공정 진행 중(P3 완료) | P4 미완료; P5 미완료; LIGHT 미실시; FINAL 미실시 | LEAK: PASS@38[LEAK-1]
+T37_1 | A | 보류 | P4 미완료; P5 미완료; LEAK FAIL; LIGHT 미실시; FINAL 미실시 | LEAK: FAIL@43[LEAK-1]
+T37_2 | A | 공정 진행 중(P3 완료) | P4 미완료; P5 미완료; LIGHT 미실시; FINAL 미실시 | LEAK: PASS@48[LEAK-1]
+T37_3 | A | 공정 진행 중(P3 완료) | P4 미완료; P5 미완료; LIGHT 미실시; FINAL 미실시 | LEAK: PASS@53[LEAK-1]
+T37_4 | A | 보류 | P4 미완료; P5 미완료; LEAK FAIL; LIGHT 미실시; FINAL 미실시 | LEAK: FAIL@58[LEAK-1]
+T38 | A | 공정 진행 중(P3 완료) | P4 미완료; P5 미완료; LEAK 미실시; LIGHT 미실시; FINAL 미실시 | 
+BUFFER_BEFORE_T39_1 | A | 공정 진행 중(P3 완료) | P4 미완료; P5 미완료; LIGHT 미실시; FINAL 미실시 | LEAK: PASS@71[LEAK-1]
+BUFFER_BEFORE_T39_2 | A | 공정 진행 중(P3 완료) | P4 미완료; P5 미완료; LIGHT 미실시; FINAL 미실시 | LEAK: PASS@76[LEAK-1]
+T39_1 | A | 보류 | P4 미완료; P5 미완료; LEAK FAIL; LIGHT 미실시; FINAL 미실시 | LEAK: FAIL@81[LEAK-1]
+T39_EARLY | A | 공정 진행 중(P1 완료) | P2 미완료; P3 미완료; P4 미완료; P5 미완료; LEAK 미실시; LIGHT 미실시; FINAL 미실시 | 
+T39_2 | A | 공정 진행 중(P3 완료) | P4 미완료; P5 미완료; LIGHT 미실시; FINAL 미실시 | LEAK: PASS@89[LEAK-1]
+T39_3 | A | 보류 | P4 미완료; P5 미완료; LEAK FAIL; LIGHT 미실시; FINAL 미실시 | LEAK: FAIL@94[LEAK-1]
+
+[규칙 ID별 거절 건수]
+규칙 ID | 거절 건수
+RULE_RECIPE | 0
+RULE_SEQ | 0
+RULE_INSP_PRE | 1
+RULE_NOT_DONE | 0
+RULE_FAIL_HOLD | 0
+RULE_PRESERVE | 2
+RULE_RETEST | 0
+RULE_EQUIP | 4
+
+[설비별 최종 상태]
+equipment | inspection | counted_results | fail_count | state | stopped_at_seq
+LEAK-1 | LEAK | 12 | 5 | 정지 | 94
+LEAK-2 | LEAK | 3 | 2 | 정지 | 25
+LIGHT-1 | LIGHT | 0 | 0 | 가동 | 
+FINAL-1 | FINAL | 0 | 0 | 가동 | 
+
+저장 파일:
+reports/sample_events_equipment_rows.csv
+reports/sample_events_equipment_products.csv
+reports/sample_events_equipment_rejections.csv
+reports/sample_events_equipment_equipment.csv
+```
+Exit code: 0
+
+### ④ 固定 샘플·보고서 T33–T41: 전체 회귀
+
+명령: `py -m unittest discover -s tests`
+
+```text
+.........................................................................
+----------------------------------------------------------------------
+Ran 73 tests in 10.264s
+
+OK
+```
+종료 코드: 0
+
+④ 완료(T33–T41): 고정 입력 94행(허용 87·거절 7), 등록 제품 16개. T36 → T33/T35 최초 FAIL·요청 → T33 정지 → T34 우회 → T35 재검사 → T37 → T38 → T39 순서로 공유 설비의 일회 실행을 구성했다. BUFFER 제품 PASS는 T36/T37의 이전 FAIL이 다음 시나리오 창에 섞이지 않도록 하는 허용 최초 결과이며 숨기지 않고 CSV·보고서에 포함했다. 수기로 산정한 94행·누적 LEAK-1 12/5, LEAK-2 3/2·거절 순서를 신규 샘플 테스트로 검증하고 보고서 4개를 체크아웃 바이트와 비교했다. 전체 73개 통과.
