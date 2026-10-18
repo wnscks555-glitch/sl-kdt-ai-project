@@ -313,6 +313,8 @@ seq,product_id,event,inspection,result,model,equipment
 
 [고정 샘플](data/sample_events_equipment.csv)은 T33–T39를 담은 94행(허용 87·거절 7), 제품 17개입니다. T33과 T35는 같은 최초 FAIL·요청·정지 이력을 공유하고, `BUFFER_` 제품의 허용 PASS로 공유 설비의 이전 창을 정리합니다. LEAK-2는 seq 25에서 누적 3건/FAIL 2건으로, LEAK-1은 seq 94에서 누적 12건/FAIL 5건으로 정지합니다. LIGHT-1·FINAL-1은 미사용·가동입니다. 거절은 `RULE_EQUIP 4`, `RULE_PRESERVE 2`, `RULE_INSP_PRE 1`이며 나머지 규칙은 0건입니다. `tests/test_equipment.py`에서 T33–T41, 모든 거절의 전체 상태 불변, 파일 오류, 기존 보고서 9개 보존과 출력 재현성을 검증합니다.
 
+한 번 정지하면 재가동하지 않으므로 고정 샘플의 T39는 아직 가동 중인 LEAK-1에서 같은 판정을 재현합니다. 독립 T39 단위 테스트는 기대표의 LEAK-2를 그대로 사용합니다.
+
 ### 이번 단계 제외 범위
 
 설비 재가동·점검 이벤트, 로트 ID, 공정 설비, 정지 원인 FAIL 제품의 자동 재검사 요청, 측정값·관리한계 계산은 포함하지 않습니다. 실제 설비 제어나 실제 제조 품질 판정을 수행하지 않습니다.
