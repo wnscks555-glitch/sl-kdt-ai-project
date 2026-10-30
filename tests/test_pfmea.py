@@ -252,6 +252,14 @@ class TableTests(unittest.TestCase):
             report("section,method,capture_rate,value\nmethod,m,0.5,\n")
             with self.assertRaisesRegex(ValueError, "출처"):
                 resolve_reference("report:r:m:capture_rate", root)
+            report(good + "method,m\n")
+            with self.assertRaisesRegex(ValueError, "칸이 없음"):
+                resolve_reference("report:r:m:capture_rate", root)
+            report(good + "method,m,,\n")
+            self.assertEqual(resolve_reference("report:r:m:capture_rate", root).report[0], "")
+            report(good.replace("capture_rate", "precision") + "method,m,0.5,\n")
+            with self.assertRaisesRegex(ValueError, "없는 열"):
+                resolve_reference("report:r:m:capture_rate", root)
             (root / "tests" / "test_x.py").write_text("def (:\n", encoding="utf-8")
             with self.assertRaisesRegex(ValueError, "구문 오류"):
                 resolve_reference("test:tests/test_x.py::A::b", root)
@@ -366,6 +374,9 @@ class SubmissionTests(unittest.TestCase):
         for row in by_section("notice"):
             self.assertIn(row["text"], markdown)
         self.assertNotIn("AIAG", markdown)
+        for reference in ("reason:SEQ_SKIP", "reason:RECIPE_UNKNOWN_STEP",
+                          "test:tests/test_pfmea.py::AlternativeTests::test_t128_alternatives", "관측값: 0.8525"):
+            self.assertIn(reference, markdown)
         self.assertFalse(any("AIAG" in value for row in report for value in row.values()))
 
     def test_table_file_reads_and_validates(self):

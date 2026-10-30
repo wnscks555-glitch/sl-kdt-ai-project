@@ -109,11 +109,16 @@ def _report_reference(text, value, root):
     if not path.is_file():
         raise ValueError("없는 보고서: " + text)
     with path.open("r", encoding="utf-8-sig", newline="") as source:
-        rows = list(csv.DictReader(source))
+        reader = csv.DictReader(source)
+        rows = list(reader)
+    if column not in (reader.fieldnames or ()):
+        raise ValueError("보고서에 없는 열: " + text)
     matches = [row for row in rows if row.get("section") == "method" and row.get("method") == method]
     if len(matches) != 1:
         raise ValueError("보고서의 방식 행이 정확히 하나가 아님: " + text)
-    number = matches[0].get(column, "")
+    number = matches[0][column]
+    if number is None:
+        raise ValueError("보고서 행에 해당 칸이 없음: " + text)
     if number and re.fullmatch(r"-?[0-9]+(\.[0-9]+)?", number) is None:
         raise ValueError("보고서 값이 소수 형식이 아님: " + text)
     provenance = {row.get("method"): row.get("value", "") for row in rows if row.get("section") == "provenance"}
@@ -447,18 +452,21 @@ def _table(lines, heading, columns, rows):
 def build_markdown(report):
     lines = ["# 합성 공정 PFMEA 연습", "", PRACTICE_NOTICE, "", ASSUMPTION_NOTICE, "", METRIC_NOTICE, "", LINK_NOTICE]
     items = [row for row in report if row["section"] == "item"]
+    observed = {row["id"]: row["value"] for row in report if row["section"] == "action"}
     for item in items:
         lines.extend(("", "## " + item["id"] + " " + item["failure_mode"], ""))
         for label, column in (("유형", "failure_type"), ("대상", "process_step"), ("기능", "function_requirement"),
                               ("영향(가정)", "effect"), ("원인(가정)", "cause"), ("예방 관리", "prevention_control"),
                               ("검출 관리", "detection_control"), ("점수", "score_status"), ("근거 상태", "evidence_status"),
-                              ("근거 설명", "evidence_note"), ("조치", "action"), ("조치 상태", "action_state"),
-                              ("조치 목적", "action_goal"), ("조치 전 관리", "control_before"),
-                              ("조치 후 관리", "control_after"), ("잔여 위험", "residual_risk")):
+                              ("근거 참조", "evidence"), ("근거 설명", "evidence_note"), ("조치", "action"),
+                              ("조치 상태", "action_state"), ("조치 목적", "action_goal"),
+                              ("조치 전 관리", "control_before"), ("조치 후 관리", "control_after"),
+                              ("조치 근거", "action_evidence"), ("잔여 위험", "residual_risk")):
             lines.append("- " + label + ": " + _cell(item[column]))
         if item["success_reference"]:
             lines.append("- 사전 기준: " + " ".join(item[column] for column in SUCCESS_COLUMNS))
         if item["effect_result"]:
+            lines.append("- 관측값: " + _cell(observed.get(item["id"], "")))
             lines.append("- 효과 판정: " + item["effect_result"])
     _table(lines, "지표", ("지표", "범위", "분자", "분모", "값"),
            [(row["reference"], row["scope"], row["numerator"], row["denominator"], row["value"])
