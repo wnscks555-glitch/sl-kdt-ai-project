@@ -49,10 +49,11 @@ def build_containment(analysis):
 
 
 def run_scopes(analysis):
-    """방식별로 한 실행의 모든 정지에서 고른 고유 제품 합집합."""
-    methods = {}
+    """방식별로 한 실행의 모든 정지에서 고른 고유 제품 합집합. 정지가 없어도 적용 가능한 방식은 빈 집합으로 남긴다."""
+    lot_tracking = analysis.process.equipment_book.lot_tracking
+    methods = {method: set() for method in METHODS if lot_tracking or method != "lot"}
     for _, _, method, records in stop_scopes(analysis):
-        methods.setdefault(method, set()).update(record.product_id for record in records)
+        methods[method].update(record.product_id for record in records)
     return methods
 
 

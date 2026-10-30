@@ -1,5 +1,6 @@
 import copy
 import csv
+import hashlib
 import json
 import os
 from pathlib import Path
@@ -249,10 +250,22 @@ class GeneratorTests(unittest.TestCase):
     def test_t81_reproducible_and_truth_stays_out_of_csv(self):
         for seed, products in ((42, 500), (7, 200)):
             with self.subTest(seed=seed), tempfile.TemporaryDirectory() as directory:
-                one, two = Path(directory) / "one.csv", Path(directory) / "two.csv"
-                meta = generate(seed, products, one, LOT_CONFIG)
-                generate(seed, products, two, LOT_CONFIG)
-                self.assertEqual(one.read_bytes(), two.read_bytes())
+                # 같은 이름으로 따로 생성·판정해 CSV, meta, 판정 보고서 묶음 전체를 바이트 비교한다.
+                snapshots = []
+                for name in ("one", "two"):
+                    working = Path(directory) / name
+                    working.mkdir()
+                    output = working / "gen.csv"
+                    meta = generate(seed, products, output, LOT_CONFIG)
+                    result = cli(working, str(output), "--recipe", str(RECIPE), "--equipment", str(LOT_EQUIPMENT),
+                                 "--summary", "--containment")
+                    self.assertEqual(result.returncode, 0, result.stderr.decode("utf-8"))
+                    snapshots.append({path.relative_to(working).as_posix(): path.read_bytes()
+                                      for path in working.rglob("*") if path.is_file()})
+                self.assertIn("gen.csv.meta.json", snapshots[0])
+                self.assertIn("reports/gen_containment.csv", snapshots[0])
+                self.assertEqual(snapshots[0], snapshots[1])
+                one = Path(directory) / "one" / "gen.csv"
                 self.assertEqual(meta["generator_version"], LOT_GENERATOR_VERSION)
                 self.assertEqual(meta["lot_size"], 20)
                 self.assertLessEqual(set(meta["leaked_products"]), set(meta["defective_products"]))
@@ -303,6 +316,28 @@ class GeneratorTests(unittest.TestCase):
                              module="src.generate")
                 self.assertEqual(result.returncode, 2, result.stderr.decode("utf-8"))
                 self.assertFalse(output.exists())
+
+    def test_t87_huge_integer_probability_is_a_setting_error(self):
+        config = json.loads(LOT_CONFIG.read_text(encoding="utf-8-sig"))
+        config.update(recipe=str(RECIPE), equipment=str(LOT_EQUIPMENT))
+        huge = 10 ** 400
+        cases = (
+            {"faulty_detection_loss": {"LEAK-2": huge}},
+            {"defective_lot_probability": huge, "defective_in_lot_probability": 0.5},
+        )
+        for change in cases:
+            with self.subTest(change=sorted(change)), tempfile.TemporaryDirectory() as directory:
+                path = Path(directory) / "config.json"
+                path.write_text(json.dumps({**config, **change}), encoding="utf-8")
+                output = Path(directory) / "gen.csv"
+                result = cli(directory, "--seed", "1", "--products", "5", "--config", str(path), "--out", str(output),
+                             module="src.generate")
+                self.assertEqual(result.returncode, 2, result.stderr.decode("utf-8"))
+                self.assertFalse(output.exists())
+                result = cli(directory, "--containment", "--config", str(path), "--rules", "3:2", "--seeds", "0-1",
+                             "--products", "5", "--out", "bad", module="src.evaluate")
+                self.assertEqual(result.returncode, 2, result.stderr.decode("utf-8"))
+                self.assertFalse((Path(directory) / "reports").exists())
 
 
 class MetaTests(unittest.TestCase):
@@ -392,6 +427,33 @@ class CommandTests(unittest.TestCase):
             text = (Path(directory) / "reports" / "hold_containment.csv").read_text(encoding="utf-8-sig")
             self.assertIn("검증할 선택 없음", text)
             self.assertNotIn("selection", text)
+
+    def test_t80_runs_without_stops_keep_every_method(self):
+        config = json.loads(LOT_CONFIG.read_text(encoding="utf-8-sig"))
+        config.update(recipe=str(RECIPE), equipment=str(LOT_EQUIPMENT), error_rate=0, normal_fail_probability=0,
+                      defective_product_probability=0, faulty_equipment={"LEAK-2": 0})
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "config.json"
+            path.write_text(json.dumps(config), encoding="utf-8")
+            arguments = ("--containment", "--config", str(path), "--rules", "3:2", "--products", "40")
+            result = cli(directory, *arguments, "--seeds", "0-1", "--out", "dev", module="src.evaluate")
+            self.assertEqual(result.returncode, 0, result.stderr.decode("utf-8"))
+            with (Path(directory) / "reports" / "dev_containment.csv").open(encoding="utf-8-sig", newline="") as source:
+                rows = [item for item in csv.DictReader(source) if item["section"] == "method"]
+            self.assertEqual([item["method"] for item in rows], ["window", "last_10", "last_20", "lot", "since_restart"])
+            for item in rows:
+                self.assertEqual((item["runs"], item["leak_runs"], item["leaks"], item["stops"]), ("2", "0", "0", "0"))
+                self.assertEqual((item["capture_rate"], item["precision"], item["mean_quarantine"], item["mean_residual"]),
+                                 ("", "", "0.00", "0.00"))
+
+            sha = hashlib.sha256(path.read_bytes()).hexdigest()
+            chosen = self.report(directory, [{"section": "selection", "method": "last_10", "value": "선택"}], sha)
+            result = cli(directory, *arguments, "--seeds", "1000-1001", "--out", "hold", "--holdout",
+                         "--selected-from", str(chosen), module="src.evaluate")
+            self.assertEqual(result.returncode, 0, result.stderr.decode("utf-8"))
+            with (Path(directory) / "reports" / "hold_containment.csv").open(encoding="utf-8-sig", newline="") as source:
+                verdict = [item for item in csv.DictReader(source) if item["section"] == "holdout_verdict"]
+            self.assertEqual([(item["method"], item["value"]) for item in verdict], [("last_10", "미확인")])
 
 
 if __name__ == "__main__":

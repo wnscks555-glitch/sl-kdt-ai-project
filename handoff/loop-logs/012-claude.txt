@@ -1,0 +1,13 @@
+I fixed all three findings from review 012 (2 high, 1 medium; the review had no low ones). The full test suite passes: `py -m unittest discover -s tests` ran 165 tests, all OK. Nothing is committed, per the loop rules.
+
+- **H1 (fixed): runs with no stops lost all method results.** In `src/containment.py`, `run_scopes` now starts every applicable method with an empty set (`lot` only when the equipment file has lot tracking). A development evaluation with no stops now reports all five methods: blank ratios, 0.00 averages, and zero runs-with-leaks, leaks and stops. A holdout with a selected method now ends with exit code 0 and `미확인` instead of exit code 2.
+- **H2 (fixed): huge integer probabilities crashed with a traceback.** In `check_lot_config` in `src/generate.py`, the 0–1 range check now runs before `math.isfinite`. A value like `10**400` is now rejected as a setting error, and both generate and evaluate end with exit code 2. The same check covers the clustered-lot probabilities, so those are fixed too.
+- **M1 (fixed): the T81 test didn't compare everything it should.** `test_t81` now generates and judges in two separate folders, then compares the CSV, the `.meta.json` and the whole `reports/` folder byte for byte. Its original assertions are unchanged.
+
+I added two regression tests to `tests/test_containment.py`: one for each H1 case (no-stop development run, and holdout with a `last_10` selection) and one for H2 (huge value in the loss setting and in the lot probability). The expected-results tables and the existing test expectations were not changed.
+
+Not done:
+- **The reviewer's probe file wasn't run.** This environment only allowed the test command, so `handoff/reviews/probes/test_probe_012.py` didn't run. I copied the same conditions into the new tests instead.
+- **The stage 6 evaluation reports and logs weren't regenerated.** I expect the H1 fix not to change their values: every run behind them had stops, and the old code already counted a missing method as an empty set. I checked this only by reading the code, not by re-running the evaluations.
+
+Each item's decision, its reasons, and the full test output are recorded in `handoff/gpt-log.md` under "리뷰 012 수정 단계".

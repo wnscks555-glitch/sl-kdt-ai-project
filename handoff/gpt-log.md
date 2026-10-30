@@ -3642,3 +3642,31 @@ T44 seed=7 all_rows_deepcopy_invariant_seconds=5.768965
 - 평가 원문: `handoff/run-logs/v2-stage6-*.txt`.
 - 선택 결과: 두 설정 모두 표본 조건은 충족했고 `기준 충족 방식 없음`. 기준은 완화하지 않았다.
 - 미수행: Codex 검수.
+
+## 리뷰 012 수정 단계 (2026-10-31, T67–T88)
+
+높음·중간 3건만 처리했다. 낮음 항목은 없었다. 기대표와 기존 테스트 기대값은 바꾸지 않았다.
+
+### 항목별 처리
+- **H1 반영.** `run_scopes`(`src/containment.py`)가 정지 수와 관계없이 적용 가능한 방식마다 빈 집합으로 시작하게 했다. `lot`은 `lot_tracking` 설비일 때만 넣는다. 그래서 정지가 없는 평가에서도 다섯 방식의 행이 나온다. 유출·격리 분모가 0이면 비율은 빈칸이고, 실행 수가 양수이면 평균은 0.00이다. 홀드아웃의 `metrics[selected]`도 항상 존재하므로 `미확인`이 나온다. 정지가 있는 실행에서는 이전에도 `containment_metrics`가 빠진 방식을 빈 집합(`scopes.get(method, set())`)으로 셌다. 따라서 이미 제출한 평가 보고서의 값은 바뀌지 않는다. 이 판단은 코드 경로로만 확인했고, 보고서를 다시 생성해 대조하지는 않았다. `build_containment`의 출력(T74의 lot 없는 CSV 등)은 `stop_scopes`를 그대로 쓰므로 영향이 없다. 회귀 테스트 `CommandTests.test_t80_runs_without_stops_keep_every_method`를 추가했다. 이 테스트는 P04처럼 무정지 설정으로 개발 평가를 돌려 방식 5행과 실행 2·유출 0·정지 0·빈 비율·0.00 평균을 단정한다. 이어 P05처럼 SHA가 같고 `last_10`을 고른 fixture로 홀드아웃을 돌려 종료 0과 `last_10 미확인`을 단정한다.
+- **H2 반영.** `check_lot_config`의 `unit` 검사(`src/generate.py`)에서 범위 비교 `0 <= value <= 1`을 `math.isfinite`보다 먼저 하게 바꿨다. 큰 정수는 float로 변환되기 전에 범위 밖으로 거절되어 기존 `ValueError` 경로(종료 2)를 탄다. 같은 함수가 집중 로트 확률도 검사하므로 두 곳이 함께 고쳐졌다. NaN은 비교가 거짓이라 여전히 거절되고, inf는 범위에서 걸린다. 회귀 테스트 `GeneratorTests.test_t87_huge_integer_probability_is_a_setting_error`를 추가했다. loss와 `defective_lot_probability`에 `10**400`을 넣고 생성·평가 두 CLI가 종료 2로 끝나며 파일이 생기지 않음을 단정한다.
+- **M1 반영.** `test_t81_reproducible_and_truth_stays_out_of_csv`가 이제 두 작업 폴더에서 각각 생성하고 `src.main --summary --containment`로 판정한다. 그 뒤 CSV·`.meta.json`·`reports/` 전체 파일 묶음을 바이트 비교한다. meta 파일과 `gen_containment.csv`가 묶음에 있는지도 단정한다. 기존 단정(생성기 버전, lot_size, 유출⊆결함, 8열 헤더, 주입 오류 수)은 그대로 두었다. 이 파일은 6단계에서 새로 만든 테스트 파일이며, 기존 8개 테스트 파일은 수정하지 않았다.
+
+### 미수행
+- 리뷰 반례 파일 `handoff/reviews/probes/test_probe_012.py`는 실행하지 않았다. 이번 환경에서 지정 테스트 명령 외 셸 실행이 거부됐다. 같은 조건을 위의 새 테스트로 옮겨 확인했다.
+- 6단계 평가 보고서와 `v2-stage6-*` 로그는 다시 생성하지 않았다. 위 H1 근거대로 값 변화는 없다고 판단했지만 재생성으로 확인하지는 않았다.
+
+### 테스트 실행
+명령: `py -m unittest discover -s tests` (종료 0). 163개에 새 테스트 2개를 더했다. T81은 기존 테스트를 강화했다.
+
+```text
+.....................................................................................................................................................................
+----------------------------------------------------------------------
+Ran 165 tests in 110.151s
+
+OK
+T44 seed=42 products=500 generation_seconds=0.121144 judgment_analysis_seconds=0.069576
+T44 seed=7 products=200 generation_seconds=0.044443 judgment_analysis_seconds=0.022682
+T44 seed=42 all_rows_deepcopy_invariant_seconds=42.578519
+T44 seed=7 all_rows_deepcopy_invariant_seconds=6.071757
+```

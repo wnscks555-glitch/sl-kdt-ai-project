@@ -238,7 +238,8 @@ def restart_delay(config, book):
 
 def check_lot_config(config, book):
     def unit(value):
-        return type(value) in (int, float) and math.isfinite(value) and 0 <= value <= 1
+        # 범위를 먼저 비교해야 큰 정수가 float 변환에서 OverflowError를 내지 않는다.
+        return type(value) in (int, float) and 0 <= value <= 1 and math.isfinite(value)
 
     lot_keys = {"defective_lot_probability", "defective_in_lot_probability"} & config.keys()
     if "lot_size" not in config:
