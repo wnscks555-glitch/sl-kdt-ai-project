@@ -551,20 +551,21 @@ def fixed_generator(seed=1, config=None):
 
 
 class GeneratorTests(unittest.TestCase):
-    def setup_paths(self, folder, config=None, recipe=None, equipment=None):
-        folder = Path(folder)
+    def setup_paths(self, folder, name, config=None, recipe=None, equipment=None, remove=()):
         loaded = json.loads(CONFIG.read_text(encoding="utf-8-sig"))
         loaded["recipe"] = str(recipe or RECIPE)
         loaded["equipment"] = str(equipment or EQUIPMENT)
         loaded.update(config or {})
-        path = folder / "config.json"
+        for key in remove:
+            del loaded[key]
+        path = Path(folder) / (name + "_config.json")
         path.write_text(json.dumps(loaded, ensure_ascii=False), encoding="utf-8")
         return path
 
-    def recipe_with(self, folder, change):
+    def recipe_with(self, folder, name, change):
         data = json.loads(RECIPE.read_text(encoding="utf-8-sig"))
         change(data)
-        path = Path(folder) / "recipe.json"
+        path = Path(folder) / (name + "_recipe.json")
         path.write_text(json.dumps(data, ensure_ascii=False), encoding="utf-8")
         return path
 
@@ -681,59 +682,58 @@ class GeneratorTests(unittest.TestCase):
         self.assertTrue(all(not row["result"] for row in rows if row["event"] == "INSPECT"))
 
     def test_t108_config_errors_exit_2_without_files(self):
+        def one_sided(data):
+            for body in data.values():
+                for item in body["inspections"]:
+                    item["lsl"] = None
+
+        def no_limit(data):
+            for body in data.values():
+                del body["retest_limit"]
+
+        def huge(data):
+            for body in data.values():
+                for item in body["inspections"]:
+                    item.update(lsl="0", usl="1" + "0" * 29)
+
         with tempfile.TemporaryDirectory() as folder:
-            folder = Path(folder)
-
-            def one_sided(data):
-                for body in data.values():
-                    for item in body["inspections"]:
-                        item["lsl"] = None
-
-            def no_limit(data):
-                for body in data.values():
-                    del body["retest_limit"]
-
-            def huge(data):
-                for body in data.values():
-                    for item in body["inspections"]:
-                        item.update(lsl="0", usl="1" + "0" * 29)
-
-            configs = (
-                self.setup_paths(folder, {"process_cpk": 0}),
-                self.setup_paths(folder, {"fault_shift_sigma": {"LEAK-2": -1}}),
-                self.setup_paths(folder, {"normal_fail_probability": 0.02}),
-                self.setup_paths(folder, recipe=self.recipe_with(folder, one_sided)),
-                self.setup_paths(folder, {"fault_shift_sigma": {"LEAK-9": 2.5}}),
-                self.setup_paths(folder, recipe=self.recipe_with(folder, no_limit)),
-                self.setup_paths(folder, {"process_cpk": 1e-320}),
-                self.setup_paths(folder, recipe=self.recipe_with(folder, huge)),
+            cases = (
+                ("zero_cpk", {"config": {"process_cpk": 0}}, "process_cpk와 defect_shift_sigma"),
+                ("negative_fault", {"config": {"fault_shift_sigma": {"LEAK-2": -1}}}, "fault_shift_sigma는"),
+                ("old_key", {"config": {"normal_fail_probability": 0.02}}, "허용하지 않은 키"),
+                ("one_sided", {"recipe": self.recipe_with(folder, "one_sided", one_sided)}, "양측 규격"),
+                ("no_cpk", {"remove": ("process_cpk",)}, "process_cpk 설정이 필요함"),
+                ("plain_recipe", {"recipe": PLAIN_RECIPE}, "측정 레시피가 필요함"),
+                ("lot", {"equipment": LOT_EQUIPMENT}, "lot_tracking"),
+                ("unknown_fault", {"config": {"fault_shift_sigma": {"LEAK-9": 2.5}}}, "설비 파일에 없음"),
+                ("no_limit", {"recipe": self.recipe_with(folder, "no_limit", no_limit)}, "retest_limit"),
+                ("misspelled", {"config": {"defective_shift_sigma": 5.0}, "remove": ("defect_shift_sigma",)},
+                 "허용하지 않은 키"),
+                ("tiny_cpk", {"config": {"process_cpk": 1e-320}}, "분포가 유한하지 않음"),
+                ("huge_spec", {"recipe": self.recipe_with(folder, "huge", huge)}, "자릿수 상한"),
+                ("huge_shift", {"config": {"process_cpk": 0.1, "defect_shift_sigma": 10 ** 308,
+                                           "fault_shift_sigma": {"LEAK-2": 10 ** 308}}}, "분포가 유한하지 않음"),
+                ("huge_value", {"config": {"process_cpk": 1e-307, "error_rate": 0}}, "자릿수 상한"),
             )
-            paths = []
-            for index, config in enumerate(configs):
-                target = folder / ("config" + str(index) + ".json")
-                target.write_bytes(config.read_bytes())
-                paths.append(target)
-            data = json.loads(paths[0].read_text(encoding="utf-8"))
-            base = dict(data, process_cpk=1.33)
-            def variant(name, change):
-                body = dict(base)
-                change(body)
-                path = folder / name
-                path.write_text(json.dumps(body, ensure_ascii=False), encoding="utf-8")
-                paths.append(path)
-            variant("no_cpk.json", lambda body: (body.pop("process_cpk"), body.pop("fault_shift_sigma"), body.pop("defect_shift_sigma")))
-            variant("plain_recipe.json", lambda body: body.update(recipe=str(PLAIN_RECIPE)))
-            variant("lot.json", lambda body: body.update(equipment=str(LOT_EQUIPMENT)))
-            variant("misspelled.json", lambda body: body.update(defective_shift_sigma=body.pop("defect_shift_sigma")))
-            for index, path in enumerate(paths):
-                with self.subTest(path=path.name):
-                    out = folder / ("out" + str(index) + ".csv")
+            for name, arguments, message in cases:
+                with self.subTest(name=name):
+                    path = self.setup_paths(folder, name, **arguments)
+                    out = Path(folder) / (name + ".csv")
                     result = run_cli("src.generate", "--config", path, "--out", out, "--products", 20, cwd=folder)
                     self.assertEqual(result.returncode, 2, result.stderr + result.stdout)
+                    self.assertIn(message, result.stderr)
                     self.assertFalse(out.exists())
-            result = run_cli("src.evaluate", "--config", CONFIG, "--seeds", "0-1", "--rules", "3:2", "--out", "bad", cwd=folder)
+                    self.assertFalse(Path(str(out) + ".meta.json").exists())
+            result = run_cli("src.evaluate", "--config", CONFIG, "--seeds", "0-1", "--rules", "3:2", "--out", "bad",
+                             cwd=folder)
             self.assertEqual(result.returncode, 2)
-            self.assertFalse((folder / "reports").exists())
+            self.assertFalse((Path(folder) / "reports").exists())
+
+    def test_confirm_value_rejects_huge_values_as_value_errors(self):
+        for number in (1e100, 1e30, 1e308):
+            with self.assertRaisesRegex(ValueError, "자릿수 상한"):
+                confirm_value(number)
+        self.assertEqual(confirm_value(1e-300), "0.000")
 
 
 if __name__ == "__main__":

@@ -11,7 +11,7 @@ from pathlib import Path
 import random
 
 from .equipment import EquipmentState, load_equipment
-from .recipe import is_decimal_text, is_measured, load_recipe
+from .recipe import MAX_DECIMAL_DIGITS, is_decimal_text, is_measured, load_recipe
 from .recipe_rules import (
     EQUIPMENT_INPUT_COLUMNS, MEASURE_COLUMN, RESTART_EVENT, RecipeProcess, input_columns, judge_value,
 )
@@ -38,9 +38,13 @@ def confirm_value(number):
     """생성값을 CSV에 쓸 문자열로 확정한다. 이후 분기는 이 문자열만 쓴다."""
     if not math.isfinite(number):
         raise ValueError("측정값이 유한하지 않음")
+    exact = Decimal(repr(number))
+    # 양자화는 정밀도를 넘으면 InvalidOperation이므로 정수부 자릿수를 먼저 본다.
+    if exact.adjusted() >= MAX_DECIMAL_DIGITS:
+        raise ValueError("측정값이 value 자릿수 상한을 넘음: " + repr(number))
     with localcontext() as context:
         context.prec = 100
-        rounded = Decimal(repr(number)).quantize(Decimal("0.001"), rounding=ROUND_HALF_UP)
+        rounded = exact.quantize(Decimal("0.001"), rounding=ROUND_HALF_UP)
         text = "0.000" if rounded == 0 else format(rounded, "f")
     if not is_decimal_text(text):
         raise ValueError("측정값이 value 자릿수 상한을 넘음: " + text)
@@ -355,9 +359,13 @@ def check_measured_config(config, models, book):
             if item.lsl is None or item.usl is None:
                 raise ValueError("측정 생성은 양측 규격만 지원함: " + item.id)
             lsl, usl = float(item.lsl), float(item.usl)
-            divisor = 6 * config["process_cpk"]
-            sigma = (usl - lsl) / divisor if divisor else math.inf
-            if not math.isfinite(sigma) or not math.isfinite((lsl + usl) / 2 + shift * sigma):
+            try:
+                divisor = 6 * config["process_cpk"]
+                sigma = (usl - lsl) / divisor if divisor else math.inf
+                finite = math.isfinite(sigma) and math.isfinite((lsl + usl) / 2 + shift * sigma)
+            except OverflowError:
+                finite = False
+            if not finite:
                 raise ValueError("규격과 process_cpk로 계산한 분포가 유한하지 않음: " + item.id)
     return True
 
