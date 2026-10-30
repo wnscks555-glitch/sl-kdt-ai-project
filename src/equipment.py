@@ -16,6 +16,7 @@ class EquipmentBook:
     fails: int
     equipment: Dict[str, str]
     sha256: str
+    restart_enabled: bool = False
 
 
 @dataclass(frozen=True)
@@ -24,6 +25,9 @@ class EquipmentState:
     fail_count: int = 0
     recent_results: Tuple[str, ...] = ()
     stopped_at_seq: Optional[str] = None
+    stop_count: int = 0
+    restart_count: int = 0
+    last_restart_result: str = ""
 
     @property
     def state(self) -> str:
@@ -31,10 +35,18 @@ class EquipmentState:
 
     def record(self, result: str, seq: str, book: EquipmentBook):
         recent = (self.recent_results + (result,))[-book.window:]
+        stopped = recent.count("FAIL") >= book.fails
         return replace(
             self, counted_results=self.counted_results + 1,
             fail_count=self.fail_count + (result == "FAIL"), recent_results=recent,
-            stopped_at_seq=seq if recent.count("FAIL") >= book.fails else None,
+            stopped_at_seq=seq if stopped else None, stop_count=self.stop_count + stopped,
+        )
+
+    def restart(self, result: str):
+        """정지 전 FAIL이 재가동 뒤 창에 남지 않게 한다. 누적 건수는 유지한다."""
+        return replace(
+            self, recent_results=(), stopped_at_seq=None,
+            restart_count=self.restart_count + 1, last_restart_result=result,
         )
 
 
@@ -60,7 +72,14 @@ def load_equipment(path: Path, models: Mapping[str, ModelRecipe]) -> EquipmentBo
             if key not in allowed:
                 errors.append(location + "." + key + ": 허용하지 않은 키")
 
-    check_keys(data, ("stop_rule", "equipment"), "$")
+    check_keys(data, ("stop_rule", "equipment", "restart_enabled"), "$")
+    restart_enabled = data.get("restart_enabled", False)
+    if type(restart_enabled) is not bool:
+        errors.append("restart_enabled: true 또는 false여야 함 (문자열·숫자 불가)")
+    elif restart_enabled:
+        for model_id, model in models.items():
+            if "EQUIP_RESTART" in model.steps:
+                errors.append(model_id + ".steps: 재가동 모드에서 EQUIP_RESTART는 공정 ID로 사용할 수 없음")
     rule = data.get("stop_rule")
     if not isinstance(rule, dict):
         errors.append("stop_rule: 객체여야 함")
@@ -86,4 +105,4 @@ def load_equipment(path: Path, models: Mapping[str, ModelRecipe]) -> EquipmentBo
                 errors.append(location + ": 레시피에 없는 검사 ID")
     if errors:
         raise EquipmentError(errors)
-    return EquipmentBook(window, fails, equipment, hashlib.sha256(content).hexdigest())
+    return EquipmentBook(window, fails, equipment, hashlib.sha256(content).hexdigest(), restart_enabled)

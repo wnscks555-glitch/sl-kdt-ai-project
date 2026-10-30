@@ -1,0 +1,12 @@
+{
+  "recipe": "lamp_models_retest.json",
+  "equipment": "equipment_restart.json",
+  "model_weights": {"A": 0.5, "B": 0.5},
+  "normal_fail_probability": 0.02,
+  "faulty_equipment": {"LEAK-2": 0.30},
+  "defective_product_probability": 0.02,
+  "defective_fail_probability": 0.90,
+  "retest_probability": 0.70,
+  "error_rate": 0.03,
+  "restart": {"delay_rows": 30}
+}

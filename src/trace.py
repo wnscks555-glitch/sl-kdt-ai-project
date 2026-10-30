@@ -18,13 +18,15 @@ def _row(section, product_id, **values):
 
 
 def build_trace(analysis, product_id):
+    if not product_id and analysis.process.equipment_book.restart_enabled:
+        raise ValueError("입력에 없는 제품 ID: " + product_id)
     rows = []
     for row_index, (event, decision) in enumerate(zip(analysis.events, analysis.decisions), 1):
         if decision.product_id != product_id:
             continue
         causes = {}
         if not decision.accepted and decision.rule_id == "RULE_EQUIP" and decision.reason == "정지된 설비":
-            stop = analysis.stops[event["equipment"]]
+            stop = analysis.stop_at(event["equipment"], row_index)
             causes = {
                 "stop_row_index": stop.row_index, "stop_seq": stop.seq, "stop_product_id": stop.product_id,
                 "cause_row_indices": ";".join(str(item.row_index) for item in stop.fail_causes),

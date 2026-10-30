@@ -17,6 +17,8 @@ RULE_IDS = (
     "RULE_FAIL_HOLD",
     "RULE_PRESERVE",
 )
+RESTART_EVENT = "EQUIP_RESTART"
+RESTART_RESULTS = ("FIXED", "NO_FAULT")
 
 
 @dataclass(frozen=True)
@@ -105,6 +107,8 @@ class RecipeProcess:
         invalid = self._invalid_fields(row)
         if invalid:
             return self._decision(row, "RULE_PRESERVE", False, invalid)
+        if self._is_restart(row):
+            return self._restart(row)
 
         product_id = row["product_id"]
         event = row["event"]
@@ -196,6 +200,19 @@ class RecipeProcess:
         self.products[product_id] = updated
         return self._decision(row, rule_id, True, "")
 
+    def _is_restart(self, row: Mapping[str, str]) -> bool:
+        return (self.equipment_book is not None and self.equipment_book.restart_enabled
+                and row.get("event") == RESTART_EVENT)
+
+    def _restart(self, row: Mapping[str, str]) -> Decision:
+        equipment = row["equipment"]
+        if equipment not in self.equipment:
+            return self._decision(row, "RULE_EQUIP", False, "등록되지 않은 설비")
+        if self.equipment[equipment].stopped_at_seq is None:
+            return self._decision(row, "RULE_EQUIP", False, "가동 중인 설비 재가동")
+        self.equipment[equipment] = self.equipment[equipment].restart(row["result"])
+        return self._decision(row, "RULE_EQUIP", True, "")
+
     def _invalid_fields(self, row: Mapping[str, str]) -> str:
         columns = EQUIPMENT_INPUT_COLUMNS if self.equipment_book is not None else INPUT_COLUMNS
         if set(row) != set(columns) or any(
@@ -205,6 +222,14 @@ class RecipeProcess:
         seq = row["seq"]
         if not seq.isascii() or not seq.isdigit() or int(seq) <= 0:
             return "seq는 양의 정수여야 함"
+        if self._is_restart(row):
+            if row["product_id"]:
+                return "EQUIP_RESTART의 product_id는 빈칸이어야 함"
+            if row["inspection"] or row["model"]:
+                return "EQUIP_RESTART의 inspection과 model은 빈칸이어야 함"
+            if row["result"] not in RESTART_RESULTS:
+                return "잘못된 재가동 결과 (FIXED 또는 NO_FAULT 필요)"
+            return "" if row["equipment"] else "equipment가 비어 있음"
         if not row["product_id"].strip():
             return "product_id가 비어 있음"
         if not row["event"]:
@@ -236,6 +261,14 @@ class RecipeProcess:
         equipment = ""
         if self.equipment_book is not None and row.get("event") == "INSPECT" and row.get("equipment"):
             equipment = " @" + str(row["equipment"])
+        if self._is_restart(row):
+            name = row.get("equipment")
+            input_text = " ".join(str(row[key]) for key in ("event", "inspection", "result") if row.get(key))
+            return Decision(
+                seq=str(row.get("seq") or ""), product_id=product_id,
+                input_text=input_text + (" @" + str(name) if name else ""), rule_id=rule_id, accepted=accepted,
+                reason=reason, state="설비 " + self.equipment[name].state if name in self.equipment else "미등록",
+            )
         return Decision(
             seq=str(row.get("seq") or ""),
             product_id=product_id,

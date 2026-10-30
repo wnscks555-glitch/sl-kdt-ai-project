@@ -10,11 +10,12 @@ import random
 
 from .equipment import EquipmentState, load_equipment
 from .recipe import load_recipe
-from .recipe_rules import EQUIPMENT_INPUT_COLUMNS, RecipeProcess
+from .recipe_rules import EQUIPMENT_INPUT_COLUMNS, RESTART_EVENT, RecipeProcess
 from .reason_codes import INJECTED_ERROR_CODES as ERROR_KINDS
 
 
 GENERATOR_VERSION = "1.1.0"
+RESTART_GENERATOR_VERSION = "1.2.0"
 DEFAULT_CONFIG = Path(__file__).resolve().parents[1] / "recipes/generator.json"
 
 
@@ -32,6 +33,9 @@ class Generator:
         self.equipment = {name: EquipmentState() for name in self.book.equipment}
         self.cursor = defaultdict(int)
         self.defective_products = []
+        self.restart_delay = restart_delay(config, equipment_book)
+        self.pending_restarts = []
+        self.repaired = set()
 
     def choose_equipment(self, inspection, avoid=""):
         names = [name for name, kind in self.book.equipment.items() if kind == inspection]
@@ -58,10 +62,15 @@ class Generator:
                 first_equipment = ""
                 for attempt in range(recipe.retest_limit + 1):
                     equipment = self.choose_equipment(item.id, first_equipment)
+                    while equipment is None and self.restart_delay is not None:
+                        yield None
+                        equipment = self.choose_equipment(item.id, first_equipment)
                     if equipment is None:
                         return
                     if defective:
                         probability = self.config["defective_fail_probability"]
+                    elif equipment in self.repaired:
+                        probability = self.config["normal_fail_probability"]
                     else:
                         probability = self.config["faulty_equipment"].get(
                             equipment, self.config["normal_fail_probability"])
@@ -75,6 +84,17 @@ class Generator:
                         first_equipment = equipment
                     yield event(product_id, "RETEST_REQUEST", item.id), False
 
+    def add_restart(self, rows):
+        """수리되지 않은 고장 설비만 FIXED다. 점검이 항상 맞다는 가정이며 난수를 쓰지 않는다."""
+        _, name = self.pending_restarts.pop(0)
+        result = "FIXED" if name in self.config["faulty_equipment"] and name not in self.repaired else "NO_FAULT"
+        if result == "FIXED":
+            self.repaired.add(name)
+        row = event("", RESTART_EVENT, result=result, equipment=name)
+        row["seq"] = str(len(rows) + 1)
+        rows.append(row)
+        self.equipment[name] = self.equipment[name].restart(result)
+
     def normal_events(self, products):
         names = list(self.config["model_weights"])
         weights = list(self.config["model_weights"].values())
@@ -83,17 +103,31 @@ class Generator:
         rows = []
         while active:
             following = []
+            progressed = False
             for flow in active:
+                while self.pending_restarts and self.pending_restarts[0][0] <= len(rows):
+                    self.add_restart(rows)
                 try:
-                    row, initial = next(flow)
+                    step = next(flow)
                 except StopIteration:
                     continue
+                if step is None:
+                    following.append(flow)
+                    continue
+                row, initial = step
+                progressed = True
                 row["seq"] = str(len(rows) + 1)
                 rows.append(row)
                 if initial:
                     name = row["equipment"]
                     self.equipment[name] = self.equipment[name].record(row["result"], row["seq"], self.book)
+                    if self.restart_delay is not None and self.equipment[name].stopped_at_seq is not None:
+                        self.pending_restarts.append((len(rows) + self.restart_delay, name))
+                        self.pending_restarts.sort()
                 following.append(flow)
+            # 대기만 남은 라운드는 행이 늘지 않으므로 가장 이른 재가동을 앞당겨 교착을 막는다.
+            if following and not progressed and self.pending_restarts:
+                self.add_restart(rows)
             active = following
         return rows
 
@@ -104,6 +138,8 @@ class Generator:
             decision = process.apply(row)
             if not decision.accepted:
                 raise ValueError("생성한 정상 행이 거절됨: " + decision.reason)
+            if row["event"] == RESTART_EVENT:
+                continue
             product = process.products[row["product_id"]]
             if product.discarded_inspection is not None:
                 continue
@@ -155,21 +191,44 @@ class Generator:
         return rows, counts
 
 
+def restart_delay(config, book):
+    if "restart" not in config:
+        return None
+    restart = config["restart"]
+    if not book.restart_enabled:
+        raise ValueError("restart 설정에는 restart_enabled 설비 파일이 필요함")
+    if (not isinstance(restart, dict) or set(restart) != {"delay_rows"}
+            or type(restart["delay_rows"]) is not int or restart["delay_rows"] < 0):
+        raise ValueError("restart는 0 이상의 정수 delay_rows만 가져야 함")
+    return restart["delay_rows"]
+
+
+def load_setup(config_path):
+    """설정, 원문 SHA 계산용 바이트, 레시피, 설비를 함께 읽는다."""
+    config_path = Path(config_path)
+    content = config_path.read_bytes()
+    config = json.loads(content.decode("utf-8-sig"))
+    recipe = load_recipe(config_path.parent / config["recipe"])
+    equipment = load_equipment(config_path.parent / config["equipment"], recipe.models)
+    return config, content, recipe, equipment
+
+
+def build_rows(seed, products, config, models, equipment):
+    generator = Generator(seed, config, models, equipment)
+    normal = generator.normal_events(products)
+    rows, counts = generator.inject_errors(normal)
+    return generator, normal, rows, counts
+
+
 def generate(seed=42, products=500, out=Path("data/generated/gen_seed42.csv"), config_path=DEFAULT_CONFIG):
     if products < 1:
         raise ValueError("products는 양의 정수여야 함")
-    config_path, out = Path(config_path), Path(out)
-    content = config_path.read_bytes()
-    config = json.loads(content.decode("utf-8-sig"))
-    recipe_path = config_path.parent / config["recipe"]
-    equipment_path = config_path.parent / config["equipment"]
-    recipe = load_recipe(recipe_path)
-    equipment = load_equipment(equipment_path, recipe.models)
-    generator = Generator(seed, config, recipe.models, equipment)
-    normal = generator.normal_events(products)
-    rows, counts = generator.inject_errors(normal)
+    out = Path(out)
+    config, content, recipe, equipment = load_setup(config_path)
+    generator, normal, rows, counts = build_rows(seed, products, config, recipe.models, equipment)
     meta = {
-        "seed": seed, "products": products, "generator_version": GENERATOR_VERSION,
+        "seed": seed, "products": products,
+        "generator_version": RESTART_GENERATOR_VERSION if "restart" in config else GENERATOR_VERSION,
         "sha256": {"config": hashlib.sha256(content).hexdigest(),
                    "recipe": recipe.sha256, "equipment": equipment.sha256},
         "normal_rows": len(normal), "rows": len(rows), "injected_errors": counts,

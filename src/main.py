@@ -48,17 +48,17 @@ def build_reports(events):
     return rows, products, list(counts.items())
 
 
-def write_reports(stem: str, reports, product_columns=PRODUCT_COLUMNS, *, equipment_mode=False):
+def write_reports(stem: str, reports, product_columns=PRODUCT_COLUMNS, *, equipment_mode=False, restart_mode=False):
     directory = Path("reports")
     directory.mkdir(exist_ok=True)
     paths = []
     suffixes = ("rows", "products", "rejections")
     report_columns = (ROW_COLUMNS, product_columns, REJECTION_COLUMNS)
     if equipment_mode:
-        from .recipe_reports import EQUIPMENT_COLUMNS
+        from .recipe_reports import EQUIPMENT_COLUMNS, RESTART_COLUMNS
 
         suffixes += ("equipment",)
-        report_columns += (EQUIPMENT_COLUMNS,)
+        report_columns += (RESTART_COLUMNS if restart_mode else EQUIPMENT_COLUMNS,)
     for suffix, columns, rows in zip(
         suffixes,
         report_columns,
@@ -73,14 +73,18 @@ def write_reports(stem: str, reports, product_columns=PRODUCT_COLUMNS, *, equipm
     return paths
 
 
-def print_reports(reports, paths, product_heading="product_id | 최종 상태 | 미완료 이유", *, equipment_mode=False):
+def print_reports(reports, paths, product_heading="product_id | 최종 상태 | 미완료 이유", *, equipment_mode=False,
+                  restart_mode=False):
     sections = (
         ("행별 판정", "seq | product_id | 입력 | 적용 규칙 ID | 허용/거절 | 거절 이유 | 처리 후 상태"),
         ("제품별 최종 상태", product_heading),
         ("규칙 ID별 거절 건수", "규칙 ID | 거절 건수"),
     )
     if equipment_mode:
-        sections += (("설비별 최종 상태", "equipment | inspection | counted_results | fail_count | state | stopped_at_seq"),)
+        heading = "equipment | inspection | counted_results | fail_count | state | stopped_at_seq"
+        if restart_mode:
+            heading += " | stop_count | restart_count | last_restart_result"
+        sections += (("설비별 최종 상태", heading),)
     for (title, heading), rows in zip(sections, reports):
         print("[" + title + "]")
         print(heading)
@@ -154,7 +158,9 @@ def run_recipe(input_csv: Path, recipe_path: Path, parser, equipment_path=None, 
 
             traces = [(product_id, build_trace(analysis, product_id)) for product_id in trace]
         columns = RETEST_PRODUCT_COLUMNS if book.retest_enabled else RECIPE_PRODUCT_COLUMNS
-        paths = write_reports(input_csv.stem, reports, columns, equipment_mode=equipment_book is not None)
+        restart_mode = equipment_book is not None and equipment_book.restart_enabled
+        paths = write_reports(input_csv.stem, reports, columns, equipment_mode=equipment_book is not None,
+                              restart_mode=restart_mode)
         if summary_rows is not None:
             from .summary import write_summary
 
@@ -163,14 +169,14 @@ def run_recipe(input_csv: Path, recipe_path: Path, parser, equipment_path=None, 
         if traces:
             from .trace import write_trace
 
-            product_ids = {decision.product_id for decision in analysis.decisions}
+            product_ids = {decision.product_id for decision in analysis.decisions if decision.product_id}
             trace_paths = [write_trace(input_csv.stem, product_id, rows, product_ids) for product_id, rows in traces]
     except (OSError, UnicodeError, csv.Error, ValueError) as error:
         parser.exit(2, "오류: " + str(error) + "\n")
     heading = "product_id | model | 최종 상태 | 미완료 이유"
     if book.retest_enabled:
         heading += " | history"
-    print_reports(reports, paths, heading, equipment_mode=equipment_book is not None)
+    print_reports(reports, paths, heading, equipment_mode=equipment_book is not None, restart_mode=restart_mode)
     if summary_rows is not None:
         from .summary import print_summary
 

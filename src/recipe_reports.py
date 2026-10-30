@@ -4,6 +4,7 @@ from .recipe_rules import RULE_IDS, RecipeProcess
 PRODUCT_COLUMNS = ("product_id", "model", "state", "incomplete_reason")
 RETEST_PRODUCT_COLUMNS = PRODUCT_COLUMNS + ("history",)
 EQUIPMENT_COLUMNS = ("equipment", "inspection", "counted_results", "fail_count", "state", "stopped_at_seq")
+RESTART_COLUMNS = EQUIPMENT_COLUMNS + ("stop_count", "restart_count", "last_restart_result")
 
 
 def build_recipe_reports(events, models, equipment_book=None):
@@ -36,6 +37,8 @@ def build_recipe_reports(events, models, equipment_book=None):
         equipment = [
             (name, equipment_book.equipment[name], state.counted_results, state.fail_count,
              state.state, state.stopped_at_seq or "")
+            + ((state.stop_count, state.restart_count, state.last_restart_result)
+               if equipment_book.restart_enabled else ())
             for name, state in process.equipment.items()
         ]
         reports += (equipment,)

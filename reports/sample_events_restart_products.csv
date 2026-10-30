@@ -1,0 +1,7 @@
+﻿product_id,model,state,incomplete_reason,history
+a,B,공정 진행 중(P2 완료),P3 미완료; P4 미완료; LIGHT 미실시,LEAK: FAIL@19[LEAK-1] → 요청@22 → PASS@29[LEAK-1](재검사 1)
+b,B,보류,P3 미완료; P4 미완료; LEAK FAIL; LIGHT 미실시,LEAK: FAIL@20[LEAK-1]
+c,B,공정 진행 중(P2 완료),P3 미완료; P4 미완료; LIGHT 미실시,LEAK: PASS@28[LEAK-1]
+d,B,보류,P3 미완료; P4 미완료; LEAK FAIL; LIGHT 미실시,LEAK: FAIL@30[LEAK-1]
+e,B,보류,P3 미완료; P4 미완료; LEAK FAIL; LIGHT 미실시,LEAK: FAIL@31[LEAK-1]
+f,B,공정 진행 중(P2 완료),P3 미완료; P4 미완료; LIGHT 미실시,LEAK: PASS@34[LEAK-1]

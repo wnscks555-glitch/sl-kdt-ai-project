@@ -6,7 +6,7 @@ from dataclasses import dataclass
 from decimal import Decimal, ROUND_HALF_UP
 from pathlib import Path
 
-from .recipe_rules import RecipeProcess
+from .recipe_rules import RESTART_EVENT, RecipeProcess
 from .reason_codes import INJECTED_ERROR_CODES, REASON_CODES, rejection_code
 
 
@@ -42,6 +42,14 @@ class EquipmentStop:
     window: tuple
 
 
+@dataclass(frozen=True)
+class EquipmentRestart:
+    equipment: str
+    row_index: int
+    seq: str
+    result: str
+
+
 @dataclass
 class Analysis:
     process: RecipeProcess
@@ -50,6 +58,13 @@ class Analysis:
     first_inspections: list
     all_inspections: list
     stops: dict
+    stop_history: list
+    restarts: list
+
+    def stop_at(self, equipment, row_index):
+        """그 행 시점에 유효했던 정지."""
+        return [stop for stop in self.stop_history
+                if stop.equipment == equipment and stop.row_index < row_index][-1]
 
 
 def build_analysis(events, models, equipment_book):
@@ -57,6 +72,7 @@ def build_analysis(events, models, equipment_book):
     process = RecipeProcess(models, equipment_book)
     events = [dict(event) for event in events]
     decisions, first, all_results, stops = [], [], [], {}
+    stop_history, restarts = [], []
     equipment_windows = defaultdict(list)
     for row_index, event in enumerate(events, 1):
         product_before = process.products.get(event.get("product_id"))
@@ -64,6 +80,9 @@ def build_analysis(events, models, equipment_book):
         is_first = product_before is not None and inspection not in product_before.inspections
         decision = process.apply(event)
         decisions.append(decision)
+        if decision.accepted and equipment_book.restart_enabled and event["event"] == RESTART_EVENT:
+            equipment_windows[event["equipment"]].clear()
+            restarts.append(EquipmentRestart(event["equipment"], row_index, decision.seq, event["result"]))
         if not decision.accepted or event["event"] != "INSPECT":
             continue
         product = process.products[event["product_id"]]
@@ -79,11 +98,13 @@ def build_analysis(events, models, equipment_book):
         window.append(record)
         del window[:-equipment_book.window]
         if process.equipment[record.equipment].stopped_at_seq is not None:
-            stops[record.equipment] = EquipmentStop(
+            stop = EquipmentStop(
                 record.equipment, row_index, record.seq, record.product_id,
                 tuple(item for item in window if item.result == "FAIL"), tuple(window),
             )
-    return Analysis(process, events, decisions, first, all_results, stops)
+            stops.setdefault(record.equipment, stop)
+            stop_history.append(stop)
+    return Analysis(process, events, decisions, first, all_results, stops, stop_history, restarts)
 
 
 def _ratio(numerator, denominator):
@@ -171,20 +192,33 @@ def build_summary(analysis, meta=None):
             rule, template = REASON_CODES[code]
             rows.append(_row("input_error_pareto", code, rule_id=rule, count=count, reason_template=template))
 
-    stopped_rejections = Counter(event.get("equipment") for event, decision in rejected
-                                if decision.rule_id == "RULE_EQUIP" and decision.reason == "정지된 설비")
+    stopped_rows = [(row_index, event["equipment"]) for row_index, (event, decision)
+                    in enumerate(zip(analysis.events, analysis.decisions), 1)
+                    if not decision.accepted and decision.rule_id == "RULE_EQUIP" and decision.reason == "정지된 설비"]
+    restart_mode = process.equipment_book.restart_enabled
     for equipment, state in process.equipment.items():
-        stop = analysis.stops.get(equipment)
-        rows.append(_row(
-            "equipment_stops", equipment, equipment=equipment,
-            inspection=process.equipment_book.equipment[equipment], state=state.state,
-            row_index=stop.row_index if stop else "", seq=stop.seq if stop else "",
-            product_id=stop.product_id if stop else "",
-            cause_row_indices=";".join(str(item.row_index) for item in stop.fail_causes) if stop else "",
-            cause_seqs=";".join(item.seq for item in stop.fail_causes) if stop else "",
-            cause_product_ids=";".join(item.product_id for item in stop.fail_causes) if stop else "",
-            rejected_count=stopped_rejections[equipment],
-        ))
+        history = [stop for stop in analysis.stop_history if stop.equipment == equipment]
+        for number, stop in enumerate(history or [None], 1):
+            numbered = restart_mode and stop is not None
+            resumed = numbered and (number < len(history) or state.stopped_at_seq is None)
+            rows.append(_row(
+                "equipment_stops", equipment + "#" + str(number) if numbered else equipment,
+                equipment=equipment, inspection=process.equipment_book.equipment[equipment],
+                state="재가동" if resumed else state.state,
+                row_index=stop.row_index if stop else "", seq=stop.seq if stop else "",
+                product_id=stop.product_id if stop else "",
+                cause_row_indices=";".join(str(item.row_index) for item in stop.fail_causes) if stop else "",
+                cause_seqs=";".join(item.seq for item in stop.fail_causes) if stop else "",
+                cause_product_ids=";".join(item.product_id for item in stop.fail_causes) if stop else "",
+                rejected_count=sum(name == equipment and analysis.stop_at(name, row_index) is stop
+                                   for row_index, name in stopped_rows),
+            ))
+    if restart_mode:
+        for equipment in process.equipment:
+            history = [item for item in analysis.restarts if item.equipment == equipment]
+            for number, restart in enumerate(history, 1):
+                rows.append(_row("equipment_restarts", equipment + "#" + str(number), equipment=equipment,
+                                 row_index=restart.row_index, seq=restart.seq, state=restart.result))
     input_errors = sum(count for code, count in codes.items() if code != "EQUIP_STOPPED")
     for key, value in (("input_rows", len(analysis.events)), ("rejected_rows", len(rejected)),
                        ("rule_rejections", len(rejected)), ("input_errors", input_errors),
