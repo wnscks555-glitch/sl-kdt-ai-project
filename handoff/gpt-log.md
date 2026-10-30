@@ -3733,3 +3733,43 @@ OK
 - M1 반영: T108이 사례마다 파일을 따로 쓰고, 종료 코드와 함께 사례별 오류 문구를 단정한다. 기대표는 바꾸지 않았다.
 
 리뷰 014가 기록한 `py` 런처 실패는 검수 샌드박스 환경의 문제로 보고 코드를 바꾸지 않았다. 사용자 PC에서 `py -m unittest discover -s tests`는 정상 실행된다.
+
+## v2 8단계 구현 (2026-10-31, T113–T129)
+
+구현 담당 Claude Code. 명세는 사용자 위임으로 Claude가 확정했다. Sol 명세 검토 11건과 개선 제안(개선 확인, 대안 비교)을 반영했다.
+
+### 기대·실제 대조
+| ID | 결과 | 테스트 |
+| --- | --- | --- |
+| T113, T114 | 일치 | `test_t113_t114_reports_are_reproducible` |
+| T115 | 일치 | `test_t115_product_metrics` |
+| T116 | 일치 | `test_t116_equipment_metrics_over_two_runs` |
+| T117 | 일치 | `test_t117_zero_denominators` |
+| T118 | 일치 | `test_t118_fault_equipment_stays_out_of_normal_rate` |
+| T119 | 일치 | `test_t119_totals_add_raw_counts` |
+| T120 | 일치 | `test_t120_two_fault_equipment` |
+| T121 | 일치 | `test_t121_table_errors`, `test_t121_wrong_header_exits_3_without_reports` |
+| T122 | 일치 | `test_t122_reference_errors`, `test_t122_report_and_test_file_contents` |
+| T123 | 일치 | `test_t123_evidence_status` |
+| T124 | 일치 | `test_t124_scores` |
+| T125 | 일치 | `test_t125_report_reference` |
+| T126 | 일치 | `test_t126_effect_uses_exact_values` |
+| T127 | 일치 | `test_t127_argument_errors_exit_2` |
+| T128 | 일치 | `test_t128_alternatives` |
+| T129 | 일치 | `test_t129_submitted_table` |
+
+### 지표와 효과 판정
+시드 0–29, 제품 500. `defect_escape` 16/307, `all_defect_first_fail` 350/398, `leak_defect_first_fail` 273/307, `leak_defect_retest_pass` 49/192, `normal_reject` 47/14693, `fault_stop_run` 28/30, `fault_no_stop_run` 2/30, `fault_stop_delay` 1751/28, `normal_stop_rate` 20/32205.
+
+효과 판정: PF-01 충족(0.8893 ≥ 0.80), PF-02 미충족(0.9333 < 0.95), PF-06 미충족(0.8525 < 0.90). 기준을 바꾸지 않았다.
+
+대안: `half` 결함품 완료 4/307, 정상품 86/14693. `none` 결함품 완료 1/307, 정상품 146/14693.
+
+### 명세 이견과 절차 차이
+- 명세 이견 없음.
+- 명세는 8-1, 8-2, 8-3을 각각 커밋하라고 했지만 `src/pfmea.py` 하나로 작성해 한 커밋으로 묶었다.
+- 제출 표 작성 중 내 참조 `tests/test_restart.py::Base::test_t52...`를 표 검증이 거절했다. 실제 클래스는 `JudgeTests`라 표를 고쳤다.
+- 리뷰 014의 지적 3건은 재검토 없이 회귀 테스트로 확인하고 넘어갔으므로, 이번 검토가 재검토를 겸한다.
+
+### 한계
+점수 칸은 사용자 몫으로 비어 있다. PF-06은 6단계 가정의 값이고 7a 설정 결과가 아니다. 대안 비교는 제품 짝 비교가 아니다.
