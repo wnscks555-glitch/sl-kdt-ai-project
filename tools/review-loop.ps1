@@ -1,17 +1,18 @@
 ﻿#Requires -Version 7
 <#
-Claude 검토 → Codex 수정 자동 반복 루프.
+Codex 검토 → Claude 수정 자동 반복 루프.
 
   pwsh -File tools/review-loop.ps1            # 수정 최대 3회
   pwsh -File tools/review-loop.ps1 -MaxFixes 1
 
-한 회차 = Claude 검토 → (VERDICT: FIX이면) Codex 수정 → 스크립트가 커밋.
+한 회차 = Codex 검토 → (VERDICT: FIX이면) Claude 수정 → 스크립트가 커밋.
 마지막 수정 뒤에는 확인용 검토를 한 번 더 한다. 그래서 검토는 최대 MaxFixes+1회다.
 
 멈추는 조건
-  - Claude 판정이 VERDICT: PASS (미해결 높음/중간 없음)
+  - Codex 판정이 VERDICT: PASS (미해결 높음/중간 없음)
   - 수정 횟수가 MaxFixes에 도달
-  - Codex가 아무 파일도 바꾸지 않음 (진전 없음)
+  - Claude가 아무 파일도 바꾸지 않음 (진전 없음)
+  - Codex가 리뷰 파일·반례 파일 밖을 변경함 (커밋하지 않고 멈춤)
   - 판정 줄이 없거나 CLI가 실패함
 
 Claude와 Codex는 커밋하지 않는다. 커밋은 이 스크립트가 한다.
@@ -20,8 +21,10 @@ Claude와 Codex는 커밋하지 않는다. 커밋은 이 스크립트가 한다.
 param(
     [ValidateRange(0, 10)]
     [int]$MaxFixes = 3,
-    # 검토에 쓰는 Claude 모델. 플랜에서 쓸 수 없으면 Claude 실행 실패로 멈춘다.
-    [string]$ReviewModel = 'claude-opus-5-5'
+    # 검토에 쓰는 Codex 모델. 플랜에서 쓸 수 없으면 Codex 실행 실패로 멈춘다.
+    [string]$ReviewModel = 'gpt-6-astra',
+    # 수정에 쓰는 Claude 모델.
+    [string]$FixModel = 'claude-opus-5-5'
 )
 
 $ErrorActionPreference = 'Stop'
@@ -78,7 +81,7 @@ Assert-Command 'codex'
 Assert-Command 'git'
 
 if (Test-Dirty) {
-    Stop-Loop '작업 트리에 커밋하지 않은 변경이 있습니다. Codex 작업을 먼저 커밋한 뒤 다시 실행하세요.'
+    Stop-Loop '작업 트리에 커밋하지 않은 변경이 있습니다. 구현 작업을 먼저 커밋한 뒤 다시 실행하세요.'
 }
 
 # 첫 검토 범위: 마지막 "review:" 커밋 이후 전체. 없으면 저장소 처음부터.
@@ -106,23 +109,27 @@ while ($true) {
         $scope = "첫 검토다. 변경 범위는 git diff $baseCommit..HEAD 와 git log $baseCommit..HEAD 로 확인한다(직전 검토 이후 커밋 전체)."
     }
 
-    $claudePrompt = @"
-CLAUDE.md의 검수자 규칙을 따른다. 자동 검토 루프의 검토 단계다.
+    $reviewPrompt = @"
+AGENTS.md의 검수자 규칙을 따른다. 자동 검토 루프의 검토 단계다.
 handoff/tasks.md 맨 위 「현행 작업」의 명세와 기대표를 기준으로 코드를 검수하라.
 이전 단계들의 보존 조건(기존 테스트 무수정 통과, 기존 보고서 동일)도 반드시 확인한다.
 $scope
 - 테스트는 py -m unittest discover -s tests 로 직접 실행하고 명령과 결과를 붙인다.
-- CLAUDE.md의 「반례 탐색」대로 명세 밖 반례를 최소 5개 handoff/reviews/probes/test_probe_$num.py 에 쓰고 실행한다.
+- AGENTS.md의 「반례 탐색」대로 명세 밖 반례를 최소 5개 handoff/reviews/probes/test_probe_$num.py 에 쓰고 실행한다.
 - 결과는 $reviewFile 와 handoff/reviews/probes/test_probe_$num.py 에만 쓴다. 다른 파일은 만들거나 고치지 않는다.
-- 심각도는 CLAUDE.md의 기준(영향)으로만 정한다. 마감·일정은 심각도를 낮추는 근거가 아니다. 낮음은 기록만 하고 수정 요구로 세지 않는다.
+- 심각도는 AGENTS.md의 기준(영향)으로만 정한다. 마감·일정은 심각도를 낮추는 근거가 아니다. 낮음은 기록만 하고 수정 요구로 세지 않는다.
 - 파일의 마지막 줄에는 반드시 아래 둘 중 하나만 단독으로 쓴다.
   VERDICT: PASS   (미해결 높음/중간이 없을 때)
   VERDICT: FIX    (미해결 높음/중간이 하나라도 있을 때)
 "@
 
-    $claudeLog = Join-Path $logDir "$num-claude.txt"
-    $claudePrompt | claude -p --model $ReviewModel --permission-mode dontAsk 2>&1 | Tee-Object -FilePath $claudeLog
-    if ($LASTEXITCODE -ne 0) { Stop-Loop "Claude 실행 실패 (종료 코드 $LASTEXITCODE). 로그: $claudeLog" }
+    $reviewLog = Join-Path $logDir "$num-codex.txt"
+    $reviewPrompt | codex exec -C $root -m $ReviewModel -s workspace-write - 2>&1 | Tee-Object -FilePath $reviewLog
+    if ($LASTEXITCODE -ne 0) { Stop-Loop "Codex 실행 실패 (종료 코드 $LASTEXITCODE). 로그: $reviewLog" }
+
+    # 샌드박스는 파일 단위로 막지 못하므로 검수자의 쓰기 범위를 여기서 확인한다.
+    $outside = git status --porcelain -- . ':(exclude)handoff/loop-logs' ':(exclude)handoff/reviews'
+    if ($outside) { Stop-Loop "검수자가 리뷰 파일·반례 파일 밖을 변경했습니다. 커밋하지 않았습니다:`n$($outside -join "`n")" }
 
     $verdict = Get-Verdict (Join-Path $root $reviewFile)
     if (-not $verdict) {
@@ -137,22 +144,22 @@ $scope
     if ($verdict -eq 'PASS') { Stop-Loop "검토 $num 통과. handoff/decisions.md에 승인 여부를 기록하세요." }
     if ($fixes -ge $MaxFixes) { Stop-Loop "수정 상한($MaxFixes회)에 도달했습니다. 남은 항목은 $reviewFile 을 보고 직접 결정하세요." }
 
-    Write-Host "`n=== Codex 수정 (리뷰 $num 반영, $($fixes + 1)/$MaxFixes) ===" -ForegroundColor Cyan
-    $codexPrompt = @"
-AGENTS.md의 구현 담당 규칙을 따른다. 자동 검토 루프의 수정 단계다.
+    Write-Host "`n=== Claude 수정 (리뷰 $num 반영, $($fixes + 1)/$MaxFixes) ===" -ForegroundColor Cyan
+    $fixPrompt = @"
+CLAUDE.md의 구현 담당 규칙을 따른다. 자동 검토 루프의 수정 단계다.
 $reviewFile 의 높음/중간 항목만 처리하라. 낮음 항목과 새 기능은 건드리지 않는다.
 - 항목마다 반영/보류/반박과 이유를 handoff/gpt-log.md에 기록한다. 리뷰가 틀렸다면 근거를 들어 반박해도 된다.
 - handoff/tasks.md의 기대표와 기존 테스트의 기대값을 결과에 맞춰 바꾸지 않는다.
-- handoff/reviews/, handoff/decisions.md, CLAUDE.md, .claude/ 는 수정하지 않는다.
+- handoff/reviews/, handoff/decisions.md, AGENTS.md, .claude/ 는 수정하지 않는다.
 - 수정 후 py -m unittest discover -s tests 를 실행하고 결과를 gpt-log.md에 붙인다.
 - git commit 은 하지 않는다. 커밋은 루프 스크립트가 한다.
 "@
 
-    $codexLast = Join-Path $logDir "$num-codex.txt"
-    $codexPrompt | codex exec -C $root -s workspace-write -o $codexLast - 2>&1 | Out-Host
-    if ($LASTEXITCODE -ne 0) { Stop-Loop "Codex 실행 실패 (종료 코드 $LASTEXITCODE)." }
+    $fixLog = Join-Path $logDir "$num-claude.txt"
+    $fixPrompt | claude -p --model $FixModel --permission-mode dontAsk 2>&1 | Tee-Object -FilePath $fixLog
+    if ($LASTEXITCODE -ne 0) { Stop-Loop "Claude 실행 실패 (종료 코드 $LASTEXITCODE). 로그: $fixLog" }
 
-    if (-not (Test-Dirty)) { Stop-Loop 'Codex가 아무 파일도 바꾸지 않았습니다. 진전이 없어 멈춥니다.' }
+    if (-not (Test-Dirty)) { Stop-Loop 'Claude가 아무 파일도 바꾸지 않았습니다. 진전이 없어 멈춥니다.' }
     $fixes++
     Save-Commit "fix: apply review $num (loop $fixes/$MaxFixes)" @('.')
 }

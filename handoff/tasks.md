@@ -1,4 +1,178 @@
-# 현행 작업: v2 4단계 — 합성 데이터 생성기·분석 보고서·추적
+# 현행 작업: v2 5단계 — 설비 복구와 정지 규칙 평가
+
+상태: **사용자 확정** (2026-10-30). 결정 근거는 이 명세의 「사용자 결정」 표. 1–4단계(아래 명세)는 완료이며, 그 동작과 테스트는 보존한다.
+
+## 목표와 경계
+- 정지만 있고 복구가 없는 3단계 설비 모델에 **점검 후 재가동**을 추가한다.
+- "규칙대로 판정하는가"를 넘어 **"이 정지 규칙이 좋은 규칙인가"**를 여러 시드의 수치로 평가한다.
+- 정지 규칙 선택 기준은 **결과를 보기 전에 고정**하고, 선택에 쓰지 않은 시드로 다시 확인한다.
+- 생성 확률·점검 소요·수리 효과는 모두 심어 놓은 가정이다. 결과는 실제 설비 진단이나 공정 개선의 증거가 아니다. 기존 고정 문장을 유지한다.
+- 제외: 실제 시각·UPH·OEE, 공정 설비, 로트 ID, 측정값·Cpk, 그래프, 외부 패키지, 고장이 생산 중간에 시작되는 모델, 재가동 취소.
+
+## 착수 근거 (사전 측정, 목표치 아님)
+현행 코드, `recipes/generator.json`, 제품 500개, 시드 0–29 30회를 일회성 스크립트로 측정했다. T63에서 평가 도구로 재현한다.
+
+| 항목 | 값 |
+| --- | --- |
+| LEAK-2 검출 | 30/30회 |
+| 정상 설비가 정지한 실행 | 25/30회, 실행당 평균 1.57대 |
+| 한 검사 종류의 설비가 전부 정지한 실행 | 14/30회 |
+| 미완료 제품 수(보류·폐기 포함) | 최소 10, 중앙값 22, 최대 417 |
+| 보류 제품 평균 / 그중 정상품 평균 | 13.73 / 8.50 |
+
+## 보존 조건 (가장 먼저 지킬 것)
+- 설비 파일에 `restart_enabled: true`가 없으면 v1·1–4단계의 동작·출력·종료 코드는 바이트까지 같다.
+- `recipes/generator.json`, `recipes/equipment.json`, `recipes/equipment_generated.json`과 기존 샘플·seed42 산출물은 바꾸지 않는다.
+- `src/rules.py`와 기존 테스트 6개 파일은 수정하지 않는다. 5단계 테스트는 `tests/test_restart.py`, `tests/test_evaluate.py`에 둔다.
+- `GENERATOR_VERSION`은 `1.1.0`을 유지한다. 재가동 설정의 생성에만 새 상수 `RESTART_GENERATOR_VERSION = "1.2.0"`을 meta에 기록한다.
+- `Analysis.stops`는 설비별 **첫 정지** dict로 유지한다(기존 테스트 사용). 정지 이력은 새 필드 `stop_history`에 둔다.
+- `EquipmentBook` 새 필드는 기본값이 있는 뒤쪽 필드로 추가한다.
+
+## 재가동 모드 켜기
+- 설비 파일 최상위에 선택 키 `"restart_enabled": true`를 둔다. 값은 bool만 허용하며, 그 밖의 값은 설비 오류(종료 코드 3)다.
+- 새 파일 `recipes/equipment_restart.json`: 설비 목록은 `equipment_generated.json`과 같고 `stop_rule`은 `{"window": 3, "fails": 2}`, `restart_enabled`는 `true`다.
+- 재가동 모드에서 레시피 공정 ID가 `EQUIP_RESTART`이면 설비 오류(종료 코드 3)다.
+
+## 입력
+CSV는 설비 모드와 같은 7열이다. 새 이벤트 `EQUIP_RESTART`만 추가한다.
+
+```csv
+seq,product_id,event,inspection,result,model,equipment
+31,,EQUIP_RESTART,,NO_FAULT,,LEAK-1
+```
+
+- `result`: `FIXED`(이상 발견·조치) 또는 `NO_FAULT`(이상 없음).
+- `equipment`: 필수. `product_id`, `inspection`, `model`: 빈칸.
+- 이 이벤트가 있어도 `seq`는 기존처럼 양의 정수이고 물리적 행 순서로 처리한다.
+
+## 판정 규칙
+검사 순서: 형식 오류 → 없는 설비 → 가동 중인 설비.
+
+| 입력 | 판정 | 이유 문구 | 사유 코드 |
+| --- | --- | --- | --- |
+| `product_id` 기입 | `RULE_PRESERVE` 거절 | `EQUIP_RESTART의 product_id는 빈칸이어야 함` | `PRESERVE_RESTART_PRODUCT` |
+| `inspection` 또는 `model` 기입 | `RULE_PRESERVE` 거절 | `EQUIP_RESTART의 inspection과 model은 빈칸이어야 함` | `PRESERVE_RESTART_FIELDS` |
+| `result`가 두 값 외 | `RULE_PRESERVE` 거절 | `잘못된 재가동 결과 (FIXED 또는 NO_FAULT 필요)` | `PRESERVE_BAD_RESTART_RESULT` |
+| `equipment` 빈칸 | `RULE_PRESERVE` 거절 | 기존 `equipment가 비어 있음` | 기존 코드 |
+| 없는 설비 | `RULE_EQUIP` 거절 | 기존 `등록되지 않은 설비` | 기존 `EQUIP_UNKNOWN` |
+| 가동 중인 설비 | `RULE_EQUIP` 거절 | `가동 중인 설비 재가동` | `EQUIP_NOT_STOPPED` |
+| 정지 설비 | `RULE_EQUIP` 허용 | | |
+
+새 사유는 모두 입력 오류로 분류한다. 허용되면 다음만 바뀐다.
+- `stopped_at_seq`를 비우고 `recent_results`를 초기화한다. 정지 전 FAIL이 재가동 뒤 창에 남지 않게 하기 위해서다.
+- `stop_count`, `restart_count`, `last_restart_result`를 갱신한다. `counted_results`, `fail_count`는 누적을 유지한다.
+- 제품 상태는 바꾸지 않는다. 보류 자동 해제, 열린 재검사 요청 소진, 원인 제품 재검사는 없다.
+- 재검사 결과가 창에 들어가지 않는 규칙은 그대로다.
+
+`stop_count`는 정지가 일어날 때 늘린다.
+
+## 보고서 (재가동 모드에서만 달라짐)
+- rows: `product_id` 빈칸, 입력 `EQUIP_RESTART NO_FAULT @LEAK-1`, 상태 `설비 가동` 또는 `설비 정지`(처리 후 그 설비 상태). 거절인데 없는 설비면 상태 `미등록`.
+- equipment.csv: 기존 열 뒤에 `stop_count,restart_count,last_restart_result`를 붙인다.
+- summary `equipment_stops`: 정지 1건당 1행, key는 `LEAK-1#1`. 정지가 없는 설비는 기존처럼 key `LEAK-1` 1행.
+- summary 새 절 `equipment_restarts`: 기존 열을 그대로 쓴다. key `LEAK-1#1`, `equipment`, `row_index`, `seq`, `state`(FIXED/NO_FAULT). `SUMMARY_COLUMNS`는 바꾸지 않는다.
+- trace: `정지된 설비` 거절 행은 **그 행 시점에 유효했던 정지**를 가리킨다. 빈 `product_id`는 추적 대상이 아니며 `--trace ""`는 종료 코드 2다.
+
+## 생성기
+새 설정 `recipes/generator_restart.json`: `generator.json`과 같은 값에 아래를 더한다. `equipment`는 `equipment_restart.json`이다.
+
+```json
+"restart": {"delay_rows": 30}
+```
+
+- `restart` 키가 없으면 기존 생성 흐름과 난수 소비가 그대로다.
+- **대기**: 같은 검사 설비가 모두 정지하면 재가동 모드에서는 제품 생성을 끝내지 않고, 그 제품은 다음 라운드에 다시 설비를 고른다.
+- **재가동 시점**: 설비가 정지한 시점의 행 수 + `delay_rows`에 도달하면 다음 제품 행을 내기 전에 `EQUIP_RESTART` 행을 넣는다. 둘 이상이면 예정 시점, 설비 ID 순이다.
+- **교착 방지**: 한 라운드가 대기만으로 끝나면 가장 이른 재가동 행을 예정 시점과 무관하게 넣는다.
+- **이유**: 라운드 단위 지연은 쓰지 않는다. 현재 생성기는 모든 제품이 같은 라운드에 같은 공정으로 움직여 한 라운드가 약 500행이고, 짧은 정지도 한 코호트 전체를 건너뛰게 된다. 이 동시 투입 구조 자체는 이번에 바꾸지 않으며 한계로 공개한다.
+- **점검 결과**: 수리되지 않은 고장 설비는 `FIXED`, 그 밖에는 `NO_FAULT`다. 난수를 쓰지 않는다. 점검이 항상 맞다는 가정이며 README에 공개한다.
+- **수리 효과**: `FIXED` 뒤 그 설비의 FAIL 확률은 정상 확률이다.
+- `inject_errors`는 설비 행을 재생하되 오류 주입 후보로 쓰지 않는다. 재가동 행이 거절되면 생성을 실패시킨다.
+
+## 평가 도구 (`py -m src.evaluate`)
+
+```powershell
+py -m src.evaluate --config recipes/generator_restart.json --seeds 0-99 --rules 3:2,5:2,5:3,10:3,10:4,20:4 --out eval_dev
+py -m src.evaluate --config recipes/generator_restart.json --seeds 1000-1099 --rules 3:2,<선택 규칙> --out eval_holdout
+```
+
+- `--products` 기본값은 500이다. 규칙은 `window:fails`로 쓰며 메모리에서만 덮어쓴다. 범위 검증은 설비 파일과 같다.
+- 각 규칙·시드 조합을 판정기까지 끝까지 실행한다. 생성 CSV를 저장소에 남기지 않는다.
+- 결함 여부·고장 설비는 평가에서만 쓴다. 판정기에는 전달하지 않는다.
+- 오류(잘못된 규칙·시드 범위·생성 실패)는 종료 코드 2이며 보고서를 만들지 않는다.
+- 출력: `reports/<out>_runs.csv`(규칙·시드별), `reports/<out>_rules.csv`(규칙별 집계), 터미널 표. 집계 파일 첫 행에 고정 문장을 넣고, 설정·레시피·설비 파일의 SHA-256과 생성기 버전을 함께 기록한다.
+
+### 지표 정의
+- **정탐 정지**: 정지 시점에 그 설비가 수리되지 않은 고장 설비인 정지. **오탐 정지**: 그 밖의 정지. 수리 뒤 다시 멈춘 고장 설비도 오탐이다.
+- **검출률**: 고장 설비를 정탐 정지한 실행 ÷ 실행 수.
+- **검출 지연**: 고장 설비의 첫 정지까지 그 설비가 처리한 허용 최초 검사 수(정지 행 포함). 평균은 검출한 실행만 쓴다.
+- **정지 정밀도**: 정탐 정지 ÷ 전체 정지. 분모 0이면 빈칸.
+- **오탐 정지 수**: 실행당 평균, 오탐이 1건 이상인 실행 수.
+- **전면 정지 실행 수**: 한 검사 종류의 설비가 동시에 모두 정지한 적이 있는 실행 수.
+- **미완료 제품 수**: 등록 제품 중 `레시피 모의 흐름 완료`가 아닌 제품 수. 보류·폐기를 포함한다. 최소·중앙값·최대.
+- **정상품 보류 평균**, **결함품 완료 평균**(유출).
+- 비율은 기존처럼 소수 넷째 자리 `ROUND_HALF_UP`, 평균은 소수 둘째 자리.
+
+### 사전 선택 기준 (결과를 보기 전에 고정)
+1. 개발 시드 0–99에서 검출률 ≥ 0.95이고 평균 검출 지연 ≤ 10인 규칙만 후보로 남긴다.
+2. 실행당 오탐 정지 평균이 가장 낮은 규칙을 고른다.
+3. 동률이면 평균 검출 지연 → 미완료 중앙값 → `window` → `fails` 순으로 작은 쪽을 고른다.
+4. 후보가 없으면 "기준 충족 규칙 없음"으로 끝낸다. 기준을 완화하지 않고 사용자에게 보고한다.
+5. 홀드아웃 시드 1000–1099는 고른 규칙이 1번 기준을 유지하는지만 확인한다. 실패하면 "미확인"으로 기록하고 그 결과로 다시 고르지 않는다.
+
+평가는 규칙을 제안만 한다. 설비 파일의 `stop_rule` 변경은 사용자 결정이다.
+
+## 사전 기대표 (사용자 확정, 2026-10-30. 구현 결과에 맞춰 바꾸지 않는다)
+공통: `lamp_models_retest.json`, `equipment_restart.json`. a~f는 B 모델로 P1~P2까지 완료해 LEAK를 할 수 있는 제품이다.
+
+| ID | 입력 | 기대 결과 |
+| --- | --- | --- |
+| T52 | a LEAK FAIL @LEAK-1 → b LEAK FAIL @LEAK-1 → c LEAK PASS @LEAK-1 → `EQUIP_RESTART NO_FAULT LEAK-1` → c LEAK PASS @LEAK-1 | b에서 정지. 첫 c는 `RULE_EQUIP` 거절(`정지된 설비`). 재가동 허용, 설비 가동. 둘째 c 허용 |
+| T53 | T52 뒤 d LEAK FAIL @LEAK-1 → e LEAK FAIL @LEAK-1 | d 뒤 가동(창 초기화 확인). e에서 재정지. `stop_count` 2, `restart_count` 1 |
+| T54 | a LEAK FAIL @LEAK-1 → `EQUIP_RESTART NO_FAULT LEAK-1` → b LEAK FAIL @LEAK-1 | 재가동 `RULE_EQUIP` 거절(`가동 중인 설비 재가동`), 창 유지. b에서 정지 |
+| T55 | 재가동 행을 각각 ① `LEAK-9` ② `product_id=a` ③ `result=OK` ④ `inspection=LEAK` ⑤ `model=A` ⑥ `equipment` 빈칸으로 입력 | ①은 `RULE_EQUIP`, ②~⑥은 `RULE_PRESERVE` 거절. 위 표의 문구. 모든 제품·설비 상태 불변 |
+| T56 | a FAIL·b FAIL로 LEAK-1 정지, a `RETEST_REQUEST LEAK` → a LEAK PASS @LEAK-1 → 재가동 → a LEAK PASS @LEAK-1 | 첫 재검사 `RULE_EQUIP` 거절, 요청 유지. 재가동만으로 a 보류 유지. 재가동 뒤 재검사 허용, a 보류 해제. b는 보류 유지 |
+| T57 | T52 뒤 a `RETEST_REQUEST LEAK` → a LEAK FAIL @LEAK-1 → b `RETEST_REQUEST LEAK` → b LEAK FAIL @LEAK-1 | 재검사 FAIL 둘 다 허용, 설비 가동 유지(재검사 불산입) |
+| T58 | ① `restart_enabled` 없는 설비 파일로 `EQUIP_RESTART` 행 ② `"restart_enabled": "true"` ③ `1` ④ 재가동 모드 레시피에 공정 `EQUIP_RESTART` | ①은 기존처럼 `RULE_PRESERVE` 거절(`product_id가 비어 있음`), 설비 불변 ②~④는 종료 코드 3, 보고서 미생성 |
+| T59 | T53 입력을 `--summary --trace c`로 실행 | `equipment_stops`에 `LEAK-1#1`, `LEAK-1#2`, `equipment_restarts`에 `LEAK-1#1`. c의 거절 행 trace는 a·b가 일으킨 첫 정지를 가리킴. 재가동 행은 입력 오류 파레토에 없음 |
+| T60 | 재가동 설정, 시드 42/500개와 7/200개를 각각 두 번 생성·판정 | CSV·meta·보고서 바이트 동일. 정상 행과 재가동 행 전부 허용. meta 버전 `1.2.0`. 모든 행에서 거절 전후 전체 제품·설비 상태 동일 |
+| T61 | 재가동 설정, 시드 0–29 | 모든 실행에서 검사 대기·공정 진행 중·등록 제품 0개. 시드마다 LEAK-2 `FIXED` 정확히 1회. 설비당 동시에 대기 중인 재가동 예약은 1건 이하 |
+| T62 | 수작업 CSV, 고장 설비 `{LEAK-2}`: LEAK-2 최초 검사 PASS·FAIL·PASS·FAIL → `FIXED` → LEAK-1 FAIL·FAIL | 정탐 1, 오탐 1, 검출 지연 4, 정밀도 `0.5000` |
+| T63 | `--config recipes/generator.json --seeds 0-29 --rules 3:2` | 위 사전 측정표와 일치: 검출 1.0000, 오탐 실행 25, 오탐 평균 1.57, 전면 정지 14, 미완료 10/22/417, 보류 평균 13.73, 정상품 보류 평균 8.50 |
+| T64 | ① 같은 평가 명령 두 번 ② `--rules 5:6` ③ `--seeds 5-3` ④ `--rules 3:2,3:2` | ① 보고서 바이트 동일 ②③ 종료 코드 2, 보고서 미생성 ④ 중복 규칙도 종료 코드 2 |
+| T65 | 고정 지표 표로 선택 함수 호출: ① 검출 0.94 규칙 탈락 ② 지연 11 규칙 탈락 ③ 오탐 평균 동률이면 지연이 짧은 쪽 ④ 전부 탈락 | ①② 후보 제외 ③ 지연이 짧은 규칙 ④ `기준 충족 규칙 없음` |
+| T66 | 고정 지표로 홀드아웃 판정: ① 검출 0.96·지연 9 ② 검출 0.93 | ① `확인` ② `미확인`, 다른 규칙을 고르지 않음 |
+
+## 구현 시 주의점
+- `summary.py`의 `equipment_windows`는 판정기와 별도로 창을 유지한다. 재가동 때 함께 초기화하지 않으면 정지 원인 행이 틀어진다.
+- `_invalid_fields`는 `product_id`와 `model`을 먼저 검사하므로, `EQUIP_RESTART`는 재가동 모드에서만 그보다 앞서 분기해야 위 문구가 나온다.
+- `_decision`의 설비 표시는 지금 `INSPECT`에만 붙는다.
+- `inject_errors`의 `process.products[row["product_id"]]`는 설비 행에서 `KeyError`가 난다.
+- `main.py`의 `product_ids`는 빈 ID를 제외해야 한다.
+- `tools/review-loop.ps1`과 검수 규칙은 바꾸지 않는다. 검수는 기존 절차(반례 5개 이상)대로 한다.
+
+## 산출물
+- `src/equipment.py`, `src/recipe_rules.py`, `src/reason_codes.py`, `src/recipe_reports.py`, `src/summary.py`, `src/trace.py`, `src/generate.py`, 새 `src/evaluate.py`
+- `recipes/equipment_restart.json`, `recipes/generator_restart.json`, 샘플 `data/sample_events_restart.csv`와 보고서, `reports/eval_dev_*.csv`, `reports/eval_holdout_*.csv`
+- `tests/test_restart.py`, `tests/test_evaluate.py`
+- README 「설비 복구와 정지 규칙 평가 (v2 5단계)」 절. 3단계의 "재가동 제외"는 5단계로 대체됐다고 표시한다.
+
+## 완료 보고 (반드시 포함)
+- 실행 명령과 출력 원문, 전체 테스트 결과, T52–T66 기대·실제 대조
+- 후보 6개 규칙의 지표 표, 선택 결과와 홀드아웃 판정
+- 재가동 없는 기존 설정과 재가동 설정의 비교
+- 명세와 다르게 구현한 부분, 또는 "명세 이견" 항목
+
+## 사용자 결정 (2026-10-30 확정)
+| 항목 | 확정 값 | 왜 사용자가 정했나 |
+| --- | --- | --- |
+| 검출 기준 | 검출률 ≥ 0.95 | 결과를 본 뒤에는 바꿀 수 없음 |
+| 지연 허용 | 평균 10검사 이하 | 불량 유출 위험과 오탐 사이의 경영 판단. 이 값이 선택 결과를 좌우할 수 있음 |
+| 점검 소요 | `delay_rows: 30` | 실제 시간이 아닌 가정값. 대기 제품 수에 영향 |
+| 후보 규칙 | 3:2, 5:2, 5:3, 10:3, 10:4, 20:4 | 비교 범위 |
+| 재가동 결과 값 | `FIXED`, `NO_FAULT` | 점검 기록을 두 값으로 단순화 |
+
+# v2 4단계 명세 (완료, 2026-10-18 · 리뷰 009 PASS)
 
 상태: **사용자 확정** (2026-10-18). 결정 근거는 `handoff/decisions.md`. **사용자가 이 줄을 "사용자 확정"으로 바꾼 뒤에 구현을 시작한다.**
 **수정 1 (2026-10-18, 사용자 확정)**: 리뷰 005–007 H1(시드 42 폐기 0개) 해결을 위해 「결함 제품」 가정과 T51을 추가했다. 그 밖의 명세·기대표는 바꾸지 않았다.

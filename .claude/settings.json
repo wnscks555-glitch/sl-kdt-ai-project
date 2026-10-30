@@ -6,13 +6,29 @@
       "Bash(git status)",
       "Bash(py -m unittest:*)",
       "Bash(py -m src.main:*)",
-      "Edit(handoff/reviews/**)"
-    ],
-    "deny": [
+      "Bash(py -m src.generate:*)",
+      "Bash(py -m src.evaluate:*)",
       "Edit(src/**)",
       "Edit(tests/**)",
+      "Edit(recipes/**)",
+      "Edit(data/**)",
+      "Edit(reports/**)",
+      "Edit(README.md)",
+      "Edit(handoff/gpt-log.md)",
+      "Edit(handoff/run-logs/**)"
+    ],
+    "deny": [
+      "Edit(src/rules.py)",
+      "Edit(tests/test_rules.py)",
+      "Edit(tests/test_recipe.py)",
+      "Edit(tests/test_retest.py)",
+      "Edit(tests/test_equipment.py)",
+      "Edit(tests/test_generate.py)",
+      "Edit(tests/test_summary.py)",
       "Edit(AGENTS.md)",
-      "Bash(git commit:*)",
+      "Edit(handoff/reviews/**)",
+      "Edit(handoff/tasks.md)",
+      "Edit(handoff/decisions.md)",
       "Bash(git push:*)",
       "Bash(pip:*)",
       "Bash(rm:*)"

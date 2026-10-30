@@ -49,3 +49,8 @@ project/
 - [x] `handoff/` 폴더와 파일 생성, `tasks.md`에 확정 명세 기록 (2026-10-17)
 - [ ] Codex가 `AGENTS.md`를 만들고 설정 파일을 커밋한다.
 - [ ] 첫 검수: Codex 완료 보고 뒤 `tasks.md` 기대표 T1–T10, `gpt-log.md`, 최근 git diff를 기준으로 진행하고 테스트를 직접 실행한다.
+
+## 역할 교체 (2026-10-30, 5단계부터)
+- 구현과 수정은 Claude(Claude Code), 읽기 전용 검수는 Codex(`gpt-6-astra`)가 맡는다. 위 내용과 1–4단계 기록은 당시 역할이다.
+- 규칙은 `CLAUDE.md`(구현), `AGENTS.md`(검수), `.claude/settings.json`, `tools/review-loop.ps1`이 기준이다.
+- `handoff/gpt-log.md`는 이력을 잇기 위해 이름을 유지하고, 구현 담당 기록으로 계속 쓴다.
