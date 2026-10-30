@@ -1,0 +1,9 @@
+﻿section,rule,runs,detection_rate,mean_delay,stop_precision,mean_false_stops,false_stop_runs,full_outage_runs,unfinished_min,unfinished_median,unfinished_max,mean_normal_held,mean_defective_completed,criteria,value
+notice,,,,,,,,,,,,,,,생성 데이터의 확률은 가정이며 실제 설비 진단 근거가 아니다.
+provenance,config_sha256,,,,,,,,,,,,,,37ab081136e05f0bc1406da1e16fe703d565833cfa49b82e6a9907e3d8a648d9
+provenance,recipe_sha256,,,,,,,,,,,,,,438229b58c9e8bc4a9f464704c9ace956150e33920fa36f0441add7f354ca7ac
+provenance,equipment_sha256,,,,,,,,,,,,,,fc7e9b06b007846199847ad06d0d9381ca17ae039557c1739816eb2155afbbab
+provenance,generator_version,,,,,,,,,,,,,,1.1.0
+provenance,seeds,,,,,,,,,,,,,,0-99
+provenance,products,,,,,,,,,,,,,,500
+rule,3:2,100,1.0000,9.75,0.3690,1.71,85,49,8,22.0,417,9.42,0.16,확인,
