@@ -2280,7 +2280,8 @@ FAIL: test_t41_four_reports_history_equipment_order_and_byte_reproducibility (te
 Traceback (most recent call last):
   File "C:\Users\PC\Documents\ChatGPT\에스엘 KDT AI 교육 부트캠프\project\tests\test_equipment.py", line 310, in test_t41_four_reports_history_equipment_order_and_byte_reproducibility
     self.assertEqual(first.returncode, 0, first.stderr.decode("utf-8"))
-AssertionError: 2 != 0 : 오류: CSV 헤더는 seq,product_id,event,inspection,result,model 이어야 함
+AssertionError: 2 != 0 : 오류: CSV 헤더는 seq,product_id,event,inspection,result,model 이어야 함
+
 
 
 ======================================================================
@@ -3569,3 +3570,25 @@ T44 seed=7 all_rows_deepcopy_invariant_seconds=7.399932
 - 변경 범위의 간소화 점검: 작은 차집합 검사와 기존 예외 경로면 충분하며 추가 추상화·중복 검증·관련 없는 리팩터링은 필요 없다. 증거 테스트는 그대로 유지했다. 별도 lint·typecheck 설정은 없다.
 - `ce-compound mode:non-interactive` 판단: 원인과 해결은 리뷰 008·README·최종 코드·회귀 테스트에서 복원할 수 있으므로 별도 해결 지식 문서는 만들지 않는다. **Documentation skipped — 추가로 보존할 비자명한 해결 교훈 없음.**
 - 로컬 브랜치 `codex/review-008-m1`에서 지정 메시지 `fix: apply review 008 M1 (T51)`로 단일 커밋한다. push·원격 설정 변경·패키지 설치는 수행하지 않는다.
+
+## v2 5단계 구현 (2026-10-30, 구현 담당 Claude)
+
+이 절부터 구현 담당은 Claude다. 파일 이름은 이력을 잇기 위해 유지한다.
+
+### 명세 이견·보완
+- `src.evaluate`에 `--holdout`을 추가했다. 명세의 홀드아웃 명령에는 없지만, 없으면 홀드아웃에서도 선택 절이 나와 "다시 고르지 않는다"는 조건을 도구가 지키지 못한다. T66의 판정 함수는 명세대로다.
+- 명세의 홀드아웃 명령은 `--rules 3:2,<선택 규칙>`인데 선택 규칙이 3:2여서 중복 금지(T64 ④)와 충돌한다. `--rules 3:2`로 실행했다.
+- 명세의 지표 "평균 검출 지연"은 고장 설비가 여럿일 수 있어 설비·실행 단위로 계산한다. 현재 고장 설비는 1대라 결과는 실행 단위와 같다.
+- summary `equipment_stops`의 `state`는 명세에 없어, 재가동으로 끝난 정지를 `재가동`, 남은 정지를 `정지`로 표시했다. `rejected_count`는 정지 1건별로 센다.
+- 정지 후 재가동 예정 전에 생성이 끝나면 재가동 행을 넣지 않는다. 명세가 다루지 않는 경우다.
+
+### 구현 중 오류
+- `tests/test_restart.py`의 T53 누적 건수 기대값을 (4, 3)으로 잘못 세어 (5, 4)로 고쳤다. T53 입력은 a·b·c·d·e 5건, FAIL 4건이다. 명세 기대표에 없는 보조 단정이다.
+
+### 실행 결과
+- 전체 테스트: `py -m unittest discover -s tests` 134개 통과. 기존 108개에 T52–T66용 26개를 더했다. 기존 테스트 6개와 `src/rules.py`는 수정하지 않았다.
+- 보존 확인: seed42 생성과 summary·trace, v1 샘플, 3단계 설비 샘플을 다시 실행해도 `git status` 변경 없음.
+- 기대표 T52–T66: 모두 `tests/test_restart.py`, `tests/test_evaluate.py`로 통과. T63은 사전 측정치를 그대로 재현했다.
+- 평가 원문: `handoff/run-logs/stage5-dev.txt`, `stage5-holdout.txt`, `stage5-baseline.txt`.
+- 선택 결과: 사전 기준으로 3:2 선택, 홀드아웃 `확인`. 지연 기준을 통과한 규칙은 3:2와 5:2뿐이다.
+- 미수행: Codex 검수, 자동 검토 루프 실제 실행.
