@@ -3670,3 +3670,57 @@ T44 seed=7 products=200 generation_seconds=0.044443 judgment_analysis_seconds=0.
 T44 seed=42 all_rows_deepcopy_invariant_seconds=42.578519
 T44 seed=7 all_rows_deepcopy_invariant_seconds=6.071757
 ```
+
+## v2 7a단계 구현 (2026-10-31, T89–T112)
+
+구현 담당 Claude Code. 명세는 Astra 검토 7건과 Sol 사전 검토 5건을 반영해 확정했다.
+
+### 변경
+- 레시피 규격, 측정 입력, 공통 판정 함수 `judge_value`, `Decision.result/value`, `InspectionAttempt.value`, `InspectionRecord.value`.
+- `src/capability.py`와 `--capability`. 계산 함수는 `Decimal | None`, 표시 함수 `show`는 문자열·빈칸으로 분리했다.
+- 생성기 측정 모드(버전 1.4.0), 설정 검증, 측정용 오류 주입 5종.
+
+### 기대·실제 대조
+| ID | 결과 | 테스트 |
+| --- | --- | --- |
+| T89 | 일치 | `test_t89_boundaries_are_pass_and_raw_value_is_kept` |
+| T90 | 일치 | `test_t90_bad_values_leave_state_unchanged` |
+| T91 | 일치 | `test_t91_field_positions`, `test_t91_check_order_with_seq_and_retest_request` |
+| T92 | 일치 | `test_t92_recipe_errors_show_location`, `test_t92_cli_exits_3_without_reports` |
+| T93 | 일치 | `test_t93_headers`, `test_t93_lot_and_measured_columns_end_with_value` |
+| T94 | 일치 | `test_t94_one_sided_specs` |
+| T95 | 일치 | `test_t95_retest_uses_values_and_stays_out_of_window` |
+| T96 | 일치 | `test_t96_two_subgroups`, `test_t96_cpk_uses_unrounded_sigma` |
+| T97–T100 | 일치 | `test_t97_*`, `test_t98_*`, `test_t99_*`, `test_t100_*` |
+| T101 | 일치 | `test_t101_restart_splits_subgroups` |
+| T102 | 일치 | `test_t102_retest_values_are_excluded` |
+| T103 | 일치 | `test_t103_status_rules` |
+| T104 | 일치 | `test_t104_mode_and_combination` |
+| T105 | 일치 | `test_t105_reproducible_and_paths_exist`, `test_t105_judgment_ignores_defect_truth` |
+| T106 | 일치 | `test_t106_fault_raises_mean_and_normal_spread_matches_target` |
+| T107 | 일치 | `test_t107_injections_match_rejections` |
+| T108 | 일치 | `test_t108_config_errors_exit_2_without_files` |
+| T109 | 일치 | `test_t109_summary_and_trace_use_computed_results` |
+| T110 | 일치 | `test_t110_*` |
+| T111 | 일치 | `test_t111_mean_shifts_add_and_repair_clears_fault` |
+| T112 | 일치 | `test_t112_confirmed_string_decides_the_boundary` |
+
+T102의 초기 테스트 작성 때 내가 `n`을 3으로 잘못 셌다. 최초 측정은 두 제품의 2건이므로 기대표가 아니라 테스트의 보조 단정을 고쳤다.
+
+### 시드 42 경로별 건수
+완료 491, 보류 6, 폐기 3, 정지 LEAK-2 1회(2,558행), 재가동 `FIXED` 1회. 오류 주입 5종 각 24건, 실제 거절 각 24건. `계산됨` 5개 설비, `표본 부족` FINAL 2개 설비. 시드와 확률은 바꾸지 않았다. 0건 경로는 없다.
+
+### 명세 이견
+없음.
+
+### 한계
+FINAL 2개 설비는 부분군 24개로 `표본 부족`이다. LEAK-2의 Cpk·Ppk는 고장·수리 구간을 합친 값이다. 값이 규격 안으로 이동해 정지가 2,558행까지 늦어졌고, 이 단계는 정지 규칙을 바꾸지 않았다.
+
+### 실행 명령
+전체 출력은 `handoff/run-logs/v2-stage7a-tests.txt`에 있다.
+
+```text
+py -m unittest discover -s tests
+Ran 205 tests
+OK
+```

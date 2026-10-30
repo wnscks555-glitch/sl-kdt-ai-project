@@ -153,8 +153,15 @@ def parse_rules(text):
     return rules
 
 
+def rule_setup(config_path):
+    setup = load_setup(config_path)
+    if "process_cpk" in setup[0] or setup[2].measured:
+        raise ValueError("측정 설정은 평가를 지원하지 않음. --capability를 사용")
+    return setup
+
+
 def evaluate(config_path, seeds, rules, products):
-    config, content, recipe, book = load_setup(config_path)
+    config, content, recipe, book = rule_setup(config_path)
     faulty = set(config["faulty_equipment"])
     if len(faulty) > 1:
         raise ValueError("고장 설비가 여러 대인 검출률 단위는 명세에서 정해지지 않음: " + ", ".join(sorted(faulty)))
@@ -300,7 +307,7 @@ def read_selection(path, config_sha):
 
 
 def evaluate_containment(config_path, seeds, rules, products):
-    config, content, recipe, book = load_setup(config_path)
+    config, content, recipe, book = rule_setup(config_path)
     if rules != [(3, 2)]:
         raise ValueError("--containment의 규칙은 정확히 3:2여야 함")
     if "lot_size" not in config:

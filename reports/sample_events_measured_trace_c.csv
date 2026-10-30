@@ -1,0 +1,9 @@
+﻿section,row_index,seq,product_id,input,model,equipment,rule_id,decision,reason,state,stop_row_index,stop_seq,stop_product_id,cause_row_indices,cause_seqs,cause_product_ids,incomplete_reason,history,value,lsl,usl
+event,7,7,c,REGISTER,B,,RULE_RECIPE,허용,,등록,,,,,,,,,,,
+event,8,8,c,P1,,,RULE_SEQ,허용,,공정 진행 중(P1 완료),,,,,,,,,,,
+event,9,9,c,P2,,,RULE_SEQ,허용,,공정 진행 중(P2 완료),,,,,,,,,,,
+event,17,17,c,INSPECT LEAK FAIL @LEAK-1 value=13.410,,LEAK-1,RULE_FAIL_HOLD,허용,,보류,,,,,,,,,13.410,7.000,13.000
+event,18,18,c,RETEST_REQUEST LEAK,,,RULE_RETEST,허용,,보류,,,,,,,,,,,
+event,19,19,c,INSPECT LEAK @LEAK-3 value=abc,,LEAK-3,RULE_PRESERVE,거절,value는 소수 형식이어야 함,보류,,,,,,,,,abc,7.000,13.000
+event,20,20,c,INSPECT LEAK PASS @LEAK-3 value=11.020,,LEAK-3,RULE_RETEST,허용,,공정 진행 중(P2 완료),,,,,,,,,11.020,7.000,13.000
+current_state,,,c,,,,,,,공정 진행 중(P2 완료),,,,,,,P3 미완료; P4 미완료; LIGHT 미실시,LEAK: FAIL@17[LEAK-1](value=13.410) → 요청@18 → PASS@20[LEAK-3](재검사 1)(value=11.020),,,

@@ -1,0 +1,5 @@
+﻿product_id,model,state,incomplete_reason,history
+a,B,검사 대기,LIGHT 미실시,LEAK: PASS@13[LEAK-1](value=10.250)
+b,B,공정 진행 중(P3 완료),P4 미완료; LIGHT 미실시,LEAK: PASS@15[LEAK-1](value=13.000)
+c,B,공정 진행 중(P2 완료),P3 미완료; P4 미완료; LIGHT 미실시,LEAK: FAIL@17[LEAK-1](value=13.410) → 요청@18 → PASS@20[LEAK-3](재검사 1)(value=11.020)
+d,B,보류,P3 미완료; P4 미완료; LEAK FAIL; LIGHT 미실시,LEAK: FAIL@21[LEAK-1](value=14.200)

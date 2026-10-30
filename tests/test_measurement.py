@@ -10,6 +10,7 @@ import unittest
 
 from src.capability import capability, show
 from src.equipment import load_equipment
+from src.generate import Generator, build_rows, confirm_value, generate, load_setup
 from src.reason_codes import MEASURED_INJECTED_ERROR_CODES, rejection_code
 from src.recipe import RecipeError, is_decimal_text, load_recipe
 from src.recipe_rules import MEASURE_COLUMN, RecipeProcess, input_columns
@@ -22,6 +23,7 @@ RECIPE = ROOT / "recipes" / "lamp_models_measured.json"
 EQUIPMENT = ROOT / "recipes" / "equipment_measured.json"
 PLAIN_RECIPE = ROOT / "recipes" / "lamp_models_retest.json"
 LOT_EQUIPMENT = ROOT / "recipes" / "equipment_lot.json"
+CONFIG = ROOT / "recipes" / "generator_measured.json"
 
 
 def row(seq, product_id, name, inspection="", result="", model="", equipment="", value=""):
@@ -539,6 +541,199 @@ class CapabilityReportTests(unittest.TestCase):
         _, names = self.report(self.measured([10]), "--summary", "--containment")
         for suffix in ("capability", "summary", "containment"):
             self.assertIn("in_" + suffix + ".csv", names)
+
+
+def fixed_generator(seed=1, config=None):
+    loaded, _, recipe, book = load_setup(CONFIG)
+    generator = Generator(seed, config or loaded, recipe.models, book)
+    generator.rng.gauss = lambda mean, sigma: mean
+    return generator, recipe
+
+
+class GeneratorTests(unittest.TestCase):
+    def setup_paths(self, folder, config=None, recipe=None, equipment=None):
+        folder = Path(folder)
+        loaded = json.loads(CONFIG.read_text(encoding="utf-8-sig"))
+        loaded["recipe"] = str(recipe or RECIPE)
+        loaded["equipment"] = str(equipment or EQUIPMENT)
+        loaded.update(config or {})
+        path = folder / "config.json"
+        path.write_text(json.dumps(loaded, ensure_ascii=False), encoding="utf-8")
+        return path
+
+    def recipe_with(self, folder, change):
+        data = json.loads(RECIPE.read_text(encoding="utf-8-sig"))
+        change(data)
+        path = Path(folder) / "recipe.json"
+        path.write_text(json.dumps(data, ensure_ascii=False), encoding="utf-8")
+        return path
+
+    def test_t111_mean_shifts_add_and_repair_clears_fault(self):
+        generator, recipe = fixed_generator()
+        item = recipe.models["B"].inspections[0]
+        self.assertEqual(generator.measure(item, "LEAK-1", False), "10.000")
+        self.assertEqual(generator.measure(item, "LEAK-2", False), "11.880")
+        self.assertEqual(generator.measure(item, "LEAK-1", True), "13.759")
+        self.assertEqual(generator.measure(item, "LEAK-2", True), "15.639")
+        generator.repaired.add("LEAK-2")
+        self.assertEqual(generator.measure(item, "LEAK-2", False), "10.000")
+
+    def test_t112_confirmed_string_decides_the_boundary(self):
+        self.assertEqual([confirm_value(number) for number in (1.2345, 13.0004, 13.0005)],
+                         ["1.235", "13.000", "13.001"])
+        self.assertEqual(confirm_value(-0.0004), "0.000")
+        for number, written, expected in ((13.0004, "13.000", "PASS"), (13.0005, "13.001", "FAIL")):
+            with self.subTest(number=number):
+                generator, recipe = fixed_generator()
+                generator.rng.gauss = lambda mean, sigma, value=number: value
+                rows = generator.normal_events(1)
+                inspect = next(item for item in rows if item["event"] == "INSPECT")
+                self.assertEqual((inspect["value"], inspect["result"]), (written, ""))
+                name = inspect["equipment"]
+                self.assertEqual(generator.equipment[name].recent_results[0], expected)
+                process = RecipeProcess(recipe.models, generator.book)
+                self.assertTrue(all(process.apply(item).accepted for item in rows))
+                self.assertEqual(process.equipment, generator.equipment)
+
+    def test_t105_reproducible_and_paths_exist(self):
+        outputs = []
+        for folder_name in ("first", "second"):
+            with tempfile.TemporaryDirectory() as folder:
+                folder = Path(folder)
+                files = {}
+                for seed, products, trace in ((42, 500, "GEN_0005"), (7, 200, "GEN_0005")):
+                    source = folder / ("run" + str(seed) + ".csv")
+                    generated = run_cli("src.generate", "--seed", seed, "--products", products, "--config", CONFIG,
+                                        "--out", source, cwd=folder)
+                    self.assertEqual(generated.returncode, 0, generated.stderr)
+                    judged = run_cli("src.main", source, "--recipe", RECIPE, "--equipment", EQUIPMENT, "--summary",
+                                     "--containment", "--capability", "--trace", trace, cwd=folder)
+                    self.assertEqual(judged.returncode, 0, judged.stderr)
+                for path in sorted(folder.rglob("*")):
+                    if path.is_file():
+                        files[path.relative_to(folder).as_posix()] = path.read_bytes()
+                outputs.append(files)
+                if folder_name == "first":
+                    meta = json.loads((folder / "run42.csv.meta.json").read_text(encoding="utf-8"))
+                    self.assertEqual(meta["generator_version"], "1.4.0")
+                    rows = read_csv(folder / "run42.csv")
+                    self.assertEqual(list(rows[0]), list(input_columns(BOOK, True)))
+                    self.assertTrue(all(not row["result"] for row in rows if row["event"] == "INSPECT"))
+                    summary = read_csv(folder / "reports" / "run42_summary.csv")
+                    states = {row["key"]: int(row["count"]) for row in summary if row["section"] == "status_distribution"}
+                    self.assertGreater(states["완료"], 0)
+                    self.assertGreater(states["보류"], 0)
+                    self.assertGreater(states["폐기"], 0)
+                    self.assertTrue(any(row["event"] == "RETEST_REQUEST" for row in rows))
+                    self.assertTrue(any(row["event"] == "EQUIP_RESTART" and row["result"] == "FIXED" for row in rows))
+                    self.assertTrue(any(row["section"] == "equipment_stops" and row["row_index"] for row in summary))
+                    report = read_csv(folder / "reports" / "run42_capability.csv")
+                    self.assertTrue(any(row["status"] == "계산됨" and row["cpk"] for row in report))
+        self.assertEqual(outputs[0], outputs[1])
+
+    def test_t105_judgment_ignores_defect_truth(self):
+        config, _, recipe, book = load_setup(CONFIG)
+        generator, normal, rows, _ = build_rows(42, 200, config, recipe.models, book)
+        self.assertGreater(len(generator.defective_products), 0)
+        self.assertFalse({"defective", "defect"} & set(rows[0]))
+        process = RecipeProcess(recipe.models, book)
+        self.assertTrue(all(process.apply(row).accepted for row in normal))
+        self.assertEqual(process.equipment, generator.equipment)
+
+    def test_t106_fault_raises_mean_and_normal_spread_matches_target(self):
+        config, _, recipe, book = load_setup(CONFIG)
+        by_equipment = {name: [] for name in ("LEAK-1", "LEAK-2", "LEAK-3")}
+        normal_values = []
+        for seed in range(30):
+            generator, normal, _, _ = build_rows(seed, 500, config, recipe.models, book)
+            fixed = next((index for index, row in enumerate(normal) if row["event"] == "EQUIP_RESTART"
+                          and row["equipment"] == "LEAK-2" and row["result"] == "FIXED"), len(normal))
+            defective, seen = set(generator.defective_products), set()
+            for row in normal[:fixed]:
+                key = row["product_id"], row["inspection"]
+                if row["event"] != "INSPECT" or row["inspection"] != "LEAK" or key in seen:
+                    continue
+                seen.add(key)
+                by_equipment[row["equipment"]].append(float(row["value"]))
+                if row["equipment"] != "LEAK-2" and row["product_id"] not in defective:
+                    normal_values.append(float(row["value"]))
+        means = {name: sum(values) / len(values) for name, values in by_equipment.items()}
+        self.assertGreater(means["LEAK-2"], means["LEAK-1"])
+        self.assertGreater(means["LEAK-2"], means["LEAK-3"])
+        mean = sum(normal_values) / len(normal_values)
+        deviation = (sum((value - mean) ** 2 for value in normal_values) / (len(normal_values) - 1)) ** 0.5
+        self.assertTrue(0.6767 <= deviation <= 0.8271, deviation)
+        for values in list(by_equipment.values()) + [normal_values]:
+            self.assertGreaterEqual(len(values), 30)
+
+    def test_t107_injections_match_rejections(self):
+        config, _, recipe, book = load_setup(CONFIG)
+        _, normal, rows, counts = build_rows(42, 500, config, recipe.models, book)
+        self.assertEqual(set(counts), set(MEASURED_INJECTED_ERROR_CODES))
+        self.assertTrue(all(count > 0 for count in counts.values()))
+        analysis = build_analysis(rows, recipe.models, book)
+        actual = {}
+        for event, decision in zip(analysis.events, analysis.decisions):
+            if not decision.accepted:
+                code = rejection_code(decision, event, recipe.models)
+                actual[code] = actual.get(code, 0) + 1
+        self.assertEqual(actual, counts)
+        self.assertTrue(all(not row["result"] for row in rows if row["event"] == "INSPECT"))
+
+    def test_t108_config_errors_exit_2_without_files(self):
+        with tempfile.TemporaryDirectory() as folder:
+            folder = Path(folder)
+
+            def one_sided(data):
+                for body in data.values():
+                    for item in body["inspections"]:
+                        item["lsl"] = None
+
+            def no_limit(data):
+                for body in data.values():
+                    del body["retest_limit"]
+
+            def huge(data):
+                for body in data.values():
+                    for item in body["inspections"]:
+                        item.update(lsl="0", usl="1" + "0" * 29)
+
+            configs = (
+                self.setup_paths(folder, {"process_cpk": 0}),
+                self.setup_paths(folder, {"fault_shift_sigma": {"LEAK-2": -1}}),
+                self.setup_paths(folder, {"normal_fail_probability": 0.02}),
+                self.setup_paths(folder, recipe=self.recipe_with(folder, one_sided)),
+                self.setup_paths(folder, {"fault_shift_sigma": {"LEAK-9": 2.5}}),
+                self.setup_paths(folder, recipe=self.recipe_with(folder, no_limit)),
+                self.setup_paths(folder, {"process_cpk": 1e-320}),
+                self.setup_paths(folder, recipe=self.recipe_with(folder, huge)),
+            )
+            paths = []
+            for index, config in enumerate(configs):
+                target = folder / ("config" + str(index) + ".json")
+                target.write_bytes(config.read_bytes())
+                paths.append(target)
+            data = json.loads(paths[0].read_text(encoding="utf-8"))
+            base = dict(data, process_cpk=1.33)
+            def variant(name, change):
+                body = dict(base)
+                change(body)
+                path = folder / name
+                path.write_text(json.dumps(body, ensure_ascii=False), encoding="utf-8")
+                paths.append(path)
+            variant("no_cpk.json", lambda body: (body.pop("process_cpk"), body.pop("fault_shift_sigma"), body.pop("defect_shift_sigma")))
+            variant("plain_recipe.json", lambda body: body.update(recipe=str(PLAIN_RECIPE)))
+            variant("lot.json", lambda body: body.update(equipment=str(LOT_EQUIPMENT)))
+            variant("misspelled.json", lambda body: body.update(defective_shift_sigma=body.pop("defect_shift_sigma")))
+            for index, path in enumerate(paths):
+                with self.subTest(path=path.name):
+                    out = folder / ("out" + str(index) + ".csv")
+                    result = run_cli("src.generate", "--config", path, "--out", out, "--products", 20, cwd=folder)
+                    self.assertEqual(result.returncode, 2, result.stderr + result.stdout)
+                    self.assertFalse(out.exists())
+            result = run_cli("src.evaluate", "--config", CONFIG, "--seeds", "0-1", "--rules", "3:2", "--out", "bad", cwd=folder)
+            self.assertEqual(result.returncode, 2)
+            self.assertFalse((folder / "reports").exists())
 
 
 if __name__ == "__main__":

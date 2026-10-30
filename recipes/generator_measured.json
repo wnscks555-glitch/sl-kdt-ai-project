@@ -1,0 +1,12 @@
+{
+  "recipe": "lamp_models_measured.json",
+  "equipment": "equipment_measured.json",
+  "model_weights": {"A": 0.5, "B": 0.5},
+  "defective_product_probability": 0.02,
+  "retest_probability": 0.70,
+  "error_rate": 0.03,
+  "restart": {"delay_rows": 30},
+  "process_cpk": 1.33,
+  "fault_shift_sigma": {"LEAK-2": 2.5},
+  "defect_shift_sigma": 5.0
+}

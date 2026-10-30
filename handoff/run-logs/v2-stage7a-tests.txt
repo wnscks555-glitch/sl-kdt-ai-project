@@ -1,0 +1,9 @@
+.............................................................................................................................................................................................................
+----------------------------------------------------------------------
+Ran 205 tests in 99.021s
+
+OK
+T44 seed=42 products=500 generation_seconds=0.087484 judgment_analysis_seconds=0.052722
+T44 seed=7 products=200 generation_seconds=0.035847 judgment_analysis_seconds=0.019276
+T44 seed=42 all_rows_deepcopy_invariant_seconds=27.162790
+T44 seed=7 all_rows_deepcopy_invariant_seconds=4.424081

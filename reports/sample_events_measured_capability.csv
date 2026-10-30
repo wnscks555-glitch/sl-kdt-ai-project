@@ -1,0 +1,9 @@
+﻿section,inspection,equipment,unit,lsl,usl,n,subgroups,xbarbar,rbar,sigma_within,cpk,sample_sd,ppk,status,value
+notice,,,,,,,,,,,,,,,생성 데이터의 확률은 가정이며 실제 설비 진단 근거가 아니다. 구간을 합친 값이며 안정 공정의 능력을 보증하지 않는다.
+capability,FINAL,FINAL-1,가상 단위,7.000,13.000,0,0,,,,,,,표본 부족,
+capability,FINAL,FINAL-2,가상 단위,7.000,13.000,0,0,,,,,,,표본 부족,
+capability,LEAK,LEAK-1,가상 단위,7.000,13.000,4,0,,,,,1.7171,,표본 부족,
+capability,LEAK,LEAK-2,가상 단위,7.000,13.000,0,0,,,,,,,표본 부족,
+capability,LEAK,LEAK-3,가상 단위,7.000,13.000,0,0,,,,,,,표본 부족,
+capability,LIGHT,LIGHT-1,가상 단위,7.000,13.000,0,0,,,,,,,표본 부족,
+capability,LIGHT,LIGHT-2,가상 단위,7.000,13.000,0,0,,,,,,,표본 부족,

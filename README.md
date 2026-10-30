@@ -582,3 +582,44 @@ py -m src.evaluate --containment --config recipes/generator_lot.json --seeds 100
 ### 이번 단계 제외 범위
 
 측정값, 관리도, 실제 시각, 생산 중간 고장, 자동 격리는 포함하지 않습니다.
+
+## 측정값과 공정능력 (v2 7a단계)
+
+레시피의 검사 항목에 규격이 있으면 측정 모드가 켜집니다. CSV는 `value` 열에 측정값을 받고, 판정기가 PASS/FAIL을 계산합니다. 규격과 분포는 모두 가상 가정이며 실제 설비 진단이나 고객 기준이 아닙니다.
+
+```powershell
+py -m src.main data/sample_events_measured.csv --recipe recipes/lamp_models_measured.json --equipment recipes/equipment_measured.json --summary --trace c --capability
+py -m src.generate --seed 42 --products 500 --config recipes/generator_measured.json --out data/generated/gen_measured_seed42.csv
+py -m src.main data/generated/gen_measured_seed42.csv --recipe recipes/lamp_models_measured.json --equipment recipes/equipment_measured.json --summary --containment --capability --trace GEN_0005
+```
+
+- 헤더는 `seq,product_id,event,inspection,result,model,equipment,value`입니다. 로트 설비면 `lot` 뒤에 `value`가 옵니다.
+- `INSPECT`의 `result`는 빈칸이어야 합니다. 값은 원문을 보존하고 `Decimal`로 비교하며, 경계값은 PASS입니다.
+- 재검사도 측정값으로 판정하지만 설비 창과 공정능력에는 넣지 않습니다.
+
+### 공정능력 계산
+
+- 대상은 `(검사, 설비)`별 허용된 최초 측정입니다. 재가동에서 구간을 끊고 구간 안에서 연속 5개씩 부분군을 만듭니다.
+- `sigma_within = Rbar / 2.326`이고 Cpk는 이 값으로, Ppk는 전체 표본 표준편차(`N−1`)로 계산합니다.
+- 완성 부분군이 25개 미만이면 `표본 부족`으로 Cpk·Ppk를 비웁니다. 25는 이 프로젝트의 표시 기준이며, `계산됨`은 산술 계산이 가능하다는 뜻입니다. 공정 안정성이나 정규성을 뜻하지 않습니다.
+
+### 시드 42 결과 (합성 데이터)
+
+| 검사 | 설비 | n | 부분군 | Cpk | Ppk | 상태 |
+| --- | --- | ---: | ---: | ---: | ---: | --- |
+| FINAL | FINAL-1 | 122 | 24 | | | 표본 부족 |
+| FINAL | FINAL-2 | 122 | 24 | | | 표본 부족 |
+| LEAK | LEAK-1 | 169 | 33 | 1.1743 | 1.0915 | 계산됨 |
+| LEAK | LEAK-2 | 163 | 32 | 0.5215 | 0.5010 | 계산됨 |
+| LEAK | LEAK-3 | 168 | 33 | 1.2057 | 1.2079 | 계산됨 |
+| LIGHT | LIGHT-1 | 247 | 49 | 1.1795 | 1.1368 | 계산됨 |
+| LIGHT | LIGHT-2 | 246 | 49 | 1.3168 | 1.2732 | 계산됨 |
+
+- 제품 500개 중 완료 491, 보류 6, 폐기 3입니다. 보류·폐기 9개는 모두 결함품이고 결함품 완료는 0개입니다. 정상품 폐기는 0개입니다.
+- LEAK-2는 평균이 약 1.7 높고 Cpk가 가장 낮습니다. 고장 수치가 수리 뒤 구간과 섞인 값이므로 이 설비의 능력값으로 읽으면 안 됩니다.
+- LEAK-2의 정지는 전체 4,126행 중 2,558번째 행에서 한 번뿐입니다. 값이 규격 안으로 이동하면 FAIL 기반 정지는 늦다는 것을 보여 주며, 이 단계는 규칙을 바꾸지 않았습니다.
+- `process_cpk` 1.33은 정상품·정상 설비 성분의 가정입니다. 보고서의 값이 1.33과 다른 것은 결함품과 표본 변동이 섞이기 때문이고, 구현 오류의 근거가 아닙니다.
+
+### 이번 단계 제외 범위
+
+관리도와 정지 규칙 변경, 생산 중간 고장, 규칙 비교 평가, 정규성 검정, 측정 시스템 분석은 포함하지 않습니다.

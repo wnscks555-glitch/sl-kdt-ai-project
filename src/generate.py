@@ -3,6 +3,7 @@
 import argparse
 from collections import defaultdict
 import csv
+from decimal import Decimal, ROUND_HALF_UP, localcontext
 import hashlib
 import json
 import math
@@ -10,20 +11,40 @@ from pathlib import Path
 import random
 
 from .equipment import EquipmentState, load_equipment
-from .recipe import load_recipe
-from .recipe_rules import EQUIPMENT_INPUT_COLUMNS, LOT_INPUT_COLUMNS, RESTART_EVENT, RecipeProcess
-from .reason_codes import INJECTED_ERROR_CODES as ERROR_KINDS
+from .recipe import is_decimal_text, is_measured, load_recipe
+from .recipe_rules import (
+    EQUIPMENT_INPUT_COLUMNS, MEASURE_COLUMN, RESTART_EVENT, RecipeProcess, input_columns, judge_value,
+)
+from .reason_codes import injected_error_codes
 
 
 GENERATOR_VERSION = "1.1.0"
 RESTART_GENERATOR_VERSION = "1.2.0"
 LOT_GENERATOR_VERSION = "1.3.0"
+MEASURED_GENERATOR_VERSION = "1.4.0"
+MEASURED_CONFIG_KEYS = {
+    "recipe", "equipment", "model_weights", "defective_product_probability", "retest_probability", "error_rate",
+    "restart", "process_cpk", "fault_shift_sigma", "defect_shift_sigma",
+}
 DEFAULT_CONFIG = Path(__file__).resolve().parents[1] / "recipes/generator.json"
 
 
 def event(product_id, name, inspection="", result="", model="", equipment=""):
     return dict(zip(EQUIPMENT_INPUT_COLUMNS,
                     ("", product_id, name, inspection, result, model, equipment)))
+
+
+def confirm_value(number):
+    """생성값을 CSV에 쓸 문자열로 확정한다. 이후 분기는 이 문자열만 쓴다."""
+    if not math.isfinite(number):
+        raise ValueError("측정값이 유한하지 않음")
+    with localcontext() as context:
+        context.prec = 100
+        rounded = Decimal(repr(number)).quantize(Decimal("0.001"), rounding=ROUND_HALF_UP)
+        text = "0.000" if rounded == 0 else format(rounded, "f")
+    if not is_decimal_text(text):
+        raise ValueError("측정값이 value 자릿수 상한을 넘음: " + text)
+    return text
 
 
 class Generator:
@@ -33,6 +54,8 @@ class Generator:
         self.models = models
         self.book = equipment_book
         self.equipment = {name: EquipmentState() for name in self.book.equipment}
+        self.measured = check_measured_config(config, models, equipment_book)
+        self.faulty = config["fault_shift_sigma"] if self.measured else config["faulty_equipment"]
         self.cursor = defaultdict(int)
         self.defective_products = []
         self.restart_delay = restart_delay(config, equipment_book)
@@ -46,6 +69,28 @@ class Generator:
     def stamp(self, row):
         if self.lot_size is not None:
             row.setdefault("lot", "")
+        if self.measured:
+            row.setdefault(MEASURE_COLUMN, "")
+        return row
+
+    def spread(self, item):
+        lsl, usl = float(item.lsl), float(item.usl)
+        return (lsl + usl) / 2, (usl - lsl) / (6 * self.config["process_cpk"])
+
+    def measure(self, item, equipment, defective):
+        """수리 전 고장 설비와 결함품의 이동을 더한 분포에서 한 번 뽑아 확정한다."""
+        center, sigma = self.spread(item)
+        shift = self.config["defect_shift_sigma"] if defective else 0
+        if equipment not in self.repaired:
+            shift += self.faulty.get(equipment, 0)
+        return confirm_value(self.rng.gauss(center + shift * sigma, sigma))
+
+    def normal_value(self, item):
+        return confirm_value(self.spread(item)[0])
+
+    def inspect_event(self, product_id, item, equipment, value):
+        row = event(product_id, "INSPECT", item.id, equipment=equipment)
+        row[MEASURE_COLUMN] = value
         return row
 
     def draw_defective(self, number):
@@ -93,6 +138,18 @@ class Generator:
                         equipment = self.choose_equipment(item.id, first_equipment)
                     if equipment is None:
                         return
+                    if self.measured:
+                        value = self.measure(item, equipment, defective)
+                        result = judge_value(value, item)
+                        yield self.inspect_event(product_id, item, equipment, value), result if attempt == 0 else ""
+                        if result == "PASS":
+                            break
+                        if attempt == recipe.retest_limit or self.rng.random() >= self.config["retest_probability"]:
+                            return
+                        if attempt == 0:
+                            first_equipment = equipment
+                        yield event(product_id, "RETEST_REQUEST", item.id), ""
+                        continue
                     if defective:
                         probability = self.config["defective_fail_probability"]
                         if equipment not in self.repaired:
@@ -106,7 +163,7 @@ class Generator:
                     if (defective and attempt == 0 and result == "PASS" and self.lot_size is not None
                             and equipment in self.config["faulty_equipment"] and equipment not in self.repaired):
                         self.leaked_products.append(product_id)
-                    yield event(product_id, "INSPECT", item.id, result, equipment=equipment), attempt == 0
+                    yield event(product_id, "INSPECT", item.id, result, equipment=equipment), result if attempt == 0 else ""
                     if result == "PASS":
                         break
                     if attempt == recipe.retest_limit or self.rng.random() >= self.config["retest_probability"]:
@@ -118,7 +175,7 @@ class Generator:
     def add_restart(self, rows):
         """수리되지 않은 고장 설비만 FIXED다. 점검이 항상 맞다는 가정이며 난수를 쓰지 않는다."""
         _, name = self.pending_restarts.pop(0)
-        result = "FIXED" if name in self.config["faulty_equipment"] and name not in self.repaired else "NO_FAULT"
+        result = "FIXED" if name in self.faulty and name not in self.repaired else "NO_FAULT"
         if result == "FIXED":
             self.repaired.add(name)
         row = self.stamp(event("", RESTART_EVENT, result=result, equipment=name))
@@ -145,14 +202,14 @@ class Generator:
                 if step is None:
                     following.append(flow)
                     continue
-                row, initial = step
+                row, recorded = step
                 self.stamp(row)
                 progressed = True
                 row["seq"] = str(len(rows) + 1)
                 rows.append(row)
-                if initial:
+                if recorded:
                     name = row["equipment"]
-                    self.equipment[name] = self.equipment[name].record(row["result"], row["seq"], self.book)
+                    self.equipment[name] = self.equipment[name].record(recorded, row["seq"], self.book)
                     if self.restart_delay is not None and self.equipment[name].stopped_at_seq is not None:
                         self.pending_restarts.append((len(rows) + self.restart_delay, name))
                         self.pending_restarts.sort()
@@ -164,7 +221,8 @@ class Generator:
         return rows
 
     def inject_errors(self, normal):
-        candidates = {kind: [] for kind in ERROR_KINDS}
+        error_kinds = injected_error_codes(self.measured)
+        candidates = {kind: [] for kind in error_kinds}
         process = RecipeProcess(self.models, self.book)
         for position, row in enumerate(normal, 1):
             decision = process.apply(row)
@@ -185,27 +243,35 @@ class Generator:
             item = product.recipe.inspections[0]
             available = [name for name, kind in self.book.equipment.items()
                          if kind == item.id and process.equipment[name].stopped_at_seq is None]
-            if available:
+            if available and self.measured:
+                candidates["PRESERVE_BAD_VALUE"].append(
+                    (position, self.inspect_event(pid, item, available[0], "abc")))
+            elif available:
                 candidates["PRESERVE_BAD_RESULT"].append(
                     (position, event(pid, "INSPECT", item.id, "OK", equipment=available[0])))
-            candidates["EQUIP_UNKNOWN"].append(
-                (position, event(pid, "INSPECT", item.id, "PASS", equipment="LEAK-9")))
+            candidates["EQUIP_UNKNOWN"].append((position, (
+                self.inspect_event(pid, item, "LEAK-9", self.normal_value(item)) if self.measured
+                else event(pid, "INSPECT", item.id, "PASS", equipment="LEAK-9"))))
             for inspection in product.inspections:
                 if inspection in product.open_requests:
                     continue
                 names = [name for name, kind in self.book.equipment.items()
                          if kind == inspection and process.equipment[name].stopped_at_seq is None]
-                if names:
+                if names and self.measured:
+                    done = next(entry for entry in product.recipe.inspections if entry.id == inspection)
+                    candidates["PRESERVE_DUP_RESULT"].append(
+                        (position, self.inspect_event(pid, done, names[0], self.normal_value(done))))
+                elif names:
                     candidates["PRESERVE_DUP_RESULT"].append(
                         (position, event(pid, "INSPECT", inspection, "PASS", equipment=names[0])))
         count = int(len(normal) * self.config["error_rate"])
-        kinds = list(ERROR_KINDS)
+        kinds = list(error_kinds)
         self.rng.shuffle(kinds)
-        counts = {kind: count // len(kinds) for kind in ERROR_KINDS}
+        counts = {kind: count // len(kinds) for kind in error_kinds}
         for kind in kinds[:count % len(kinds)]:
             counts[kind] += 1
         insertions = defaultdict(list)
-        for kind in ERROR_KINDS:
+        for kind in error_kinds:
             if counts[kind] and not candidates[kind]:
                 reason = "현재 제품·공정·검사·설비 상태에 유효한 주입 위치가 없음"
                 if kind == "RECIPE_UNKNOWN_STEP" and not any(
@@ -236,11 +302,67 @@ def restart_delay(config, book):
     return restart["delay_rows"]
 
 
-def check_lot_config(config, book):
-    def unit(value):
-        # 범위를 먼저 비교해야 큰 정수가 float 변환에서 OverflowError를 내지 않는다.
-        return type(value) in (int, float) and 0 <= value <= 1 and math.isfinite(value)
+def unit(value):
+    # 범위를 먼저 비교해야 큰 정수가 float 변환에서 OverflowError를 내지 않는다.
+    return type(value) in (int, float) and 0 <= value <= 1 and math.isfinite(value)
 
+
+def positive(value):
+    if type(value) not in (int, float) or not value > 0:
+        return False
+    try:
+        return math.isfinite(value)
+    except OverflowError:
+        return False
+
+
+def check_measured_config(config, models, book):
+    """측정 생성 설정을 파일을 만들기 전에 거른다. 측정 설정이면 True다."""
+    measured = is_measured(models)
+    shift_keys = {"fault_shift_sigma", "defect_shift_sigma"} & config.keys()
+    if "process_cpk" not in config:
+        if measured:
+            raise ValueError("측정 레시피에는 process_cpk 설정이 필요함")
+        if shift_keys:
+            raise ValueError("fault_shift_sigma와 defect_shift_sigma에는 process_cpk가 필요함")
+        return False
+    if not measured:
+        raise ValueError("process_cpk 설정에는 측정 레시피가 필요함")
+    extra = sorted(config.keys() - MEASURED_CONFIG_KEYS)
+    if extra:
+        raise ValueError("측정 설정에서 허용하지 않은 키: " + ", ".join(extra))
+    if len(shift_keys) != 2:
+        raise ValueError("측정 설정에는 fault_shift_sigma와 defect_shift_sigma가 필요함")
+    if book.lot_tracking:
+        raise ValueError("측정 생성기는 lot_tracking 설비 파일을 지원하지 않음")
+    if "restart" not in config:
+        raise ValueError("측정 설정에는 restart가 필요함")
+    if any(model.retest_limit is None for model in models.values()):
+        raise ValueError("측정 생성 레시피에는 retest_limit이 필요함")
+    faults = config["fault_shift_sigma"]
+    if not isinstance(faults, dict) or not all(positive(value) for value in faults.values()):
+        raise ValueError("fault_shift_sigma는 설비별 유한한 양수여야 함")
+    if not set(faults) <= set(book.equipment):
+        raise ValueError("fault_shift_sigma의 설비가 설비 파일에 없음")
+    if not positive(config["process_cpk"]) or not positive(config["defect_shift_sigma"]):
+        raise ValueError("process_cpk와 defect_shift_sigma는 유한한 양수여야 함")
+    for key in ("defective_product_probability", "retest_probability", "error_rate"):
+        if key not in config or not unit(config[key]):
+            raise ValueError(key + "는 0–1 값이어야 함")
+    shift = config["defect_shift_sigma"] + max(faults.values(), default=0)
+    for model in models.values():
+        for item in model.inspections:
+            if item.lsl is None or item.usl is None:
+                raise ValueError("측정 생성은 양측 규격만 지원함: " + item.id)
+            lsl, usl = float(item.lsl), float(item.usl)
+            divisor = 6 * config["process_cpk"]
+            sigma = (usl - lsl) / divisor if divisor else math.inf
+            if not math.isfinite(sigma) or not math.isfinite((lsl + usl) / 2 + shift * sigma):
+                raise ValueError("규격과 process_cpk로 계산한 분포가 유한하지 않음: " + item.id)
+    return True
+
+
+def check_lot_config(config, book):
     lot_keys = {"defective_lot_probability", "defective_in_lot_probability"} & config.keys()
     if "lot_size" not in config:
         if book.lot_tracking:
@@ -264,6 +386,8 @@ def check_lot_config(config, book):
 
 
 def generator_version(config):
+    if "process_cpk" in config:
+        return MEASURED_GENERATOR_VERSION
     if "lot_size" in config:
         return LOT_GENERATOR_VERSION
     return RESTART_GENERATOR_VERSION if "restart" in config else GENERATOR_VERSION
@@ -306,7 +430,7 @@ def generate(seed=42, products=500, out=Path("data/generated/gen_seed42.csv"), c
         meta.update(lot_size=config["lot_size"], leaked_products=sorted(generator.leaked_products))
     out.parent.mkdir(parents=True, exist_ok=True)
     with out.open("w", encoding="utf-8-sig", newline="") as target:
-        writer = csv.DictWriter(target, fieldnames=LOT_INPUT_COLUMNS if equipment.lot_tracking else EQUIPMENT_INPUT_COLUMNS)
+        writer = csv.DictWriter(target, fieldnames=input_columns(equipment, generator.measured))
         writer.writeheader()
         writer.writerows(rows)
     Path(str(out) + ".meta.json").write_text(
