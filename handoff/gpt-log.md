@@ -3625,3 +3625,20 @@ T44 seed=7 all_rows_deepcopy_invariant_seconds=5.768965
 ### 산출물 재생성 (리뷰 010 수정 후속, 2026-10-30)
 - `reports/eval_dev_*`, `eval_holdout_*`, `eval_baseline_*`와 `handoff/run-logs/stage5-*.txt`를 다시 만들었다. rules 보고서의 기존 열 값은 이전 커밋과 모두 같고 `mean_held` 열만 추가됐다. 전체 테스트 138개 통과.
 - 리뷰 011은 Codex 사용량 한도로 완료되지 못했다. 미완성 로그와 반례 파일은 저장소에 넣지 않았다.
+
+## v2 6단계 구현 (2026-10-31, 구현 담당 Claude)
+
+### 명세 해석
+- `--selected-from`을 `--containment --holdout` 밖에서 쓰면 종료 코드 2로 했다. 명세에 없는 조합이다.
+- `lot_tracking` 설비 파일에 `lot_size` 없는 설정을 쓰면 생성 오류로 했다. 명세는 반대 방향만 적었으나, 그대로 두면 8열 판정에 7열 행이 들어간다.
+- T83은 결함 로트 번호를 제품 번호에서 계산해 집계한다.
+
+### 기록 오류 수정
+- `handoff/run-logs/stage5-tests.txt`는 2026-10-18 작업의 기존 로그였는데 5단계에서 같은 이름으로 덮어썼다. 이번에 기존 내용을 복구하고 v2 5단계 결과는 `v2-stage5-tests.txt`로 옮겼다. 6단계 로그는 `v2-stage6-*` 이름을 쓴다.
+
+### 실행 결과
+- 전체 테스트: `py -m unittest discover -s tests` 163개 통과. 기존 138개에 `tests/test_containment.py` 25개를 더했다. 기존 테스트 8개와 `src/rules.py`는 수정하지 않았다.
+- 보존 확인: seed42 생성·summary·trace 재실행 뒤 `git status`에 기존 산출물 변경 없음.
+- 평가 원문: `handoff/run-logs/v2-stage6-*.txt`.
+- 선택 결과: 두 설정 모두 표본 조건은 충족했고 `기준 충족 방식 없음`. 기준은 완화하지 않았다.
+- 미수행: Codex 검수.

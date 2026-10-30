@@ -523,3 +523,62 @@ py -m src.evaluate --config recipes/generator.json --seeds 0-99 --rules 3:2 --ou
 ### 이번 단계 제외 범위
 
 실제 시각·UPH·OEE, 공정 설비, 로트 ID, 측정값·Cpk, 그래프, 생산 중간에 시작되는 고장, 재가동 취소는 포함하지 않습니다.
+
+## 격리 범위와 로트 (v2 6단계)
+
+설비가 멈췄을 때 이미 PASS로 지나간 제품 중 어디까지 의심할지 뽑고, 방식별 포착률과 격리량을 비교합니다. 격리는 분석 보고서이며 제품 상태를 바꾸지 않습니다.
+
+**생성 데이터의 확률은 가정이며 실제 설비 진단 근거가 아니다.** 이 단계의 생성 가정은 5단계와 달라 수치를 직접 비교할 수 없습니다.
+
+### 로트 모드
+
+설비 파일에 `"lot_tracking": true`가 있을 때만 켜집니다. CSV는 기존 7열 뒤에 `lot`을 붙인 8열이고, `REGISTER`에서만 씁니다. 형식은 `^[A-Z0-9_-]+$`입니다. products 보고서에는 `model` 뒤에 `lot` 열이 붙습니다.
+
+```powershell
+py -m src.main data/sample_events_lot.csv --recipe recipes/lamp_models_retest.json --equipment recipes/equipment_lot.json --summary --containment
+```
+
+### 격리 보고서
+
+`--containment`는 설비 모드에서 `reports/<입력>_containment.csv`를 만듭니다. 대상은 정지 시점까지 그 설비에서 최초 검사 PASS를 받은 제품입니다. 재검사 PASS는 제외하고, 다른 검사로 보류·폐기된 제품은 포함합니다. 구간은 그 설비의 허용된 가장 최근 재가동 이후입니다.
+
+| 방식 | 의심 범위 |
+| --- | --- |
+| `window` | 정지 창 안의 PASS 제품 |
+| `last_10`, `last_20` | 구간의 최근 10·20개 최초 검사 중 PASS 제품 |
+| `lot` | 구간의 PASS 제품 중 정지 창 FAIL 제품과 같은 로트 |
+| `since_restart` | 구간의 PASS 제품 전체 |
+
+### 평가
+
+`generator_lot.json`은 결함을 제품별 독립으로, `generator_lot_clustered.json`은 로트에 몰리게 만듭니다. 두 설정 모두 기대 결함률 5%, 고장 FAIL 0.10, 추가 검출 손실 0.5(결함품 FAIL 0.45)입니다. 유출은 결함품이 수리 전 고장 설비에서 최초 검사 PASS를 받은 경우입니다.
+
+```powershell
+py -m src.evaluate --containment --config recipes/generator_lot.json --seeds 0-99 --rules 3:2 --out eval_lot_dev
+py -m src.evaluate --containment --config recipes/generator_lot.json --seeds 1000-1099 --rules 3:2 --out eval_lot_holdout --holdout --selected-from reports/eval_lot_dev_containment.csv
+```
+
+선택 기준은 결과를 보기 전에 고정했습니다(`handoff/decisions.md`, 2026-10-31): 유출품 30건 이상, 유출 실행 20회 이상이면 포착률 0.90 이상 방식 중 평균 격리량이 가장 작은 방식. 지표는 실행별 평균이 아니라 전체 합산입니다.
+
+### 평가 결과
+
+정지 규칙 3:2, 제품 500개, 개발 시드 0–99입니다.
+
+| 방식 | 독립 포착률 | 독립 격리량 | 집중 포착률 | 집중 격리량 |
+| --- | --- | --- | --- | --- |
+| `window` | 0.0410 | 5.65 | 0.0204 | 7.30 |
+| `lot` | 0.0738 | 22.85 | 0.0816 | 21.63 |
+| `last_10` | 0.1475 | 41.06 | 0.1156 | 51.88 |
+| `last_20` | 0.2787 | 84.96 | 0.2585 | 106.31 |
+| `since_restart` | 0.8525 | 294.69 | 0.8231 | 323.01 |
+
+- 표본 조건은 충족했습니다(독립 유출 122건·61회, 집중 147건·55회).
+- **두 설정 모두 `기준 충족 방식 없음`입니다.** 사전 기준대로 어떤 방식도 고르지 않았고, 기준을 완화하지 않았습니다. 홀드아웃은 `검증할 선택 없음`입니다.
+- 포착률이 가장 높은 `since_restart`도 500개 중 평균 295개 이상을 격리해 실용적이지 않습니다. 격리 정밀도는 모든 방식에서 0.01 미만입니다.
+- `since_restart`의 미포착은 소수 실행에 몰립니다. 독립 18건은 4회, 집중 26건은 5회 실행에서 나왔습니다. 원인은 검증하지 않았습니다.
+- 홀드아웃 시드의 `since_restart` 포착률은 0.9845, 0.9910이지만, 개발 시드 판정을 바꾸는 근거로 쓰지 않습니다.
+- 집중 설정에서도 `lot` 방식의 포착률은 낮습니다. 격리 기준이 정지를 일으킨 FAIL 제품의 로트인데, 그 제품들은 대개 고장 설비의 오판정이어서 결함 로트와 무관합니다.
+
+### 이번 단계 제외 범위
+
+측정값, 관리도, 실제 시각, 생산 중간 고장, 자동 격리는 포함하지 않습니다.

@@ -1,0 +1,9 @@
+method | runs | leak_runs | leaks | stops | capture_rate | mean_quarantine | precision | mean_residual
+window | 100 | 61 | 122 | 568 | 0.0410 | 5.65 | 0.0088 | 1.17
+last_10 | 100 | 61 | 122 | 568 | 0.1475 | 41.06 | 0.0044 | 1.04
+last_20 | 100 | 61 | 122 | 568 | 0.2787 | 84.96 | 0.0040 | 0.88
+lot | 100 | 61 | 122 | 568 | 0.0738 | 22.85 | 0.0039 | 1.13
+since_restart | 100 | 61 | 122 | 568 | 0.8525 | 294.69 | 0.0035 | 0.18
+생성 데이터의 확률은 가정이며 실제 설비 진단 근거가 아니다.
+기준 충족 방식 없음
+저장 파일: reports/eval_lot_dev_containment.csv
