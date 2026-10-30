@@ -32,6 +32,8 @@ REASON_CODE_TABLE = (
     ("EQUIP_WRONG_INSPECTION", "RULE_EQUIP", "검사 종류가 다른 설비"),
     ("EQUIP_STOPPED", "RULE_EQUIP", "정지된 설비"),
     ("EQUIP_NOT_STOPPED", "RULE_EQUIP", "가동 중인 설비 재가동"),
+    ("PRESERVE_BAD_LOT", "RULE_PRESERVE", "lot이 비어 있거나 형식이 잘못됨"),
+    ("PRESERVE_LOT_FIELD", "RULE_PRESERVE", "REGISTER 이외의 lot은 빈칸이어야 함"),
     ("PRESERVE_RESTART_PRODUCT", "RULE_PRESERVE", "EQUIP_RESTART의 product_id는 빈칸이어야 함"),
     ("PRESERVE_RESTART_FIELDS", "RULE_PRESERVE", "EQUIP_RESTART의 inspection과 model은 빈칸이어야 함"),
     ("PRESERVE_BAD_RESTART_RESULT", "RULE_PRESERVE", "잘못된 재가동 결과 (FIXED 또는 NO_FAULT 필요)"),

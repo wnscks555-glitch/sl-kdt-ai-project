@@ -1,0 +1,40 @@
+﻿seq,product_id,input,rule_id,decision,rejection_reason,state
+1,a,REGISTER,RULE_RECIPE,허용,,등록
+2,a,P1,RULE_SEQ,허용,,공정 진행 중(P1 완료)
+3,a,P2,RULE_SEQ,허용,,공정 진행 중(P2 완료)
+4,b,REGISTER,RULE_RECIPE,허용,,등록
+5,b,P1,RULE_SEQ,허용,,공정 진행 중(P1 완료)
+6,b,P2,RULE_SEQ,허용,,공정 진행 중(P2 완료)
+7,c,REGISTER,RULE_RECIPE,허용,,등록
+8,c,P1,RULE_SEQ,허용,,공정 진행 중(P1 완료)
+9,c,P2,RULE_SEQ,허용,,공정 진행 중(P2 완료)
+10,d,REGISTER,RULE_RECIPE,허용,,등록
+11,d,P1,RULE_SEQ,허용,,공정 진행 중(P1 완료)
+12,d,P2,RULE_SEQ,허용,,공정 진행 중(P2 완료)
+13,e,REGISTER,RULE_RECIPE,허용,,등록
+14,e,P1,RULE_SEQ,허용,,공정 진행 중(P1 완료)
+15,e,P2,RULE_SEQ,허용,,공정 진행 중(P2 완료)
+16,f,REGISTER,RULE_RECIPE,허용,,등록
+17,f,P1,RULE_SEQ,허용,,공정 진행 중(P1 완료)
+18,f,P2,RULE_SEQ,허용,,공정 진행 중(P2 완료)
+19,g,REGISTER,RULE_RECIPE,허용,,등록
+20,g,P1,RULE_SEQ,허용,,공정 진행 중(P1 완료)
+21,g,P2,RULE_SEQ,허용,,공정 진행 중(P2 완료)
+22,h,REGISTER,RULE_RECIPE,허용,,등록
+23,h,P1,RULE_SEQ,허용,,공정 진행 중(P1 완료)
+24,h,P2,RULE_SEQ,허용,,공정 진행 중(P2 완료)
+25,i,REGISTER,RULE_RECIPE,허용,,등록
+26,i,P1,RULE_SEQ,허용,,공정 진행 중(P1 완료)
+27,i,P2,RULE_SEQ,허용,,공정 진행 중(P2 완료)
+28,a,INSPECT LEAK PASS @LEAK-1,RULE_NOT_DONE,허용,,공정 진행 중(P2 완료)
+29,b,INSPECT LEAK PASS @LEAK-1,RULE_NOT_DONE,허용,,공정 진행 중(P2 완료)
+30,c,INSPECT LEAK PASS @LEAK-1,RULE_NOT_DONE,허용,,공정 진행 중(P2 완료)
+31,d,INSPECT LEAK PASS @LEAK-1,RULE_NOT_DONE,허용,,공정 진행 중(P2 완료)
+32,e,INSPECT LEAK FAIL @LEAK-1,RULE_FAIL_HOLD,허용,,보류
+33,f,INSPECT LEAK FAIL @LEAK-1,RULE_FAIL_HOLD,허용,,보류
+34,,EQUIP_RESTART NO_FAULT @LEAK-1,RULE_EQUIP,허용,,설비 가동
+35,g,INSPECT LEAK PASS @LEAK-1,RULE_NOT_DONE,허용,,공정 진행 중(P2 완료)
+36,h,INSPECT LEAK FAIL @LEAK-1,RULE_FAIL_HOLD,허용,,보류
+37,i,INSPECT LEAK FAIL @LEAK-1,RULE_FAIL_HOLD,허용,,보류
+38,z,REGISTER,RULE_PRESERVE,거절,lot이 비어 있거나 형식이 잘못됨,미등록
+39,a,P3,RULE_PRESERVE,거절,REGISTER 이외의 lot은 빈칸이어야 함,공정 진행 중(P2 완료)

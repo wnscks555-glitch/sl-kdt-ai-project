@@ -1,0 +1,14 @@
+{
+  "stop_rule": {"window": 3, "fails": 2},
+  "restart_enabled": true,
+  "lot_tracking": true,
+  "equipment": {
+    "LEAK-1": "LEAK",
+    "LEAK-2": "LEAK",
+    "LEAK-3": "LEAK",
+    "LIGHT-1": "LIGHT",
+    "LIGHT-2": "LIGHT",
+    "FINAL-1": "FINAL",
+    "FINAL-2": "FINAL"
+  }
+}

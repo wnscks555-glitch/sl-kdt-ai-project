@@ -17,6 +17,7 @@ class EquipmentBook:
     equipment: Dict[str, str]
     sha256: str
     restart_enabled: bool = False
+    lot_tracking: bool = False
 
 
 @dataclass(frozen=True)
@@ -72,7 +73,10 @@ def load_equipment(path: Path, models: Mapping[str, ModelRecipe]) -> EquipmentBo
             if key not in allowed:
                 errors.append(location + "." + key + ": 허용하지 않은 키")
 
-    check_keys(data, ("stop_rule", "equipment", "restart_enabled"), "$")
+    check_keys(data, ("stop_rule", "equipment", "restart_enabled", "lot_tracking"), "$")
+    lot_tracking = data.get("lot_tracking", False)
+    if type(lot_tracking) is not bool:
+        errors.append("lot_tracking: true 또는 false여야 함 (문자열·숫자 불가)")
     restart_enabled = data.get("restart_enabled", False)
     if type(restart_enabled) is not bool:
         errors.append("restart_enabled: true 또는 false여야 함 (문자열·숫자 불가)")
@@ -105,4 +109,4 @@ def load_equipment(path: Path, models: Mapping[str, ModelRecipe]) -> EquipmentBo
                 errors.append(location + ": 레시피에 없는 검사 ID")
     if errors:
         raise EquipmentError(errors)
-    return EquipmentBook(window, fails, equipment, hashlib.sha256(content).hexdigest(), restart_enabled)
+    return EquipmentBook(window, fails, equipment, hashlib.sha256(content).hexdigest(), restart_enabled, lot_tracking)

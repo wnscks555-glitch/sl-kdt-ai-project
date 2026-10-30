@@ -1,0 +1,8 @@
+﻿equipment,inspection,counted_results,fail_count,state,stopped_at_seq,stop_count,restart_count,last_restart_result
+LEAK-1,LEAK,9,4,정지,37,2,1,NO_FAULT
+LEAK-2,LEAK,0,0,가동,,0,0,
+LEAK-3,LEAK,0,0,가동,,0,0,
+LIGHT-1,LIGHT,0,0,가동,,0,0,
+LIGHT-2,LIGHT,0,0,가동,,0,0,
+FINAL-1,FINAL,0,0,가동,,0,0,
+FINAL-2,FINAL,0,0,가동,,0,0,

@@ -96,10 +96,13 @@ def print_reports(reports, paths, product_heading="product_id | 최종 상태 | 
         print(path.as_posix())
 
 
-def run_recipe(input_csv: Path, recipe_path: Path, parser, equipment_path=None, *, summary=False, trace=()) -> int:
+def run_recipe(input_csv: Path, recipe_path: Path, parser, equipment_path=None, *, summary=False, trace=(),
+               containment=False) -> int:
     from .recipe import RecipeError, load_recipe
-    from .recipe_reports import PRODUCT_COLUMNS as RECIPE_PRODUCT_COLUMNS, RETEST_PRODUCT_COLUMNS, build_recipe_reports
-    from .recipe_rules import INPUT_COLUMNS as RECIPE_INPUT_COLUMNS, EQUIPMENT_INPUT_COLUMNS
+    from .recipe_reports import (
+        LOT_COLUMN_INDEX, PRODUCT_COLUMNS as RECIPE_PRODUCT_COLUMNS, RETEST_PRODUCT_COLUMNS, build_recipe_reports,
+    )
+    from .recipe_rules import INPUT_COLUMNS as RECIPE_INPUT_COLUMNS, EQUIPMENT_INPUT_COLUMNS, LOT_INPUT_COLUMNS
 
     try:
         book = load_recipe(recipe_path)
@@ -117,12 +120,15 @@ def run_recipe(input_csv: Path, recipe_path: Path, parser, equipment_path=None, 
     if equipment_book is not None:
         print("설비: " + equipment_path.as_posix() + " | SHA-256: " + equipment_book.sha256[:12])
     try:
-        input_columns = EQUIPMENT_INPUT_COLUMNS if equipment_book is not None else RECIPE_INPUT_COLUMNS
+        lot_mode = equipment_book is not None and equipment_book.lot_tracking
+        input_columns = RECIPE_INPUT_COLUMNS
+        if equipment_book is not None:
+            input_columns = LOT_INPUT_COLUMNS if lot_mode else EQUIPMENT_INPUT_COLUMNS
         events = read_events(input_csv, input_columns)
         reports = build_recipe_reports(events, book.models, equipment_book)
         summary_rows = None
         traces = []
-        if summary or trace:
+        if summary or trace or containment:
             from .summary import build_analysis
 
             analysis = build_analysis(events, book.models, equipment_book)
@@ -150,6 +156,17 @@ def run_recipe(input_csv: Path, recipe_path: Path, parser, equipment_path=None, 
                         raise ValueError("meta.json의 defective_products는 비어 있지 않은 제품 ID 문자열 배열이어야 함")
                     if len(defective) != len(set(defective)):
                         raise ValueError("meta.json의 defective_products에는 중복 제품 ID를 허용하지 않음")
+                if "leaked_products" in meta:
+                    leaked = meta["leaked_products"]
+                    if "defective_products" not in meta:
+                        raise ValueError("meta.json의 leaked_products에는 defective_products가 필요함")
+                    if not isinstance(leaked, list) or any(
+                            not isinstance(product_id, str) or not product_id.strip() for product_id in leaked):
+                        raise ValueError("meta.json의 leaked_products는 비어 있지 않은 제품 ID 문자열 배열이어야 함")
+                    if len(leaked) != len(set(leaked)):
+                        raise ValueError("meta.json의 leaked_products에는 중복 제품 ID를 허용하지 않음")
+                    if not set(leaked) <= set(meta["defective_products"]):
+                        raise ValueError("meta.json의 leaked_products는 defective_products의 부분집합이어야 함")
             except FileNotFoundError:
                 meta = None
             summary_rows = build_summary(analysis, meta)
@@ -158,6 +175,8 @@ def run_recipe(input_csv: Path, recipe_path: Path, parser, equipment_path=None, 
 
             traces = [(product_id, build_trace(analysis, product_id)) for product_id in trace]
         columns = RETEST_PRODUCT_COLUMNS if book.retest_enabled else RECIPE_PRODUCT_COLUMNS
+        if lot_mode:
+            columns = columns[:LOT_COLUMN_INDEX] + ("lot",) + columns[LOT_COLUMN_INDEX:]
         restart_mode = equipment_book is not None and equipment_book.restart_enabled
         paths = write_reports(input_csv.stem, reports, columns, equipment_mode=equipment_book is not None,
                               restart_mode=restart_mode)
@@ -165,6 +184,12 @@ def run_recipe(input_csv: Path, recipe_path: Path, parser, equipment_path=None, 
             from .summary import write_summary
 
             summary_path = write_summary(input_csv.stem, summary_rows)
+        containment_rows = None
+        if containment:
+            from .containment import build_containment, write_containment
+
+            containment_rows = build_containment(analysis)
+            containment_path = write_containment(input_csv.stem, containment_rows)
         trace_paths = []
         if traces:
             from .trace import write_trace
@@ -173,7 +198,7 @@ def run_recipe(input_csv: Path, recipe_path: Path, parser, equipment_path=None, 
             trace_paths = [write_trace(input_csv.stem, product_id, rows, product_ids) for product_id, rows in traces]
     except (OSError, UnicodeError, csv.Error, ValueError) as error:
         parser.exit(2, "오류: " + str(error) + "\n")
-    heading = "product_id | model | 최종 상태 | 미완료 이유"
+    heading = "product_id | model | lot | 최종 상태 | 미완료 이유" if lot_mode else "product_id | model | 최종 상태 | 미완료 이유"
     if book.retest_enabled:
         heading += " | history"
     print_reports(reports, paths, heading, equipment_mode=equipment_book is not None, restart_mode=restart_mode)
@@ -186,6 +211,10 @@ def run_recipe(input_csv: Path, recipe_path: Path, parser, equipment_path=None, 
 
         for (_, rows), path in zip(traces, trace_paths):
             print_trace(rows, path)
+    if containment_rows is not None:
+        from .containment import print_containment
+
+        print_containment(containment_rows, containment_path)
     return 0
 
 
@@ -196,13 +225,17 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
     parser.add_argument("--equipment", type=Path, help="검사 설비·정지 규칙 JSON (--recipe 필수)")
     parser.add_argument("--summary", action="store_true", help="설비 모드의 지표·파레토 분석 보고서")
     parser.add_argument("--trace", action="append", default=[], metavar="제품ID", help="설비 모드의 제품 추적 (반복 가능)")
+    parser.add_argument("--containment", action="store_true", help="설비 모드의 정지별 격리 범위 보고서")
     args = parser.parse_args(argv)
     if args.equipment is not None and args.recipe is None:
         parser.error("--equipment는 --recipe와 함께만 사용 가능")
     if (args.summary or args.trace) and args.equipment is None:
         parser.error("--summary와 --trace는 설비 모드에서만 사용 가능")
+    if args.containment and args.equipment is None:
+        parser.error("--containment는 설비 모드에서만 사용 가능")
     if args.recipe is not None:
-        return run_recipe(args.input_csv, args.recipe, parser, args.equipment, summary=args.summary, trace=args.trace)
+        return run_recipe(args.input_csv, args.recipe, parser, args.equipment, summary=args.summary, trace=args.trace,
+                          containment=args.containment)
     try:
         reports = build_reports(read_events(args.input_csv))
         paths = write_reports(args.input_csv.stem, reports)

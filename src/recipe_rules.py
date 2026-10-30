@@ -1,6 +1,7 @@
 """제품별 선형 레시피 판정. 파일과 터미널 입출력은 하지 않는다."""
 
 from dataclasses import dataclass, field, replace
+import re
 from typing import Dict, FrozenSet, Mapping, Optional, Tuple
 
 from .recipe import ModelRecipe
@@ -9,6 +10,7 @@ from .equipment import EquipmentBook, EquipmentState
 
 INPUT_COLUMNS = ("seq", "product_id", "event", "inspection", "result", "model")
 EQUIPMENT_INPUT_COLUMNS = INPUT_COLUMNS + ("equipment",)
+LOT_INPUT_COLUMNS = EQUIPMENT_INPUT_COLUMNS + ("lot",)
 RULE_IDS = (
     "RULE_RECIPE",
     "RULE_SEQ",
@@ -45,6 +47,7 @@ class RecipeProduct:
     retest_counts: Dict[str, int] = field(default_factory=dict)
     inspection_history: Dict[str, Tuple[InspectionAttempt, ...]] = field(default_factory=dict)
     discarded_inspection: Optional[str] = None
+    lot: str = ""
 
     @property
     def history(self) -> str:
@@ -119,7 +122,7 @@ class RecipeProcess:
             model = row["model"]
             if model not in self.models:
                 return self._decision(row, "RULE_RECIPE", False, "model이 비어 있거나 레시피에 없는 모델")
-            updated = RecipeProduct(model, self.models[model])
+            updated = RecipeProduct(model, self.models[model], lot=row.get("lot", ""))
             rule_id = "RULE_RECIPE"
         elif product is None:
             return self._decision(row, "RULE_PRESERVE", False, "미등록 제품")
@@ -214,7 +217,9 @@ class RecipeProcess:
         return self._decision(row, "RULE_EQUIP", True, "")
 
     def _invalid_fields(self, row: Mapping[str, str]) -> str:
-        columns = EQUIPMENT_INPUT_COLUMNS if self.equipment_book is not None else INPUT_COLUMNS
+        columns = INPUT_COLUMNS
+        if self.equipment_book is not None:
+            columns = LOT_INPUT_COLUMNS if self.equipment_book.lot_tracking else EQUIPMENT_INPUT_COLUMNS
         if set(row) != set(columns) or any(
             not isinstance(row.get(name), str) for name in columns
         ):
@@ -222,6 +227,12 @@ class RecipeProcess:
         seq = row["seq"]
         if not seq.isascii() or not seq.isdigit() or int(seq) <= 0:
             return "seq는 양의 정수여야 함"
+        if self.equipment_book is not None and self.equipment_book.lot_tracking:
+            if row["event"] != "REGISTER":
+                if row["lot"]:
+                    return "REGISTER 이외의 lot은 빈칸이어야 함"
+            elif re.fullmatch(r"[A-Z0-9_-]+", row["lot"]) is None:
+                return "lot이 비어 있거나 형식이 잘못됨"
         if self._is_restart(row):
             if row["product_id"]:
                 return "EQUIP_RESTART의 product_id는 빈칸이어야 함"

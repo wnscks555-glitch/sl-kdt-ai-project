@@ -3,6 +3,7 @@ from .recipe_rules import RULE_IDS, RecipeProcess
 
 PRODUCT_COLUMNS = ("product_id", "model", "state", "incomplete_reason")
 RETEST_PRODUCT_COLUMNS = PRODUCT_COLUMNS + ("history",)
+LOT_COLUMN_INDEX = 2
 EQUIPMENT_COLUMNS = ("equipment", "inspection", "counted_results", "fail_count", "state", "stopped_at_seq")
 RESTART_COLUMNS = EQUIPMENT_COLUMNS + ("stop_count", "restart_count", "last_restart_result")
 
@@ -28,7 +29,9 @@ def build_recipe_reports(events, models, equipment_book=None):
         if not decision.accepted:
             counts[decision.rule_id] += 1
     products = [
-        (product_id, product.model, product.status, product.incomplete_reason)
+        (product_id, product.model)
+        + ((product.lot,) if equipment_book is not None and equipment_book.lot_tracking else ())
+        + (product.status, product.incomplete_reason)
         + ((product.history,) if process.retest_enabled else ())
         for product_id, product in process.products.items()
     ]
