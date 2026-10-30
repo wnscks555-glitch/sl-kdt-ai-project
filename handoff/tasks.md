@@ -1,4 +1,196 @@
-# 현행 작업: v2 5단계 — 설비 복구와 정지 규칙 평가
+# 현행 작업: v2 6단계 — 격리 범위 추적과 로트 ID
+
+상태: **사용자 확정** (2026-10-31). 결정 근거는 `handoff/decisions.md`. 1–5단계(아래 명세)는 완료이며, 그 동작과 테스트는 보존한다.
+
+## 목표와 경계
+- 설비가 멈췄을 때 **이미 PASS로 지나간 제품 중 어디까지 의심할지**를 뽑고, 방식별 포착률과 격리량을 비교한다.
+- 격리는 **분석 보고서**다. 제품 상태, 보류, 재검사를 바꾸지 않는다.
+- 분포·확률은 모두 가상 가정이다. 실제 설비 진단이나 SL 기준이 아니다. 기존 고정 문장을 유지한다.
+- 제외: 측정값, 관리도, 실제 시각, 생산 중간 고장, 자동 격리, 외부 패키지. 측정값 관련 내용은 7단계에서 따로 명세한다.
+
+## 왜 생성 가정을 바꾸는가
+- 기존 결함품은 설비와 무관하게 FAIL 90%, PASS 10%다. 고장 때문에 **더 놓치는** 효과는 모델링되어 있지 않다.
+- 현행 설정(고장 FAIL 30%, 결함 2%, 추가 미검출 50%)은 간이 계산에서 실행당 유출이 약 0.11건으로 비교가 성립하지 않는다.
+- 그래서 **미세 고장**으로 바꾼다. 아래 값의 간이 계산은 첫 정지까지 약 46검사, 실행당 유출 약 1.26건, 유출 있는 실행 약 56%다. 이 수치는 고장 설비 1대만 본 독립 추정이며 실제 시드 결과가 아니다.
+
+## 보존 조건
+- `lot_tracking`이 없거나 `false`이면 v1·1–5단계의 입력·출력·종료 코드·난수 흐름은 바이트까지 같다.
+- `src/rules.py`와 기존 테스트 8개 파일(`test_rules`, `test_recipe`, `test_retest`, `test_equipment`, `test_generate`, `test_summary`, `test_restart`, `test_evaluate`)은 수정하지 않는다. 새 테스트는 `tests/test_containment.py`에 둔다.
+- 기존 설정 파일, 샘플, `eval_dev`·`eval_holdout`·`eval_baseline` 보고서는 바꾸지 않는다.
+- 생성기 버전은 `lot_size`가 있는 설정에서만 `1.3.0`이다. 그 밖의 설정은 기존 버전을 유지한다.
+
+## 모드와 헤더
+| 설비 파일 `lot_tracking` | CSV 헤더 | products 열 |
+| --- | --- | --- |
+| 없음 또는 `false` | 기존 7열. 8열이면 종료 코드 2 | 기존과 같음 |
+| `true` | `seq,product_id,event,inspection,result,model,equipment,lot`. 7열이면 종료 코드 2 | `model` 뒤에 `lot` |
+
+- bool 외의 값은 종료 코드 3이다.
+- `--equipment` 없이는 로트 모드를 쓸 수 없다. `restart_enabled`와는 독립이다.
+
+## 입력 규칙
+`REGISTER`에서만 `lot`을 쓴다. 형식은 `^[A-Z0-9_-]+$`이며 대소문자를 정리하지 않고 비교한다.
+
+검사 순서: 열 구조 → `seq` → `lot` → 그 뒤는 기존 순서. 재가동 행도 같은 순서를 쓰므로, `lot`이 잘못되면 다른 오류가 함께 있어도 `lot` 사유로 거절한다.
+
+| 입력 | 판정 | 이유 문구 | 사유 코드 |
+| --- | --- | --- | --- |
+| `REGISTER`의 lot 빈칸·형식 오류 | `RULE_PRESERVE` 거절 | `lot이 비어 있거나 형식이 잘못됨` | `PRESERVE_BAD_LOT` |
+| `REGISTER` 외 행(재가동 포함)의 lot 기입 | `RULE_PRESERVE` 거절 | `REGISTER 이외의 lot은 빈칸이어야 함` | `PRESERVE_LOT_FIELD` |
+
+이미 등록된 제품을 다른 lot으로 다시 등록하면 기존처럼 `이미 등록된 제품`으로 거절하며 lot은 바뀌지 않는다.
+
+## 격리 보고서 (`--containment`)
+`--equipment`가 있을 때만 쓴다. 없으면 종료 코드 2다. 전체 입력 처리 뒤 `reports/<입력>_containment.csv`를 쓴다.
+
+**대상**: 정지 S의 설비 E에서, S 행 이전(S 행 포함)에 `(제품, 검사)` 기준 허용된 **최초 검사 PASS**를 받은 제품이다.
+- 재검사 PASS는 대상이 아니다.
+- 다른 검사로 보류·폐기된 제품도 포함한다. 불량이 물리적으로 지나갔는지를 보기 때문이다.
+- 모든 방식은 **정지 시점까지의 행만** 본다.
+
+**구간**: E에 대해 **허용된** 가장 최근 `EQUIP_RESTART` 다음 행부터 S까지다. 없으면 입력 시작부터다. 다른 설비의 재가동과 거절된 재가동은 구간을 바꾸지 않는다. 모든 방식은 이 구간을 넘어 거슬러 가지 않는다.
+
+| 방식 | 의심 범위 |
+| --- | --- |
+| `window` | 정지 창 안의 PASS 제품 |
+| `last_10` | 구간 안, S를 포함한 E의 허용 최초 검사 최근 10건 중 PASS 제품 |
+| `last_20` | 같은 조건의 최근 20건 중 PASS 제품 |
+| `lot` | 구간 안에서 E를 PASS했고, 정지 창의 FAIL 제품들이 속한 로트에 있는 제품. `lot_tracking`이 켜져 있을 때만 |
+| `since_restart` | 구간 안에서 E를 PASS한 제품 전체 |
+
+`since_restart`는 그 구간의 유출을 구조적으로 모두 포함한다. 기준선(상한)으로 해석한다.
+
+열: `stop_key,equipment,method,row_index,seq,product_id,lot,final_state`
+- `row_index`, `seq`는 E의 최초 PASS 행이다. `final_state`는 입력 전체 처리 후 상태다.
+- 정렬은 정지 순서 → 위 표의 방식 순서 → `row_index`다. 물리적 행 순서이므로 `seq` 중복·감소와 무관하다.
+- 범위가 없는 정지는 행을 쓰지 않는다. 정지가 없으면 헤더만 쓴다.
+- 터미널에는 정지·방식별 건수만 표로 낸다.
+
+## 생성기
+새 파일 `recipes/equipment_lot.json`(재가동 설비 + `lot_tracking: true`)과 설정 2개를 만든다. 값은 `generator_restart.json`을 잇고 아래만 다르다.
+
+| 키 | `generator_lot.json` | `generator_lot_clustered.json` |
+| --- | --- | --- |
+| `faulty_equipment` | `{"LEAK-2": 0.10}` | 같음 |
+| `lot_size` | 20 | 같음 |
+| `faulty_detection_loss` | `{"LEAK-2": 0.5}` | 같음 |
+| `defective_product_probability` | 0.05 | 사용하지 않음 |
+| `defective_lot_probability` | 없음 | 0.25 |
+| `defective_in_lot_probability` | 없음 | 0.2 |
+
+- 두 설정의 기대 결함률은 모두 5%다.
+- lot ID는 등록 순서대로 `LOT-0001`부터 `lot_size`개씩 묶는다.
+- `faulty_detection_loss`는 수리 전 고장 설비에서 결함품의 FAIL 확률을 `defective_fail_probability × (1 − loss)`로 낮춘다. 값 0.5면 FAIL 0.45, PASS 0.55다. 재검사에도 같은 식을 쓴다. 수리 뒤에는 기존 0.9로 돌아간다.
+- **유출**: 결함품이 수리 전 고장 설비에서 최초 검사 PASS를 받은 경우의 제품이다. 결함 여부와 유출은 CSV에 넣지 않고 판정기에 주지 않는다.
+- meta에 `lot_size`, `leaked_products`를 추가한다. 평가는 생성기가 기록한 유출 집합을 쓰고, meta의 값은 그 집합을 정렬해 저장한 것이다.
+- `src/main.py`의 meta 검증: `leaked_products`는 비어 있지 않은 문자열 배열 항목만 갖고, 중복이 없고, `defective_products`의 부분집합이어야 한다. `defective_products` 없이 `leaked_products`만 있으면 오류다. 등록 제품 여부는 summary에서 기존 `defective_products`와 같이 확인한다. 위반은 종료 코드 2다.
+- 오류 주입 5종은 그대로다. 주입 행의 lot은 빈칸이고, 재가동 행은 기존처럼 후보에서 뺀다.
+
+설정 검증(위반은 생성·평가 모두 종료 코드 2, 파일 미생성):
+- `lot_size`는 bool을 제외한 양의 정수다. 마지막 로트는 `lot_size`보다 작을 수 있다.
+- `faulty_detection_loss`, `defective_lot_probability`, `defective_in_lot_probability`는 유한한 0–1 값이다.
+- `faulty_detection_loss`의 키는 `faulty_equipment`에 있는 설비여야 한다. 없는 설비의 손실은 0이다.
+- `lot_size` 없이 `faulty_detection_loss`나 집중 로트 키를 쓰면 오류다. 집중 로트 키는 둘 다 있거나 둘 다 없어야 한다.
+- `lot_size`가 있으면 설비 파일의 `lot_tracking`이 `true`여야 한다.
+
+## 평가 (`py -m src.evaluate --containment`)
+
+```powershell
+py -m src.evaluate --containment --config recipes/generator_lot.json --seeds 0-99 --rules 3:2 --out eval_lot_dev
+py -m src.evaluate --containment --config recipes/generator_lot_clustered.json --seeds 0-99 --rules 3:2 --out eval_lot_clustered_dev
+py -m src.evaluate --containment --config recipes/generator_lot.json --seeds 1000-1099 --rules 3:2 --out eval_lot_holdout --holdout --selected-from reports/eval_lot_dev_containment.csv
+py -m src.evaluate --containment --config recipes/generator_lot_clustered.json --seeds 1000-1099 --rules 3:2 --out eval_lot_clustered_holdout --holdout --selected-from reports/eval_lot_clustered_dev_containment.csv
+```
+
+- 정지 규칙은 3:2로 고정한다. 이 단계는 정지 규칙이 아니라 격리 방식을 비교한다. `--containment`에서는 규칙 목록이 정확히 `3:2` 하나여야 한다.
+- 설정에 `lot_size`가 없으면 종료 코드 2다. 고장 설비가 여러 대면 기존처럼 거절한다.
+- `--containment --holdout`은 `--selected-from`이 필수다. 개발 보고서의 선택 행과 설정 SHA-256을 읽는다. 파일이 없거나, 선택 행이 없거나, SHA가 다르면 종료 코드 2다.
+- 개발에서 선택이 없었으면(표본 부족 또는 기준 충족 방식 없음) 홀드아웃은 `검증할 선택 없음`으로 표시하고 종료 코드 0이다.
+- 홀드아웃 보고서는 모든 방식의 지표와 **선택 방식의 최종 판정**을 구분해 쓴다. 판정은 선택 방식에 대해서만 낸다.
+- 출력은 `reports/<out>_containment.csv`다. 고정 문장, 설정 SHA-256, 생성기 버전을 함께 기록한다.
+
+### 지표 (전체 합산)
+실행 r의 유출 집합을 `E_r`, 방식 m이 그 실행의 모든 정지에서 고른 **고유 제품 합집합**을 `C_m,r`로 둔다. 실행별 비율의 평균은 쓰지 않는다.
+
+| 지표 | 식 |
+| --- | --- |
+| 포착률 | `Σ|C ∩ E| ÷ Σ|E|` |
+| 평균 격리량 | `Σ|C| ÷ 실행 수` |
+| 격리 정밀도 | `Σ|C ∩ E| ÷ Σ|C|` |
+| 평균 잔류 유출 | `Σ|E − C| ÷ 실행 수` |
+
+- 분모가 0이면 빈칸이다. 함께 전체 실행 수, 유출 있는 실행 수, 유출품 합계, 정지 합계를 표시한다.
+- 비율은 소수 넷째 자리, 평균은 소수 둘째 자리 `ROUND_HALF_UP`이다.
+
+### 사전 선택 기준 (결과를 보기 전에 고정)
+1. **표본 조건**: 개발 시드에서 유출품 합계 ≥ 30이고 유출 있는 실행 ≥ 20이어야 한다. 미달이면 `평가 표본 부족`으로 끝내고 선택하지 않는다.
+2. 포착률 ≥ **0.90**인 방식만 남긴다. 정확히 0.90은 통과다.
+3. 평균 격리량이 가장 작은 방식을 고른다. 동률이면 위 표의 방식 순서를 쓴다.
+4. 독립·집중 설정을 **각각** 판정한다. 후보가 없으면 `기준 충족 방식 없음`으로 끝내고 기준을 완화하지 않는다.
+5. 홀드아웃 시드 1000–1099는 개발에서 선택한 방식이 1·2번 조건을 유지하는지만 본다. 표본 조건 미달도 `미확인`이다. 실패해도 다시 고르지 않는다.
+
+## 사전 기대표 (사용자 확정, 2026-10-31. 구현 결과에 맞춰 바꾸지 않는다)
+T68–T74 공통: `lamp_models_retest.json`, 재가동·로트 모드, 3:2 규칙. 제품은 B 모델로 등록하고 P1~P2를 마친 상태다. T70·T71은 제품마다 lot을 달리 쓰지 않아도 되는 사례다.
+
+| ID | 입력 | 기대 결과 |
+| --- | --- | --- |
+| T67 | 신규 제품 z를 B 모델, lot `L1`로 등록 | 허용. products의 `lot`은 L1 |
+| T68 | ① lot 빈칸 등록 ② `l-1` 등록 ③ P1 행에 lot 기입 ④ 재가동 행에 lot 기입 ⑤ 재가동 행에 lot 기입 + `result=OK` ⑥ 등록된 제품을 다른 lot으로 재등록 | ①② `PRESERVE_BAD_LOT` ③④⑤ `PRESERVE_LOT_FIELD` ⑥ `이미 등록된 제품`. 모두 제품·설비 상태와 lot 불변 |
+| T69 | ① 키 없는 설비 파일 + 7열 ② `lot_tracking: false` + 7열 ③ 키 없음 + 8열 ④ `true` + 7열 ⑤ `"lot_tracking": 1` | ①② 기존 출력과 바이트 동일 ③④ 종료 코드 2 ⑤ 종료 코드 3 |
+| T70 | LEAK-1에 a·b·c·d PASS, e·f FAIL | 창은 d·e·f, 정지는 f 행. `window`={d}, `last_10`=`last_20`=`since_restart`={a,b,c,d} |
+| T71 | T70 뒤 재가동, g PASS, h·i FAIL | 두 번째 정지의 네 방식 범위는 모두 {g}. 첫 정지 범위는 그대로 |
+| T72 | T70에서 a·b·e는 L1, c·d·f는 L2 | `lot`={a,b,c,d} |
+| T73 | T70에서 a·b·c·d는 L9, e·f는 L1 | `lot`은 0행. `since_restart`는 {a,b,c,d} |
+| T74 | ① PASS 없는 정지(a·b FAIL) ② `--containment`를 `--equipment` 없이 ③ 키 없는 설비 파일로 `--containment` ④ 정지 없는 입력 | ① 0행 ② 종료 코드 2 ③ `lot` 방식 없이 네 방식만 ④ 헤더만 |
+| T75 | LEAK-1 최초 검사 PASS 12건 뒤 FAIL 2건 | 최근 10건은 PASS 8건, FAIL 2건. `last_10`은 PASS 5–12번째 8건, `last_20`과 `since_restart`는 12건 전부 |
+| T76 | a LEAK FAIL @LEAK-1 → 요청 → a LEAK PASS @LEAK-2. b LEAK PASS @LEAK-2 → P3 → P4 → LIGHT FAIL. 이어서 c·d LEAK FAIL @LEAK-2로 정지 | `since_restart`={b}. a는 재검사 PASS라 제외. b의 `final_state`=보류 |
+| T77 | 지표 함수: 실행 1 `E={1..9}`, `C={1..9}`, 실행 2 `E={x}`, `C={}` | 포착률 0.9000, 잔류 평균 0.50. 실행별 평균 0.50이 아님 |
+| T78 | 지표 함수: `E={p,q,r}`, `C={p,q,s,t}`, 같은 제품이 두 정지에 든 경우 1회 | 포착률 0.6667, 정밀도 0.5000, 격리량 4.00, 잔류 1.00 |
+| T79 | 선택 함수. ①–④는 유출 100건, 유출 실행 50회 고정. 방식별 (포착, 격리량): ① `window` (8999/10000, 1), `since_restart` (9/10, 50) ② `last_10` (9/10, 5), `since_restart` (1/1, 50) ③ `window`와 `last_10` 모두 (1/1, 5) ④ 전부 (1/2, 5). ⑤ 유출 29건·유출 실행 50회 ⑥ 유출 100건·유출 실행 19회 | ① `since_restart` ② `last_10` ③ `window` ④ `기준 충족 방식 없음` ⑤⑥ `평가 표본 부족` |
+| T80 | 홀드아웃 판정, 선택 방식 `last_10`. ① 유출 100건, 유출 실행 50회, 포착 91건 ② 같은 표본, 포착 89건 ③ 유출 0건 ④ 유출 100건, 유출 실행 19회, 포착 91건 ⑤ 개발 선택 없음 ⑥ 설정 SHA 불일치 | ① `확인` ②③④ `미확인` ⑤ `검증할 선택 없음`, 종료 코드 0 ⑥ 종료 코드 2. ①–④는 다른 방식을 고르지 않음 |
+| T81 | `generator_lot.json`, 시드 42·7, 제품 500·200을 두 번 생성·판정 | CSV·meta·보고서 바이트 동일. 정상 행 전부 허용. meta 버전 `1.3.0`. CSV에 결함 정보 없음. 시드 0–29 합계에서 유출품 1건 이상 |
+| T82 | T75 입력(제품 p01–p12 PASS, 재가동 없음)에 평가용 유출 집합 `E={p01, p12}` 지정 | `last_10`은 p12 포착, p01 잔류. `since_restart`는 둘 다 포착 |
+| T83 | `generator_lot_clustered.json`, 시드 0–29, 시드마다 제품 500개(로트 25개). 결함 로트는 실제 결함품이 1개 이상인 `(seed, lot)` | 고정 표본의 인수 기준: 결함품 합산 비율 0.03~0.07, 결함 로트 비율 ≤ 0.50. `generator_lot.json`의 결함 로트 비율보다 낮음 |
+| T84 | 평가 명령 오류: ① `--rules 3:2,5:2` ② `--rules 5:2` ③ `lot_size` 없는 설정 ④ 고장 설비 2대 ⑤ `--holdout`만 있고 `--selected-from` 없음 | 모두 종료 코드 2, 보고서 미생성 |
+| T85 | 같은 평가 명령 두 번 | 보고서 바이트 동일 |
+| T86 | LEAK-1에 a PASS → LEAK-2 재가동 허용 → LEAK-1 재가동 거절(가동 중) → b PASS, c·d FAIL | LEAK-1 정지의 `since_restart`={a,b}. 다른 설비 재가동과 거절된 재가동은 구간을 바꾸지 않음 |
+| T87 | 설정 값 오류: ① `lot_size: 0` ② `lot_size: true` ③ loss 1.5 ④ 고장 목록에 없는 설비의 loss ⑤ `lot_size` 없이 loss ⑥ 집중 키 하나만 ⑦ `lot_size`가 있는데 `lot_tracking` 꺼짐 | 모두 종료 코드 2, 파일 미생성 |
+| T88 | meta `leaked_products`: ① `[""]` ② 중복 ③ `defective_products`에 없는 ID ④ `defective_products` 없음 ⑤ 미등록 제품 | ①–⑤ `--summary`에서 종료 코드 2 |
+
+## 구현 순서
+1. **6a**: 입력, 로트 모드, 격리 범위, 보고서, T67–T76, T86.
+2. **6b**: 생성기, 평가, T77–T85, T87, T88, 개발·홀드아웃 실행.
+
+두 묶음을 각각 커밋하고, 6b 뒤 자동 검토 루프를 한 번 돌린다. 최초 검수는 `gpt-6-astra`, 재검수는 `gpt-6.1-sol`이다.
+
+## 구현 시 주의점
+- `EQUIPMENT_INPUT_COLUMNS`는 생성기·판정기·`_invalid_fields`가 함께 쓴다. 로트 열은 모드로 분기하고, 기존 상수를 바꾸지 않는다.
+- `_invalid_fields`의 재가동 분기는 일반 검사보다 앞에 있다. lot 검사를 그보다 먼저 둔다.
+- `Generator.product`의 결함 추출과 집중 로트 추출은 같은 난수 흐름을 쓴다. `lot_size`가 없으면 난수 소비가 바뀌지 않아야 한다.
+- `summary.py`의 `fail_causes`, `stop_history`를 재사용한다. 정지 전 창은 `EquipmentStop.window`에 있다.
+
+## 산출물
+- `src/containment.py`, `src/equipment.py`, `src/recipe_rules.py`, `src/reason_codes.py`, `src/recipe_reports.py`, `src/main.py`, `src/generate.py`, `src/evaluate.py`
+- `recipes/equipment_lot.json`, `recipes/generator_lot.json`, `recipes/generator_lot_clustered.json`, 샘플 `data/sample_events_lot.csv`와 보고서, `reports/eval_lot_*`
+- `tests/test_containment.py`, README 「격리 범위와 로트 (v2 6단계)」 절
+
+## 완료 보고 (반드시 포함)
+- 실행 명령과 출력 원문, 전체 테스트 결과, T67–T88 기대·실제 대조
+- 방식별 지표 표(독립·집중), 선택 결과, 홀드아웃 판정, 표본 조건 충족 여부
+- 명세와 다르게 구현한 부분, 또는 "명세 이견" 항목
+
+## 사용자 결정 (2026-10-31 확정)
+| 항목 | 확정 값 | 왜 사용자가 정했나 |
+| --- | --- | --- |
+| 포착률 기준 | 0.90 | 격리량과 유출 위험의 판단. 결과를 본 뒤 바꿀 수 없음 |
+| 표본 조건 | 유출품 ≥ 30, 유출 실행 ≥ 20 | 평가 성립 여부를 가름 |
+| 고장 FAIL 확률 | 0.10 | 5단계 0.30에서 변경. 미세 고장 가정 |
+| 결함률 | 0.05 | 5단계 0.02에서 변경. 오탐 정지도 함께 늘어남 |
+| 추가 검출 손실 | 0.5 | 유출 규모를 정하는 가정 |
+| 로트 크기, 결함 로트 가정 | 20, 0.25, 0.2 | `lot` 방식의 성능을 좌우 |
+| 소급 건수 | 10, 20 | 비교 범위 |
+
+# v2 5단계 명세 (완료, 2026-10-31 · 리뷰 011 PASS)
 
 상태: **사용자 확정** (2026-10-30). 결정 근거는 이 명세의 「사용자 결정」 표. 1–4단계(아래 명세)는 완료이며, 그 동작과 테스트는 보존한다.
 
