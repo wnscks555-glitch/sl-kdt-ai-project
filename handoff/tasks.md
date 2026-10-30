@@ -1,4 +1,264 @@
-# 현행 작업: v2 6단계 — 격리 범위 추적과 로트 ID
+# 현행 작업: v2 7a단계 — 측정값 판정과 공정능력
+
+상태: **사용자 확정** (2026-10-31). 결정 근거는 `handoff/decisions.md`. 1–6단계(아래 명세)는 완료이며, 그 동작과 테스트는 보존한다.
+
+## 목표와 경계
+- PASS/FAIL 입력 대신 합성 측정값을 받아 판정기가 결과를 계산하고, Cpk·Ppk를 공식대로 낸다.
+- 분포·규격값은 모두 가상 가정이다. 실제 설비 진단이나 SL 기준이 아니다. 기존 고정 문장을 유지한다.
+- 제외: 관리도·WECO 정지 규칙(7b), 생산 중간 고장과 규칙 비교 평가(7c), 정규성 검정, 측정 시스템 분석, 외부 패키지.
+- **이 단계에 정지 규칙 선택은 없다.** 정지는 기존 FAIL 기반 규칙 그대로이고, 사전 선택 기준도 두지 않는다.
+
+## 보존 조건
+- 측정 레시피를 쓰지 않으면 v1·1–6단계의 입력·출력·종료 코드·난수 흐름은 바이트까지 같다.
+- `src/rules.py`와 기존 테스트 파일은 수정하지 않는다. 새 테스트는 `tests/test_measurement.py`에 둔다.
+- 기존 설정, 샘플, 평가 보고서는 바꾸지 않는다.
+- 생성기 버전은 `process_cpk`가 있는 설정에서만 `1.4.0`이다.
+
+## 모드와 헤더
+**측정 모드**는 레시피의 검사 항목에 규격이 있을 때 켜진다. 새 파일은 `recipes/lamp_models_measured.json`이다.
+
+| 레시피 | 설비 파일 | CSV 헤더 |
+| --- | --- | --- |
+| 규격 없음 | 기존과 같음 | 기존과 같음 |
+| 규격 있음 | `lot_tracking` 없음·`false` | `seq,product_id,event,inspection,result,model,equipment,value` (8열) |
+| 규격 있음 | `lot_tracking: true` | `seq,product_id,event,inspection,result,model,equipment,lot,value` (9열) |
+
+- 측정 레시피는 `--equipment`가 필수다. 없으면 종료 코드 2다.
+- 재가동은 열 추가가 아니라 이벤트이므로 헤더와 무관하다.
+- 헤더가 다르면 종료 코드 2다.
+- 판정기는 측정 + 로트 9열을 지원한다. 생성기는 이 조합을 지원하지 않는다(「생성 설정 검증」).
+
+## 레시피 규격
+검사 항목에 `lsl`, `usl`, `unit`을 추가한다.
+
+```json
+{"id": "LEAK", "after": "P2", "lsl": null, "usl": "13.000", "unit": "가상 단위"}
+```
+
+위반은 모두 종료 코드 3이며 위치를 표시한다.
+- 어떤 검사 항목이든 규격을 쓰면 **레시피의 모든 검사 항목**에 세 키가 다 있어야 한다.
+- `lsl`, `usl`은 `null` 또는 문자열 소수다. 형식은 `^-?\d+(\.\d+)?$`이고, 부호와 소수점을 뺀 숫자는 30자리 이하다. 숫자형 JSON, 지수 표기, `NaN`, `Infinity`는 거절한다.
+- 둘 다 `null`이면 오류다. 둘 다 있으면 `lsl < usl`이어야 한다.
+- `unit`은 공백만 있지 않은 문자열이다.
+- **같은 검사 ID는 모델이 달라도 규격과 단위가 같아야 한다.** Cpk 묶음이 하나의 규격을 갖게 하기 위해서다.
+
+## 측정 입력
+`INSPECT`에서만 `value`를 쓴다. 형식은 자릿수 상한을 포함해 규격과 같고, `Decimal`로 정확히 비교한다. `13`과 `13.000`은 같은 값이다. 입력값은 반올림하지 않고 원문을 보존한다.
+
+판정: 있는 쪽 규격만 보고 `lsl <= value <= usl`이면 PASS, 아니면 FAIL이다. 경계값은 PASS다. 이 판정은 `src/recipe_rules.py`의 공통 함수 하나로 두고 판정기와 생성기가 함께 쓴다.
+
+| 입력 | 판정 | 이유 문구 | 사유 코드 |
+| --- | --- | --- | --- |
+| `INSPECT`의 `result` 기입 | `RULE_PRESERVE` 거절 | `측정 모드의 INSPECT result는 빈칸이어야 함` | `PRESERVE_RESULT_FIELD` |
+| `INSPECT`의 value 빈칸·형식 오류 | `RULE_PRESERVE` 거절 | `value는 소수 형식이어야 함` | `PRESERVE_BAD_VALUE` |
+| `INSPECT` 외 행(재가동 포함)의 value 기입 | `RULE_PRESERVE` 거절 | `INSPECT 이외의 value는 빈칸이어야 함` | `PRESERVE_VALUE_FIELD` |
+
+- 재가동의 `result`(`FIXED`, `NO_FAULT`)는 그대로다. `RETEST_REQUEST`의 `result` 빈칸 규칙도 그대로다.
+- 검사 순서: 열 구조 → `seq` → `lot` → value 기입 위치 → 측정 `result` 빈칸 → value 형식 → 그 뒤는 기존 순서.
+- 재검사도 `INSPECT`이므로 같은 규칙을 쓴다.
+
+## 판정 결과 전달
+- `RecipeProcess.apply`는 입력 행을 바꾸지 않는다.
+- `Decision`에 `result`(이 행에서 확정된 결과)와 `value`(입력 원문)를 추가한다. 비측정 모드와 재가동 행의 `result`는 입력값이고, 측정 모드의 허용된 `INSPECT`는 계산값, 거절된 `INSPECT`는 빈칸이다.
+- `InspectionRecord`와 제품 이력 객체 `InspectionAttempt`에 `value`를 추가하고, `result`는 `Decision.result`에서 받는다. summary, trace, 설비 집계, 생성기 재생이 모두 이 값을 쓴다.
+- rows 입력 표시: `INSPECT LEAK PASS @LEAK-1 value=12.300`. 거절된 행은 원문 value를 그대로 보이고 결과는 비운다.
+- trace는 측정 모드에서만 `value,lsl,usl` 열을 끝에 추가한다.
+- history 표기는 측정 모드에서 `PASS@12[LEAK-1](value=12.300)`이다.
+
+## 공정능력 (`--capability`)
+측정 모드에서만 쓴다. 아니면 종료 코드 2다. `reports/<입력>_capability.csv`를 쓴다.
+
+- **대상**: `(검사, 설비)`별 허용된 **최초 측정**의 물리적 행 순서. 재검사 측정은 제외한다.
+- **구간**: 그 설비의 허용된 재가동에서 끊는다.
+- **부분군**: 구간 안에서 연속 5개씩 묶는다. 구간 끝의 5개 미만은 부분군에서 뺀다. 여러 구간의 완성 부분군은 합친다.
+- `Xbarbar`: 부분군 평균의 평균. `Rbar`: 부분군 범위의 평균.
+- `sigma_within = Rbar / 2.326`
+- `Cpk = min(USL − Xbarbar, Xbarbar − LSL) / (3 × sigma_within)`. 단측이면 있는 쪽만 쓴다. 평균이 규격 밖이면 음수로 표시한다.
+- `Ppk`: 대상 전체(부분군에서 뺀 값 포함)의 평균 `m`, 표본 표준편차 `s`(분모 `N−1`)로 `min(USL − m, m − LSL) / (3 × s)`.
+- 계산은 `Decimal` 정밀도 100자리로 한다. 계산 중에는 표시 자리수로 양자화하지 않으며, 표시용 `sigma_within`을 Cpk 계산에 다시 쓰지 않는다.
+
+계약은 둘로 나눈다.
+- **계산 함수**는 항목마다 `Decimal` 또는 `None`을 돌려준다. `None`은 계산할 수 없는 항목이다.
+- **표시 함수**는 `Decimal`을 문자열로, `None`을 빈칸으로 바꾼다. 지수 표기 없는 소수 넷째 자리 `ROUND_HALF_UP`이고, 정밀도 100자리 문맥에서 양자화한다. 표시 결과가 영이면 부호 없이 `0.0000`이다.
+- 표본 기준과 `status`는 보고 단계에서만 붙인다.
+
+| 입력 | `xbarbar`, `rbar`, `sigma_within` | `sample_sd` | `cpk` | `ppk` |
+| --- | --- | --- | --- | --- |
+| `n` 0 | 없음 | 없음 | 없음 | 없음 |
+| `n` 1 | 없음 | 없음 | 없음 | 없음 |
+| `n` 2 이상, 부분군 0개 | 없음 | 값 | 없음 | `s > 0`이면 값 |
+| 부분군 1개 | 값 | 값 | 없음 | `s > 0`이면 값 |
+| 부분군 2개 이상 | 값 | 값 | `sigma_within > 0`이면 값 | `s > 0`이면 값 |
+
+보고서의 `status`와 빈칸은 다음과 같다. 위 표에서 없음이면 항상 빈칸이고, 나머지 통계 열은 어떤 상태에서도 계산된 값을 쓴다.
+
+| `status` | 조건 | 값 |
+| --- | --- | --- |
+| `표본 부족` | 완성 부분군 25개 미만 | `cpk`, `ppk` 빈칸 |
+| `변동 없음` | 25개 이상이고 `sigma_within = 0` 또는 `s = 0` | 분모가 0인 값만 빈칸. `Rbar = 0 < s`면 `cpk`만 빈칸 |
+| `계산됨` | 그 밖 | 값 표시 |
+
+`계산됨`은 산술 계산이 가능하다는 뜻이다. 25부분군은 이 프로젝트의 표시 기준이며 안정성이나 정규성을 뜻하지 않는다.
+
+열: `section,inspection,equipment,unit,lsl,usl,n,subgroups,xbarbar,rbar,sigma_within,cpk,sample_sd,ppk,status,value`
+- 첫 행은 `section=notice`로 고정 문장과 함께 "구간을 합친 값이며 안정 공정의 능력을 보증하지 않는다"를 적는다. 고장·수리 구간을 합친 수치를 공정 능력 보증으로 읽지 않게 하기 위해서다.
+- 검사 ID → 설비 ID 순으로 정렬한다. 측정이 0건인 설비도 `표본 부족`으로 한 행을 쓴다.
+
+## 생성기
+새 파일 `recipes/generator_measured.json`, `recipes/equipment_measured.json`(재가동 설비, `lot_tracking` 없음).
+
+- `lamp_models_measured.json`은 `lamp_models_retest.json`의 공정·`retest_limit`에 규격만 더한다.
+- `equipment_measured.json`은 `equipment_restart.json`과 내용이 같다.
+- `generator_measured.json`은 `generator_restart.json`의 `model_weights`, `defective_product_probability` 0.02, `retest_probability` 0.70, `error_rate` 0.03, `restart.delay_rows` 30을 그대로 쓰고 아래 3개 키를 더한다.
+
+| 키 | 값 | 뜻 |
+| --- | --- | --- |
+| `process_cpk` | 1.33 | **정상품·정상 설비 성분**의 목표 공정능력 |
+| `fault_shift_sigma` | `{"LEAK-2": 2.5}` | 수리 전 고장 설비의 평균 이동량. 고장 설비 목록은 이 키다 |
+| `defect_shift_sigma` | 5.0 | 결함품 평균 이동량 |
+
+생성식 (검사마다, 재검사도 새로 추출). 생성식은 `float`로 계산하고 규격은 `float`로 바꿔 넣는다.
+
+```text
+c = (lsl + usl) / 2
+σ = (usl − lsl) / (6 × process_cpk)
+평균 = c + (shift_defect + shift_fault) × σ
+측정값 = gauss(평균, σ)
+```
+
+- `shift_defect`는 결함품이면 `defect_shift_sigma`, 아니면 0이다. `shift_fault`는 수리 전 고장 설비면 그 값, 아니면 0이다. 두 이동은 더한다.
+- 이동은 모두 **+ 방향**이다. 수리 뒤 `shift_fault`는 0이다.
+- 생성값은 소수 셋째 자리 `ROUND_HALF_UP`이다. 이 반올림은 생성기에만 쓴다. 변환은 정밀도 100자리 문맥의 `Decimal(repr(x)).quantize(Decimal("0.001"), ROUND_HALF_UP)` 하나로 고정한다. `Decimal(x)`로 바꾸지 않는다. 결과는 지수 표기 없는 문자열이고, 영이면 부호를 뺀다.
+- 재검사 확률, 모델 비율, 재가동 지연은 기존 키를 쓴다. 판정기에는 결함 여부를 주지 않는다.
+
+### 생성 중 판정
+검사 한 건은 다음 순서로 처리한다.
+
+1. `gauss`로 뽑는다.
+2. 소수 셋째 자리로 확정한다. 이후에는 이 문자열만 쓰고 원래 실수는 버린다. 예: `13.0004`는 `13.000`이 되어 PASS다.
+3. 공통 판정 함수로 결과를 계산한다.
+4. 그 결과로 제품 진행, 재검사 요청, 설비 창, 정지와 재가동 예약을 처리한다.
+5. CSV에는 `result` 빈칸과 확정 `value`를 쓴다.
+
+- `Generator.normal_events`는 측정 모드에서 `row["result"]` 대신 계산 결과로 설비를 기록한다.
+- 측정 모드의 고장 설비 목록은 `fault_shift_sigma`의 키다. `Generator.product`의 확률 분기와 `add_restart`의 `FIXED` 판별이 이 키를 쓴다.
+- `inject_errors`의 재생 결과는 생성 중 설비·제품 상태와 같아야 한다. 정상 행이 거절되면 기존처럼 종료 코드 2다.
+
+### 생성 설정 검증
+측정 설정은 `process_cpk`가 있는 설정이다. 다음은 모두 파일을 만들기 전에 종료 코드 2다.
+
+- 측정 레시피에 `process_cpk`가 없거나, 비측정 레시피에 `process_cpk`가 있음. 측정 설정은 값이 잘못돼도 측정 설정으로 본다.
+- `fault_shift_sigma`나 `defect_shift_sigma` 없음, 또는 `process_cpk` 없이 둘 중 하나가 있음.
+- 측정 설정에 허용 키 밖의 키가 있음. 허용 키는 `recipe`, `equipment`, `model_weights`, `defective_product_probability`, `retest_probability`, `error_rate`, `restart`, `process_cpk`, `fault_shift_sigma`, `defect_shift_sigma`다. 따라서 `normal_fail_probability`, `defective_fail_probability`, `faulty_equipment`, `faulty_detection_loss`, `lot_size`, 결함 로트 키, `defective_shift_sigma` 같은 오기는 모두 거절된다.
+- 설비 파일의 `lot_tracking: true`, 또는 `restart` 설정 없음.
+- 레시피에 `retest_limit` 없음.
+- 단측 규격. 생성 설정의 규격은 **모두 양측**이어야 한다. 단측 규격은 판정기만 지원한다.
+- `fault_shift_sigma`가 객체가 아니거나, 키가 설비 파일에 없는 설비임. 빈 객체는 허용한다.
+- `process_cpk`와 이동량이 유한한 양수가 아님. bool은 거절한다.
+- 레시피 규격에서 계산한 `σ`나 이동 합을 더한 평균이 유한하지 않음.
+- 생성 중 확정 문자열이 value 자릿수 상한(30자리)을 넘음. 판정할 수 없는 값을 쓰지 않기 위해서이며, 이때도 파일을 만들지 않는다.
+- `defective_product_probability`, `retest_probability`, `error_rate`가 없거나 0–1 값이 아님.
+
+버전과 오류 주입 목록은 이 검증을 통과한 모드로 고른다.
+
+### 가정의 FAIL 확률
+규격 7–13에서 목표 σ는 `0.751879…`이다. 아래는 반올림 전 정규분포 값이며 최초 투입 기준이다.
+
+| 성분 | 평균 이동 | FAIL 확률 |
+| --- | ---: | ---: |
+| 정상품·정상 설비 | 0σ | 약 0.0066% |
+| 결함품·정상 설비 | +5σ | 약 84.38% |
+| 정상품·고장 설비 | +2.5σ | 약 6.81% |
+| 결함품·고장 설비 | +7.5σ | 약 99.98% |
+
+결함품 2%를 섞은 FAIL률은 정상 설비 약 1.69%, 고장 설비 약 8.67%다. 뒤 검사는 앞에서 보류·폐기된 제품이 빠지므로 이 비율을 그대로 쓸 수 없다. `process_cpk` 1.33은 정상품·정상 설비 성분의 값이므로, 보고서의 Cpk·Ppk가 1.33과 다른 것만으로 구현 오류라고 판단하지 않는다.
+
+### 오류 주입
+측정 모드의 5종은 다음과 같다. 주입 행은 항상 `result`가 빈칸이다.
+
+| 코드 | 주입 행 | 예상 거절 |
+| --- | --- | --- |
+| `SEQ_SKIP` | 미래 공정 | `RULE_SEQ` |
+| `PRESERVE_BAD_VALUE` | `value=abc` | `RULE_PRESERVE` |
+| `PRESERVE_DUP_RESULT` | 결과가 있는 검사를 정상값으로 재입력 | `RULE_PRESERVE` |
+| `EQUIP_UNKNOWN` | `LEAK-9`, 정상값 | `RULE_EQUIP` |
+| `RECIPE_UNKNOWN_STEP` | B 제품 `P5` | `RULE_RECIPE` |
+
+기존 후보 조건은 유지한다. 정상 가동 설비, 중복 결과, 열린 재검사 요청, 재가동 행 제외가 해당한다. 측정 사유 3종의 문구·코드 대응은 측정용 주입 목록과 따로 등록한다.
+
+`src/reason_codes.py`에 측정용 목록을 추가한다. `src/main.py`의 meta 검증은 두 목록 중 입력 모드에 맞는 쪽만 허용하고, summary의 주입 대비 절도 같은 목록을 쓴다.
+
+## 평가
+`py -m src.evaluate`에 측정 설정을 주면 7c 전까지 종료 코드 2다. 7a는 `--capability`만 낸다.
+
+## 사전 기대표 (확정. 구현 결과에 맞춰 바꾸지 않는다)
+공통: 규격 7~13, 재검사·재가동 켬, 3:2 정지 규칙. 제품은 B 모델로 P1~P2를 마친 상태다. T96–T100과 T110–T112는 함수 호출이며(T112②는 생성 호출), `n`은 값 개수다.
+
+| ID | 입력 | 기대 결과 |
+| --- | --- | --- |
+| T89 | 값 `13`, `13.000`, `7`, `13.001`, `6.999` (제품별 한 건) | PASS, PASS, PASS, FAIL, FAIL. FAIL 제품은 보류. 입력 원문 보존 |
+| T90 | value ① 빈칸 ② `abc` ③ `NaN` ④ `Infinity` ⑤ `1e1` ⑥ `+1` ⑦ 숫자 31자리 | 모두 `PRESERVE_BAD_VALUE`, 제품·설비 상태 불변 |
+| T91 | ① `INSPECT`에 `result=PASS`, value 정상 ② `result=PASS`, value 빈칸 ③ P1에 value 기입 ④ 재가동에 value 기입 + `FIXED` ⑤ 정지 설비의 value 없는 정상 재가동 `FIXED` | ①② `PRESERVE_RESULT_FIELD` ③④ `PRESERVE_VALUE_FIELD` ⑤ 허용 |
+| T92 | 레시피 오류: ① `lsl >= usl` ② 둘 다 null ③ 숫자형 lsl ④ `"NaN"` ⑤ 일부 검사만 규격 ⑥ unit 공백 ⑦ 모델별 LEAK 규격 다름 ⑧ `usl` 숫자 31자리 | 모두 종료 코드 3, 위치 표시, 보고서 미생성 |
+| T93 | 헤더: ① 측정 + 8열 ② 측정 + 로트 + 9열 ③ 측정 + 7열 ④ 측정 레시피에 `--equipment` 없음 ⑤ 비측정 + value 열 | ①② 허용 ③④⑤ 종료 코드 2 |
+| T94 | 단측: USL 13만, 값 −50, 13, 13.001. LSL 7만, 값 6.999, 7, 1000 | PASS, PASS, FAIL. FAIL, PASS, PASS |
+| T95 | 측정 FAIL 제품의 재검사: 값 14 → 요청 → 값 10 | 재검사 PASS, 보류 해제. 재검사는 설비 창에 불산입. history에 두 값 표시. summary의 최초 FAIL은 1건 |
+| T96 | 부분군 [9,10,11,10,10], [10,11,9,10,10], 규격 7~13 | `Xbarbar` 10.0000, `Rbar` 2.0000, `sigma_within` 0.8598, `Cpk` 1.1630, `s` 0.6667, `Ppk` 1.5000 |
+| T97 | T96 + 나머지 값 12 (n=11) | 부분군 2개 유지, `Cpk` 1.1630, `s` 0.8739, `Ppk` 1.0750 |
+| T98 | T96 값, 단측. ① USL 13 ② LSL 7 | 둘 다 `Cpk` 1.1630, `Ppk` 1.5000 |
+| T99 | 부분군 [14,15,16,15,15], [15,16,14,15,15], 규격 7~13 | `Cpk` −0.7753, `Ppk` −1.0000 |
+| T100 | 부분군 [8,10,12,10,10], [10,12,8,10,10], 규격 7~13 | `Rbar` 4.0000, `Cpk` 0.5815, `Ppk` 0.7500 |
+| T101 | CLI. LEAK-1에서 서로 다른 제품의 최초 검사 `10,10,10,10,10,14,14` → 7번째에서 정지 → 재가동 `FIXED` → 다른 제품 8개의 최초 검사 값 전부 `10` | 재가동 전 부분군 1개 + 나머지 2개 제외, 재가동 뒤 부분군 1개 + 나머지 3개 제외. 부분군 2개(끊지 않으면 3개가 되므로 구분됨), `n` 15, `xbarbar` 10.0000, `rbar` 0.0000, `sample_sd` 1.4075, `status` `표본 부족`, `cpk`·`ppk` 빈칸 |
+| T102 | 재검사 측정이 섞인 입력 | 재검사 값은 `n`과 부분군에 없음 |
+| T103 | CLI, 재가동 없음. 한 설비의 최초 검사: ① `[9,10,11,10,10]` 24회 ② 같은 값 25회 ③ `10` 125개 ④ 측정 0건 설비 ⑤ `[9]×5` 13회 뒤 `[11]×5` 12회 | ① `표본 부족`, `n` 120, 부분군 24, `rbar` 2.0000, `cpk`·`ppk` 빈칸 ② `계산됨`, `Cpk` 1.1630, `s` 0.6350, `Ppk` 1.5748 ③ `변동 없음`, `cpk`·`ppk` 빈칸 ④ `표본 부족`, `n` 0, 통계 열 모두 빈칸 ⑤ `변동 없음`, `rbar` 0.0000, `cpk` 빈칸, `s` 1.0032, `Ppk` 0.9835 |
+| T104 | ① 비측정 입력에 `--capability` ② `--capability`와 `--summary --containment` 함께 | ① 종료 코드 2 ② 허용, 각 보고서 생성 |
+| T105 | 측정 설정, 시드 42·500개와 7·200개를 두 폴더에서 생성하고 `--summary --containment --capability --trace GEN_0005`로 판정 | CSV·meta·보고서 전체 바이트 동일. 정상 행 전부 허용. 버전 `1.4.0`. CSV에 결함 정보 없음. 결함 여부는 판정에 쓰이지 않음. **시드 42·500개**에서 완료·보류·폐기 제품, 재검사 요청, 설비 정지, 재가동(`FIXED`)이 각 1건 이상이고 capability에 `계산됨` 행이 1개 이상 |
+| T106 | 측정 설정, 시드 0–29, 제품 500개. 시드마다 첫 LEAK-2 `FIXED` 행 앞까지(없으면 파일 끝) 허용된 최초 LEAK 측정을 LEAK-1·2·3 모두 같은 구간에서 모아 30개 시드를 합산. 정상품은 meta `defective_products`에 없는 제품이며 이 테스트에서만 쓴다 | ① 전체 제품 합산 평균이 LEAK-2 > LEAK-1, LEAK-2 > LEAK-3 ② LEAK-1·LEAK-3의 정상품 값을 합친 표본 표준편차가 0.6767–0.8271 안 ③ ①의 각 설비 표본과 ②의 표본이 30개 이상이며, 미만이면 실패 |
+| T107 | 측정 설정의 오류 주입, 시드 42 | 5종 각각 주입 수 1 이상, 주입 수와 실제 거절 수 일치, 사유 코드가 위 표와 같음 |
+| T108 | 설정 오류: ① `process_cpk: 0` ② `fault_shift_sigma: {"LEAK-2": -1}` ③ `normal_fail_probability` 함께 사용 ④ 단측 레시피로 생성 ⑤ `py -m src.evaluate`에 측정 설정 ⑥ 측정 레시피 + `process_cpk` 없음 ⑦ 비측정 레시피 + `process_cpk` ⑧ `lot_tracking: true` 설비 ⑨ `fault_shift_sigma: {"LEAK-9": 2.5}` ⑩ `retest_limit` 없는 측정 레시피 ⑪ `defect_shift_sigma` 대신 `defective_shift_sigma` ⑫ `process_cpk: 1e-320` ⑬ 규격 `lsl` `0`, `usl` `1` 뒤 영 29개 | 모두 종료 코드 2, 파일 미생성 |
+| T109 | 측정 입력을 `--recipe recipes/lamp_models_measured.json --equipment recipes/equipment_measured.json --summary --trace <제품ID>`로 실행 | 비율은 계산된 결과로 집계. trace에 `value,lsl,usl`. 입력 CSV의 `result` 빈칸이 FAIL률을 바꾸지 않음 |
+| T110 | 함수, 규격 7~13. ① 값 없음 ② `[10]` ③ `[9,10,11,10]` ④ `[9,10,11,10,10]` ⑤ `[10]` 10개 ⑥ `[9,10,11,10,10]` 2회, `usl` `1` 뒤 영 29개, `lsl` null ⑦ `[12,13,14,13,13]`, `[13,14,12,13,13.00002]` | ①② 부분군 0, 모든 통계 `None` ③ 부분군 0, `xbarbar` `None`, `Cpk` `None`, `s` 0.8165, `Ppk` 1.2247 ④ 부분군 1, `xbarbar` 10.0000, `rbar` 2.0000, `Cpk` `None`, `s` 0.7071, `Ppk` 1.4142 ⑤ 부분군 2, `sigma_within` 0, `s` 0, `Cpk`·`Ppk` 모두 `None` ⑥ 계산 오류 없음. 표시 함수 결과가 `E`·`e` 없는 넷째 자리 문자열 ⑦ 계산 함수의 `Cpk`, `Ppk`는 0보다 작은 `Decimal`. 표시 함수 결과는 둘 다 `0.0000` |
+| T111 | 함수, 규격 7~13, `process_cpk` 1.33, 이동 2.5·5.0, `gauss`를 평균을 그대로 돌려주도록 고정 | 정상품·정상 설비 `10.000`, 정상품·고장 설비 `11.880`, 결함품·정상 설비 `13.759`, 결함품·고장 설비 `15.639`, 정상품·수리된 고장 설비 `10.000` |
+| T112 | 확정과 경계. ① 확정 함수에 `1.2345`, `13.0004`, `13.0005` ② `gauss`를 고정해 생성 값이 `13.0004`인 제품과 `13.0005`인 제품을 각각 생성 | ① `1.235`, `13.000`, `13.001` ② 전자는 CSV `13.000`, PASS로 진행하고 설비 창에 PASS 기록. 후자는 CSV `13.001`, FAIL로 처리하고 설비 창에 FAIL 기록. 두 경우 모두 판정기 재생 결과가 생성 중 상태와 같음 |
+
+## 구현 순서
+1. **7a-1**: 레시피 규격, 입력·판정, 결과 전달, summary·trace, T89–T95, T109.
+2. **7a-2**: 공정능력, T96–T104, T110.
+3. **7a-3**: 생성기, 오류 주입, T105–T108, T111, T112.
+
+각각 커밋하고 7a-3 뒤 검수 루프를 한 번 돌린다.
+
+## 구현 시 주의점
+- `src/recipe_rules.py`의 `row["result"]`는 INSPECT 처리와 설비 기록 두 곳에서 쓴다. 계산 결과를 지역 변수로 전달한다.
+- 재가동 분기는 일반 필드 검사보다 앞에 있다. value 기입 위치 검사를 그보다 먼저 둔다.
+- `src/summary.py`의 검사 경로만 `event["result"]`를 `decision.result`로 바꾸고, 비측정 모드 출력은 같아야 한다. 재가동 이력 경로(`summary.py:85`)의 `FIXED`·`NO_FAULT`는 검사 결과가 아니므로 일괄 교체하지 않는다.
+- `_decision`을 거치는 정상·거절·재가동 경로 모두 새 필드를 채운다.
+- `src/recipe.py`는 규격 필드, 허용 키, 모델 생성 세 곳을 함께 고친다. 일부 키만 있는 규격을 비측정으로 처리하지 않는다.
+- `src/trace.py`는 행 생성, CSV 헤더, 터미널 출력, 재검사 비활성 모드의 history 경로를 모두 고친다.
+- `Generator.inject_errors`의 `PRESERVE_BAD_RESULT` 경로는 측정 모드에서 쓰지 않는다.
+- `random.Random.gauss`는 내부에 다음 값을 보관한다. 같은 시드의 재현성에는 문제없지만, 호출 순서가 바뀌면 값이 달라진다.
+
+## 산출물
+- `src/capability.py`, `src/recipe.py`, `src/recipe_rules.py`, `src/reason_codes.py`, `src/recipe_reports.py`, `src/summary.py`, `src/trace.py`, `src/generate.py`, `src/evaluate.py`, `src/main.py`
+- `recipes/lamp_models_measured.json`, `recipes/equipment_measured.json`, `recipes/generator_measured.json`, 샘플 `data/sample_events_measured.csv`와 보고서, `reports/gen_measured_seed42_*`
+- `tests/test_measurement.py`, README 「측정값과 공정능력 (v2 7a단계)」 절
+
+## 완료 보고 (반드시 포함)
+- 실행 명령과 출력 원문, 전체 테스트 결과, T89–T112 기대·실제 대조
+- 시드 42의 설비별 Cpk·Ppk 표와 해석의 한계
+- 시드 42의 경로별 건수(완료·보류·폐기·재검사·정지·재가동·오류 5종). 0건이 있으면 시드나 확률을 바꾸지 않고 명세 이견으로 공개한다
+- 명세와 다르게 구현한 부분, 또는 "명세 이견" 항목
+
+## 사용자 결정
+| 항목 | 확정 값 | 왜 사용자 결정인가 |
+| --- | --- | --- |
+| 정상 공정 Cpk | 1.33 | 정상품·정상 설비의 FAIL률이 약 0.0066%가 되어 기존 2%와 크게 다름 |
+| 고장 이동량 | 2.5σ | 고장 설비의 정상품 FAIL 확률이 약 6.8%. 독립 가정에서 100검사 안 정지 확률이 정상품만으로 약 55%라 기존 FAIL 기반 정지가 늦어짐 |
+| 결함 이동량 | 5.0σ | 결함품의 FAIL 확률이 약 84% |
+| 규격 값 | LEAK·LIGHT·FINAL 모두 7~13 양측 | 합성 값. 단위는 `가상 단위` |
+| 표본 기준 | 완성 부분군 25개 | 500개 생성 시 설비당 검사가 LEAK 약 166건, FINAL 약 125건 이하라 FINAL 등 일부 설비는 `표본 부족`일 수 있음 |
+
+# v2 6단계 명세 (완료, 2026-10-31 · 리뷰 013 PASS)
 
 상태: **사용자 확정** (2026-10-31). 결정 근거는 `handoff/decisions.md`. 1–5단계(아래 명세)는 완료이며, 그 동작과 테스트는 보존한다.
 
