@@ -19,12 +19,12 @@ MAX_MEAN_DELAY = 10
 NO_RULE = "기준 충족 규칙 없음"
 RUN_COLUMNS = (
     "rule", "seed", "stops", "true_stops", "false_stops", "detected", "delay_sum", "full_outage",
-    "unfinished", "normal_held", "defective_completed",
+    "unfinished", "held", "normal_held", "defective_completed",
 )
 RULE_COLUMNS = (
     "section", "rule", "runs", "detection_rate", "mean_delay", "stop_precision", "mean_false_stops",
     "false_stop_runs", "full_outage_runs", "unfinished_min", "unfinished_median", "unfinished_max",
-    "mean_normal_held", "mean_defective_completed", "criteria", "value",
+    "mean_held", "mean_normal_held", "mean_defective_completed", "criteria", "value",
 )
 
 
@@ -36,6 +36,7 @@ class RunMetrics:
     delay_sum: int
     full_outage: bool
     unfinished: int
+    held: int
     normal_held: int
     defective_completed: int
 
@@ -71,6 +72,7 @@ def run_metrics(analysis, faulty, defective):
     return RunMetrics(
         true_stops, len(analysis.stop_history) - true_stops, len(first_true), sum(delays), full_outage,
         sum(product.status != complete for product in products.values()),
+        sum(product.status == "보류" for product in products.values()),
         sum(product.status == "보류" and product_id not in defective for product_id, product in products.items()),
         sum(product.status == complete and product_id in defective for product_id, product in products.items()),
     )
@@ -83,7 +85,8 @@ def aggregate(runs, faulty_count):
     unfinished = [run.unfinished for run in runs]
     return {
         "runs": count,
-        "detection_rate": Fraction(detected, count * faulty_count) if faulty_count else None,
+        # 명세대로 분모는 실행 수다. 고장 설비가 여러 대인 단위는 미정이라 evaluate에서 막는다.
+        "detection_rate": Fraction(sum(run.detected > 0 for run in runs), count) if faulty_count else None,
         "mean_delay": Fraction(sum(run.delay_sum for run in runs), detected) if detected else None,
         "stop_precision": Fraction(sum(run.true_stops for run in runs), stops) if stops else None,
         "mean_false_stops": Fraction(sum(run.false_stops for run in runs), count),
@@ -91,6 +94,7 @@ def aggregate(runs, faulty_count):
         "full_outage_runs": sum(run.full_outage for run in runs),
         "unfinished_min": min(unfinished), "unfinished_median": Fraction(median(unfinished)),
         "unfinished_max": max(unfinished),
+        "mean_held": Fraction(sum(run.held for run in runs), count),
         "mean_normal_held": Fraction(sum(run.normal_held for run in runs), count),
         "mean_defective_completed": Fraction(sum(run.defective_completed for run in runs), count),
     }
@@ -141,6 +145,8 @@ def parse_rules(text):
 def evaluate(config_path, seeds, rules, products):
     config, content, recipe, book = load_setup(config_path)
     faulty = set(config["faulty_equipment"])
+    if len(faulty) > 1:
+        raise ValueError("고장 설비가 여러 대인 검출률 단위는 명세에서 정해지지 않음: " + ", ".join(sorted(faulty)))
     runs, rule_metrics = {}, {}
     for window, fails in rules:
         ruled = replace(book, window=window, fails=fails)
@@ -186,6 +192,7 @@ def rule_rows(rule_metrics, provenance, holdout):
             "unfinished_min": metrics["unfinished_min"],
             "unfinished_median": _decimal(metrics["unfinished_median"], 1),
             "unfinished_max": metrics["unfinished_max"],
+            "mean_held": _decimal(metrics["mean_held"], 2),
             "mean_normal_held": _decimal(metrics["mean_normal_held"], 2),
             "mean_defective_completed": _decimal(metrics["mean_defective_completed"], 2),
             "criteria": holdout_verdict(metrics),
@@ -201,7 +208,7 @@ def run_rows(runs, seeds):
     return [{"rule": _name(rule), "seed": seed, "stops": run.true_stops + run.false_stops,
              "true_stops": run.true_stops, "false_stops": run.false_stops, "detected": run.detected,
              "delay_sum": run.delay_sum, "full_outage": int(run.full_outage), "unfinished": run.unfinished,
-             "normal_held": run.normal_held, "defective_completed": run.defective_completed}
+             "held": run.held, "normal_held": run.normal_held, "defective_completed": run.defective_completed}
             for rule, rule_runs in runs.items() for seed, run in zip(seeds, rule_runs)]
 
 

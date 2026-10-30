@@ -1,4 +1,5 @@
 from fractions import Fraction
+import json
 import os
 from pathlib import Path
 import subprocess
@@ -58,7 +59,26 @@ class MetricTests(unittest.TestCase):
         self.assertEqual(round(float(result["mean_false_stops"]), 2), 1.57)
         self.assertEqual(result["full_outage_runs"], 14)
         self.assertEqual((result["unfinished_min"], result["unfinished_median"], result["unfinished_max"]), (10, 22, 417))
+        self.assertEqual(round(float(result["mean_held"]), 2), 13.73)
         self.assertEqual(round(float(result["mean_normal_held"]), 2), 8.50)
+
+    def test_detection_rate_denominator_is_runs(self):
+        models = load_recipe(RECIPE).models
+        book = load_equipment(RESTART_EQUIPMENT, models)
+        events = prepared("ab") + [leak(20, "a", "FAIL", "LEAK-2"), leak(21, "b", "FAIL", "LEAK-2")]
+        run = run_metrics(build_analysis(events, models, book), {"LEAK-2", "LEAK-3"}, set())
+        self.assertEqual(aggregate([run], 2)["detection_rate"], 1)
+
+    def test_several_faulty_equipment_are_refused(self):
+        config = json.loads(BASELINE_CONFIG.read_text(encoding="utf-8-sig"))
+        config.update(recipe=str(ROOT / "recipes" / config["recipe"]),
+                      equipment=str(ROOT / "recipes" / config["equipment"]),
+                      faulty_equipment={"LEAK-2": 0.5, "LEAK-3": 0.5})
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "config.json"
+            path.write_text(json.dumps(config), encoding="utf-8")
+            with self.assertRaisesRegex(ValueError, "여러 대"):
+                evaluate(path, range(1), [(3, 2)], 5)
 
 
 class CommandTests(unittest.TestCase):

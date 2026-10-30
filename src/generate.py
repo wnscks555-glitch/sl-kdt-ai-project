@@ -62,6 +62,10 @@ class Generator:
                 first_equipment = ""
                 for attempt in range(recipe.retest_limit + 1):
                     equipment = self.choose_equipment(item.id, first_equipment)
+                    if (equipment is None and self.restart_delay is not None
+                            and item.id not in self.book.equipment.values()):
+                        # 재가동으로도 생기지 않는 설비를 기다리면 생성이 끝나지 않는다.
+                        raise ValueError("검사 " + item.id + "의 설비가 설비 파일에 없어 재가동 대기를 끝낼 수 없음")
                     while equipment is None and self.restart_delay is not None:
                         yield None
                         equipment = self.choose_equipment(item.id, first_equipment)
@@ -138,7 +142,8 @@ class Generator:
             decision = process.apply(row)
             if not decision.accepted:
                 raise ValueError("생성한 정상 행이 거절됨: " + decision.reason)
-            if row["event"] == RESTART_EVENT:
+            # 이전 모드에서는 EQUIP_RESTART가 합법적인 공정명이므로 재가동 모드에서만 건너뛴다.
+            if self.book.restart_enabled and row["event"] == RESTART_EVENT:
                 continue
             product = process.products[row["product_id"]]
             if product.discarded_inspection is not None:

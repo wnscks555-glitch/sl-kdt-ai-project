@@ -3592,3 +3592,32 @@ T44 seed=7 all_rows_deepcopy_invariant_seconds=7.399932
 - 평가 원문: `handoff/run-logs/stage5-dev.txt`, `stage5-holdout.txt`, `stage5-baseline.txt`.
 - 선택 결과: 사전 기준으로 3:2 선택, 홀드아웃 `확인`. 지연 기준을 통과한 규칙은 3:2와 5:2뿐이다.
 - 미수행: Codex 검수, 자동 검토 루프 실제 실행.
+
+## 리뷰 010 수정 단계 (2026-10-30, T52–T66)
+
+높음·중간 항목만 처리했다. L1(낮음)은 지시대로 건드리지 않았다. 기대표와 기존 테스트 기대값은 바꾸지 않았다.
+
+### 항목별 처리
+- **H1 반영.** `inject_errors`의 `EQUIP_RESTART` 건너뛰기를 `self.book.restart_enabled`일 때로 한정했다(`src/generate.py`). 재가동 모드에서는 레시피 공정 `EQUIP_RESTART`가 설비 오류라 이 이름의 행은 재가동 행뿐이고, 이전 모드에서는 일반 공정명이다. 회귀 테스트 `test_legacy_step_named_restart_is_an_ordinary_step`: 기존 설정·시드 42·60개에서 맨 앞 공정을 `EQUIP_RESTART`와 `P0X`로 바꿔 생성하면 공정명을 빼고 CSV 전 행과 주입 건수가 같다. 수정 전 코드라면 후보가 달라져 실패한다.
+- **M1 반영.** 재가동 모드에서 검사 종류에 해당하는 설비가 설비 파일에 하나도 없으면 대기하지 않고 `ValueError`(`검사 X의 설비가 설비 파일에 없어 재가동 대기를 끝낼 수 없음`)를 낸다. `generate`·`evaluate` CLI는 이미 `ValueError`를 종료 코드 2로 바꾸고 평가 보고서는 계산이 끝난 뒤에만 쓰므로 보고서가 생기지 않는다. 이전 모드(`restart_delay is None`)의 흐름은 그대로다. 테스트 `test_missing_inspection_equipment_fails_instead_of_waiting`.
+- **M2 반영.** `RunMetrics.held`, 실행별 CSV `held`, 집계 `mean_held` 열(터미널 표 포함)을 추가했다. T63 테스트에 `mean_held` 13.73 단정을 추가했다(기존 단정은 그대로). 5단계 구현 기록의 "T63은 사전 측정치를 그대로 재현했다"는 13.73을 검증하지 않은 과장이었다. 이번 수정으로 7개 값을 모두 단정한다.
+- **M3 반영(명세 이견 포함).** 명세 문구 "고장 설비를 정탐 정지한 실행 ÷ 실행 수"에 맞춰 분모를 실행 수로 바꾸고, 분자는 고장 설비를 1대 이상 정탐 정지한 실행으로 했다. 고장 설비가 여러 대일 때 "하나 이상"과 "모두" 중 무엇인지는 명세가 정하지 않았으므로, `evaluate`는 고장 설비가 2대 이상인 설정을 종료 코드 2로 거절한다. 고장 설비가 1대인 제출 결과는 값이 같다. **명세 이견:** 다중 고장 설비의 검출률 단위는 사용자 결정이 필요하다. 테스트 `test_detection_rate_denominator_is_runs`, `test_several_faulty_equipment_are_refused`.
+- **M4 보류(명세 이견 기록·공개).** 코드는 바꾸지 않았다. 생성기는 정상 행을 먼저 만들고 그 뒤 오류 행을 무작위 위치에 끼운다. 오류 주입 위치는 정상 행 재생 상태에 따라 정해지므로, 최종 물리 행 기준으로 재가동 일정을 맞추려면 두 단계를 합쳐야 한다. 그러면 난수 소비와 평가 결과 전체가 바뀐다. 사용자 결정 없이 하기에는 범위가 크다. README 「생성기 가정」에 "`delay_rows`는 오류 주입 전 정상 생성 행 기준이며 최종 CSV에서는 사이가 30행보다 길 수 있음"을 공개했다. **명세 이견:** tasks.md:85의 "행 수"를 정상 생성 행으로 승인할지, 최종 CSV 행으로 바꿀지는 사용자 결정이다. tasks.md는 사용자 파일이라 고치지 않았다.
+
+### 산출물 재생성 미수행
+- `reports/eval_dev_*.csv`, `eval_holdout_*.csv`, `eval_baseline_*.csv`와 `handoff/run-logs/stage5-*.txt`는 다시 만들지 못했다. 이번 실행 환경에서 테스트 명령 외 셸 실행이 거부됐다. 저장된 보고서에는 새 `held`/`mean_held` 열이 없다. H1·M3 수정은 기존 값을 바꾸지 않는다(재가동 설정은 `restart_enabled` true, 고장 설비 1대). 따라서 기존 열 값은 그대로 유효하다. 다음 단계에서 README 「평가」의 세 명령으로 다시 만들어야 한다.
+
+### 테스트 실행
+명령: `py -m unittest discover -s tests` (종료 0). 134개에 새 테스트 4개를 더했다.
+
+```text
+..........................................................................................................................................
+----------------------------------------------------------------------
+Ran 138 tests in 77.872s
+
+OK
+T44 seed=42 products=500 generation_seconds=0.119464 judgment_analysis_seconds=0.054643
+T44 seed=7 products=200 generation_seconds=0.049024 judgment_analysis_seconds=0.026750
+T44 seed=42 all_rows_deepcopy_invariant_seconds=37.870942
+T44 seed=7 all_rows_deepcopy_invariant_seconds=5.768965
+```

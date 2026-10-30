@@ -1,5 +1,6 @@
 import copy
 import csv
+from dataclasses import replace
 import json
 import os
 from pathlib import Path
@@ -8,7 +9,7 @@ import tempfile
 import unittest
 
 from src.equipment import EquipmentError, load_equipment
-from src.generate import RESTART_GENERATOR_VERSION, generate
+from src.generate import RESTART_GENERATOR_VERSION, build_rows, generate, load_setup
 from src.recipe import load_recipe
 from src.recipe_reports import build_recipe_reports
 from src.recipe_rules import EQUIPMENT_INPUT_COLUMNS, RecipeProcess
@@ -292,6 +293,22 @@ class GeneratorTests(unittest.TestCase):
             path.write_text(json.dumps(config), encoding="utf-8")
             with self.assertRaises(ValueError):
                 generate(1, 5, Path(directory) / "gen.csv", path)
+
+    def test_legacy_step_named_restart_is_an_ordinary_step(self):
+        # 재가동 모드가 아니면 EQUIP_RESTART는 일반 공정명이다. 다른 이름과 생성 결과가 같아야 한다.
+        config, _, recipe, book = load_setup(ROOT / "recipes" / "generator.json")
+        outputs = {}
+        for name in ("EQUIP_RESTART", "P0X"):
+            models = {key: replace(model, steps=(name,) + model.steps) for key, model in recipe.models.items()}
+            _, _, rows, counts = build_rows(42, 60, config, models, book)
+            outputs[name] = ([{**row, "event": "?" if row["event"] == name else row["event"]} for row in rows], counts)
+        self.assertEqual(outputs["EQUIP_RESTART"], outputs["P0X"])
+
+    def test_missing_inspection_equipment_fails_instead_of_waiting(self):
+        config = json.loads(RESTART_CONFIG.read_text(encoding="utf-8-sig"))
+        book = replace(self.book, equipment={"LEAK-1": "LEAK"})
+        with self.assertRaisesRegex(ValueError, "설비 파일에 없어"):
+            build_rows(0, 2, config, self.models, book)
 
 
 if __name__ == "__main__":
