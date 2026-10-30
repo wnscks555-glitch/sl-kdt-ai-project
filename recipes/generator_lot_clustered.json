@@ -1,0 +1,15 @@
+{
+  "recipe": "lamp_models_retest.json",
+  "equipment": "equipment_lot.json",
+  "model_weights": {"A": 0.5, "B": 0.5},
+  "normal_fail_probability": 0.02,
+  "faulty_equipment": {"LEAK-2": 0.10},
+  "defective_lot_probability": 0.25,
+  "defective_in_lot_probability": 0.2,
+  "defective_fail_probability": 0.90,
+  "retest_probability": 0.70,
+  "error_rate": 0.03,
+  "restart": {"delay_rows": 30},
+  "lot_size": 20,
+  "faulty_detection_loss": {"LEAK-2": 0.5}
+}

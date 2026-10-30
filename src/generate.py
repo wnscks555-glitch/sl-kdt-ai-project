@@ -5,17 +5,19 @@ from collections import defaultdict
 import csv
 import hashlib
 import json
+import math
 from pathlib import Path
 import random
 
 from .equipment import EquipmentState, load_equipment
 from .recipe import load_recipe
-from .recipe_rules import EQUIPMENT_INPUT_COLUMNS, RESTART_EVENT, RecipeProcess
+from .recipe_rules import EQUIPMENT_INPUT_COLUMNS, LOT_INPUT_COLUMNS, RESTART_EVENT, RecipeProcess
 from .reason_codes import INJECTED_ERROR_CODES as ERROR_KINDS
 
 
 GENERATOR_VERSION = "1.1.0"
 RESTART_GENERATOR_VERSION = "1.2.0"
+LOT_GENERATOR_VERSION = "1.3.0"
 DEFAULT_CONFIG = Path(__file__).resolve().parents[1] / "recipes/generator.json"
 
 
@@ -36,6 +38,23 @@ class Generator:
         self.restart_delay = restart_delay(config, equipment_book)
         self.pending_restarts = []
         self.repaired = set()
+        check_lot_config(config, equipment_book)
+        self.lot_size = config.get("lot_size")
+        self.defective_lots = {}
+        self.leaked_products = []
+
+    def stamp(self, row):
+        if self.lot_size is not None:
+            row.setdefault("lot", "")
+        return row
+
+    def draw_defective(self, number):
+        if "defective_lot_probability" not in self.config:
+            return self.rng.random() < self.config["defective_product_probability"]
+        lot = (number - 1) // self.lot_size
+        if lot not in self.defective_lots:
+            self.defective_lots[lot] = self.rng.random() < self.config["defective_lot_probability"]
+        return self.defective_lots[lot] and self.rng.random() < self.config["defective_in_lot_probability"]
 
     def choose_equipment(self, inspection, avoid=""):
         names = [name for name, kind in self.book.equipment.items() if kind == inspection]
@@ -48,12 +67,15 @@ class Generator:
                 return names[index]
         return None
 
-    def product(self, product_id, model):
+    def product(self, product_id, model, number=0):
         recipe = self.models[model]
-        defective = self.rng.random() < self.config["defective_product_probability"]
+        defective = self.draw_defective(number)
         if defective:
             self.defective_products.append(product_id)
-        yield event(product_id, "REGISTER", model=model), False
+        register = event(product_id, "REGISTER", model=model)
+        if self.lot_size is not None:
+            register["lot"] = "LOT-" + str((number - 1) // self.lot_size + 1).zfill(4)
+        yield register, False
         for step in recipe.steps:
             yield event(product_id, step), False
             for item in recipe.inspections:
@@ -73,12 +95,17 @@ class Generator:
                         return
                     if defective:
                         probability = self.config["defective_fail_probability"]
+                        if equipment not in self.repaired:
+                            probability *= 1 - self.config.get("faulty_detection_loss", {}).get(equipment, 0)
                     elif equipment in self.repaired:
                         probability = self.config["normal_fail_probability"]
                     else:
                         probability = self.config["faulty_equipment"].get(
                             equipment, self.config["normal_fail_probability"])
                     result = "FAIL" if self.rng.random() < probability else "PASS"
+                    if (defective and attempt == 0 and result == "PASS" and self.lot_size is not None
+                            and equipment in self.config["faulty_equipment"] and equipment not in self.repaired):
+                        self.leaked_products.append(product_id)
                     yield event(product_id, "INSPECT", item.id, result, equipment=equipment), attempt == 0
                     if result == "PASS":
                         break
@@ -94,7 +121,7 @@ class Generator:
         result = "FIXED" if name in self.config["faulty_equipment"] and name not in self.repaired else "NO_FAULT"
         if result == "FIXED":
             self.repaired.add(name)
-        row = event("", RESTART_EVENT, result=result, equipment=name)
+        row = self.stamp(event("", RESTART_EVENT, result=result, equipment=name))
         row["seq"] = str(len(rows) + 1)
         rows.append(row)
         self.equipment[name] = self.equipment[name].restart(result)
@@ -103,7 +130,7 @@ class Generator:
         names = list(self.config["model_weights"])
         weights = list(self.config["model_weights"].values())
         active = [self.product("GEN_" + str(index + 1).zfill(4),
-                               self.rng.choices(names, weights=weights)[0]) for index in range(products)]
+                               self.rng.choices(names, weights=weights)[0], index + 1) for index in range(products)]
         rows = []
         while active:
             following = []
@@ -119,6 +146,7 @@ class Generator:
                     following.append(flow)
                     continue
                 row, initial = step
+                self.stamp(row)
                 progressed = True
                 row["seq"] = str(len(rows) + 1)
                 rows.append(row)
@@ -186,7 +214,7 @@ class Generator:
                 raise ValueError(f"오류 주입 위치 없음: {kind} (배정 {counts[kind]}건, 후보 0개; {reason})")
             for _ in range(counts[kind]):
                 position, row = self.rng.choice(candidates[kind])
-                insertions[position].append(dict(row))
+                insertions[position].append(self.stamp(dict(row)))
         rows = []
         for position, row in enumerate(normal, 1):
             rows.append(dict(row))
@@ -206,6 +234,38 @@ def restart_delay(config, book):
             or type(restart["delay_rows"]) is not int or restart["delay_rows"] < 0):
         raise ValueError("restart는 0 이상의 정수 delay_rows만 가져야 함")
     return restart["delay_rows"]
+
+
+def check_lot_config(config, book):
+    def unit(value):
+        return type(value) in (int, float) and math.isfinite(value) and 0 <= value <= 1
+
+    lot_keys = {"defective_lot_probability", "defective_in_lot_probability"} & config.keys()
+    if "lot_size" not in config:
+        if book.lot_tracking:
+            raise ValueError("lot_tracking 설비 파일에는 lot_size 설정이 필요함")
+        if lot_keys or "faulty_detection_loss" in config:
+            raise ValueError("faulty_detection_loss와 결함 로트 설정에는 lot_size가 필요함")
+        return
+    if type(config["lot_size"]) is not int or config["lot_size"] < 1:
+        raise ValueError("lot_size는 양의 정수여야 함 (bool 불가)")
+    if not book.lot_tracking:
+        raise ValueError("lot_size 설정에는 lot_tracking 설비 파일이 필요함")
+    if lot_keys and len(lot_keys) != 2:
+        raise ValueError("defective_lot_probability와 defective_in_lot_probability는 함께 있어야 함")
+    if not all(unit(config[key]) for key in lot_keys):
+        raise ValueError("결함 로트 확률은 0–1 값이어야 함")
+    loss = config.get("faulty_detection_loss", {})
+    if not isinstance(loss, dict) or not all(unit(value) for value in loss.values()):
+        raise ValueError("faulty_detection_loss는 설비별 0–1 값이어야 함")
+    if not set(loss) <= set(config["faulty_equipment"]):
+        raise ValueError("faulty_detection_loss의 설비는 faulty_equipment에 있어야 함")
+
+
+def generator_version(config):
+    if "lot_size" in config:
+        return LOT_GENERATOR_VERSION
+    return RESTART_GENERATOR_VERSION if "restart" in config else GENERATOR_VERSION
 
 
 def load_setup(config_path):
@@ -233,7 +293,7 @@ def generate(seed=42, products=500, out=Path("data/generated/gen_seed42.csv"), c
     generator, normal, rows, counts = build_rows(seed, products, config, recipe.models, equipment)
     meta = {
         "seed": seed, "products": products,
-        "generator_version": RESTART_GENERATOR_VERSION if "restart" in config else GENERATOR_VERSION,
+        "generator_version": generator_version(config),
         "sha256": {"config": hashlib.sha256(content).hexdigest(),
                    "recipe": recipe.sha256, "equipment": equipment.sha256},
         "normal_rows": len(normal), "rows": len(rows), "injected_errors": counts,
@@ -241,9 +301,11 @@ def generate(seed=42, products=500, out=Path("data/generated/gen_seed42.csv"), c
         "defective_count": len(generator.defective_products),
         "defective_products": generator.defective_products,
     }
+    if "lot_size" in config:
+        meta.update(lot_size=config["lot_size"], leaked_products=sorted(generator.leaked_products))
     out.parent.mkdir(parents=True, exist_ok=True)
     with out.open("w", encoding="utf-8-sig", newline="") as target:
-        writer = csv.DictWriter(target, fieldnames=EQUIPMENT_INPUT_COLUMNS)
+        writer = csv.DictWriter(target, fieldnames=LOT_INPUT_COLUMNS if equipment.lot_tracking else EQUIPMENT_INPUT_COLUMNS)
         writer.writeheader()
         writer.writerows(rows)
     Path(str(out) + ".meta.json").write_text(

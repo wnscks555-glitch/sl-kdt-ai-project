@@ -1,0 +1,14 @@
+﻿section,method,runs,leak_runs,leaks,stops,capture_rate,mean_quarantine,precision,mean_residual,value
+notice,,,,,,,,,,생성 데이터의 확률은 가정이며 실제 설비 진단 근거가 아니다.
+provenance,config_sha256,,,,,,,,,38df1578722514450a43262dac2549f44a76c15868880f672dc7cfa7fcca2f03
+provenance,recipe_sha256,,,,,,,,,438229b58c9e8bc4a9f464704c9ace956150e33920fa36f0441add7f354ca7ac
+provenance,equipment_sha256,,,,,,,,,737871b388d3dfeb65c24d899c59f5f1a6e210e3ba8c06d39a7bdcf7d55d01a0
+provenance,generator_version,,,,,,,,,1.3.0
+provenance,seeds,,,,,,,,,1000-1099
+provenance,products,,,,,,,,,500
+method,window,100,48,111,761,0.0360,7.48,0.0053,1.07,
+method,last_10,100,48,111,761,0.1982,53.90,0.0041,0.89,
+method,last_20,100,48,111,761,0.3514,110.12,0.0035,0.72,
+method,lot,100,48,111,761,0.1171,21.50,0.0060,0.98,
+method,since_restart,100,48,111,761,0.9910,333.10,0.0033,0.01,
+holdout_verdict,,,,,,,,,,검증할 선택 없음

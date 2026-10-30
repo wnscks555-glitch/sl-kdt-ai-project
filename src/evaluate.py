@@ -9,7 +9,8 @@ import hashlib
 from pathlib import Path
 from statistics import median
 
-from .generate import GENERATOR_VERSION, RESTART_GENERATOR_VERSION, build_rows, load_setup
+from .containment import METHODS, run_scopes
+from .generate import build_rows, generator_version, load_setup
 from .summary import ASSUMPTION_NOTICE, build_analysis
 
 
@@ -17,6 +18,16 @@ DEFAULT_CONFIG = Path(__file__).resolve().parents[1] / "recipes/generator_restar
 MIN_DETECTION = Fraction(95, 100)
 MAX_MEAN_DELAY = 10
 NO_RULE = "기준 충족 규칙 없음"
+MIN_CAPTURE = Fraction(90, 100)
+MIN_LEAKS = 30
+MIN_LEAK_RUNS = 20
+NO_METHOD = "기준 충족 방식 없음"
+LOW_SAMPLE = "평가 표본 부족"
+NO_SELECTION = "검증할 선택 없음"
+CONTAINMENT_COLUMNS = (
+    "section", "method", "runs", "leak_runs", "leaks", "stops", "capture_rate", "mean_quarantine",
+    "precision", "mean_residual", "value",
+)
 RUN_COLUMNS = (
     "rule", "seed", "stops", "true_stops", "false_stops", "detected", "delay_sum", "full_outage",
     "unfinished", "held", "normal_held", "defective_completed",
@@ -160,7 +171,7 @@ def evaluate(config_path, seeds, rules, products):
     provenance = {
         "config_sha256": hashlib.sha256(content).hexdigest(), "recipe_sha256": recipe.sha256,
         "equipment_sha256": book.sha256,
-        "generator_version": RESTART_GENERATOR_VERSION if "restart" in config else GENERATOR_VERSION,
+        "generator_version": generator_version(config),
         "seeds": str(seeds[0]) + "-" + str(seeds[-1]), "products": str(products),
     }
     return runs, rule_metrics, provenance
@@ -231,6 +242,121 @@ def print_rules(rows):
             print((row["rule"] + " " if row["rule"] else "") + row["value"])
 
 
+def containment_metrics(runs):
+    """runs는 (유출 집합, {방식: 고유 제품 합집합}) 목록이다. 실행별 비율은 평균하지 않고 전체를 합산한다."""
+    count = len(runs)
+    leaks = sum(len(leaked) for leaked, _ in runs)
+    methods = {}
+    for method in METHODS:
+        if not any(method in scopes for _, scopes in runs):
+            continue
+        chosen = [(leaked, scopes.get(method, set())) for leaked, scopes in runs]
+        caught = sum(len(leaked & scope) for leaked, scope in chosen)
+        total = sum(len(scope) for _, scope in chosen)
+        methods[method] = {
+            "capture_rate": Fraction(caught, leaks) if leaks else None,
+            "mean_quarantine": Fraction(total, count),
+            "precision": Fraction(caught, total) if total else None,
+            "mean_residual": Fraction(leaks - caught, count),
+        }
+    return methods
+
+
+def sample_sufficient(leaks, leak_runs):
+    return leaks >= MIN_LEAKS and leak_runs >= MIN_LEAK_RUNS
+
+
+def capture_met(metrics):
+    return metrics["capture_rate"] is not None and metrics["capture_rate"] >= MIN_CAPTURE
+
+
+def select_method(method_metrics, leaks, leak_runs):
+    """(선택 방식, 표시 문구). 후보가 없으면 완화하지 않는다."""
+    if not sample_sufficient(leaks, leak_runs):
+        return None, LOW_SAMPLE
+    candidates = [method for method, metrics in method_metrics.items() if capture_met(metrics)]
+    if not candidates:
+        return None, NO_METHOD
+    return min(candidates, key=lambda method: (method_metrics[method]["mean_quarantine"], METHODS.index(method))), "선택"
+
+
+def containment_verdict(metrics, leaks, leak_runs):
+    return "확인" if sample_sufficient(leaks, leak_runs) and capture_met(metrics) else "미확인"
+
+
+def read_selection(path, config_sha):
+    """개발 보고서의 선택을 읽는다. 설정이 다르면 그 선택을 확인할 수 없다."""
+    with Path(path).open(encoding="utf-8-sig", newline="") as source:
+        rows = list(csv.DictReader(source))
+    sha = next((row["value"] for row in rows if row["section"] == "provenance" and row["method"] == "config_sha256"), None)
+    selection = next((row for row in rows if row["section"] == "selection"), None)
+    if selection is None:
+        raise ValueError("개발 보고서에 선택 행이 없음: " + str(path))
+    if sha != config_sha:
+        raise ValueError("개발 보고서와 설정의 SHA-256이 다름: " + str(path))
+    if selection["method"] and selection["method"] not in METHODS:
+        raise ValueError("알 수 없는 선택 방식: " + selection["method"])
+    return selection["method"] or None
+
+
+def evaluate_containment(config_path, seeds, rules, products):
+    config, content, recipe, book = load_setup(config_path)
+    if rules != [(3, 2)]:
+        raise ValueError("--containment의 규칙은 정확히 3:2여야 함")
+    if "lot_size" not in config:
+        raise ValueError("--containment에는 lot_size 설정이 필요함")
+    faulty = set(config["faulty_equipment"])
+    if len(faulty) > 1:
+        raise ValueError("고장 설비가 여러 대인 검출률 단위는 명세에서 정해지지 않음: " + ", ".join(sorted(faulty)))
+    ruled = replace(book, window=3, fails=2)
+    runs, stops = [], 0
+    for seed in seeds:
+        generator, _, rows, _ = build_rows(seed, products, config, recipe.models, ruled)
+        analysis = build_analysis(rows, recipe.models, ruled)
+        stops += len(analysis.stop_history)
+        runs.append((set(generator.leaked_products), run_scopes(analysis)))
+    provenance = {
+        "config_sha256": hashlib.sha256(content).hexdigest(), "recipe_sha256": recipe.sha256,
+        "equipment_sha256": book.sha256, "generator_version": generator_version(config),
+        "seeds": str(seeds[0]) + "-" + str(seeds[-1]), "products": str(products),
+    }
+    return runs, stops, provenance
+
+
+def containment_rows(runs, stops, provenance, holdout, selected):
+    leaks = sum(len(leaked) for leaked, _ in runs)
+    leak_runs = sum(bool(leaked) for leaked, _ in runs)
+    metrics = containment_metrics(runs)
+    blank = dict.fromkeys(CONTAINMENT_COLUMNS, "")
+    rows = [{**blank, "section": "notice", "value": ASSUMPTION_NOTICE}]
+    rows.extend({**blank, "section": "provenance", "method": key, "value": value} for key, value in provenance.items())
+    for method, item in metrics.items():
+        rows.append({
+            **blank, "section": "method", "method": method, "runs": len(runs), "leak_runs": leak_runs, "leaks": leaks,
+            "stops": stops, "capture_rate": _decimal(item["capture_rate"], 4),
+            "mean_quarantine": _decimal(item["mean_quarantine"], 2), "precision": _decimal(item["precision"], 4),
+            "mean_residual": _decimal(item["mean_residual"], 2),
+        })
+    if holdout:
+        verdict = containment_verdict(metrics[selected], leaks, leak_runs) if selected else NO_SELECTION
+        rows.append({**blank, "section": "holdout_verdict", "method": selected or "", "value": verdict})
+    else:
+        method, text = select_method(metrics, leaks, leak_runs)
+        rows.append({**blank, "section": "selection", "method": method or "", "value": text})
+    return rows
+
+
+def print_containment_rows(rows):
+    columns = CONTAINMENT_COLUMNS[1:-1]
+    print(" | ".join(columns))
+    for row in rows:
+        if row["section"] == "method":
+            print(" | ".join(str(row[column]) for column in columns))
+    for row in rows:
+        if row["section"] in ("notice", "selection", "holdout_verdict"):
+            print((row["method"] + " " if row["method"] else "") + row["value"])
+
+
 def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--config", type=Path, default=DEFAULT_CONFIG)
@@ -239,15 +365,34 @@ def main(argv=None):
     parser.add_argument("--products", type=int, default=500)
     parser.add_argument("--out", required=True, help="reports/ 아래 보고서 이름")
     parser.add_argument("--holdout", action="store_true", help="규칙을 고르지 않고 기준 충족만 확인")
+    parser.add_argument("--containment", action="store_true", help="정지 규칙 대신 격리 방식을 평가")
+    parser.add_argument("--selected-from", type=Path, help="--containment --holdout에서 쓸 개발 보고서")
     args = parser.parse_args(argv)
     try:
         if args.products < 1:
             raise ValueError("products는 양의 정수여야 함")
         seeds = parse_seeds(args.seeds)
-        runs, rule_metrics, provenance = evaluate(args.config, seeds, parse_rules(args.rules), args.products)
-        rows = rule_rows(rule_metrics, provenance, args.holdout)
+        if args.selected_from is not None and not (args.containment and args.holdout):
+            raise ValueError("--selected-from은 --containment --holdout에서만 사용 가능")
+        if args.containment:
+            if args.holdout and args.selected_from is None:
+                raise ValueError("--containment --holdout에는 --selected-from이 필요함")
+            runs, stops, provenance = evaluate_containment(args.config, seeds, parse_rules(args.rules), args.products)
+            selected = None
+            if args.holdout:
+                selected = read_selection(args.selected_from, provenance["config_sha256"])
+            rows = containment_rows(runs, stops, provenance, args.holdout, selected)
+        else:
+            runs, rule_metrics, provenance = evaluate(args.config, seeds, parse_rules(args.rules), args.products)
+            rows = rule_rows(rule_metrics, provenance, args.holdout)
     except (OSError, UnicodeError, ValueError, KeyError) as error:
         parser.exit(2, "오류: " + str(error) + "\n")
+    if args.containment:
+        path = Path("reports") / (args.out + "_containment.csv")
+        write_csv(path, CONTAINMENT_COLUMNS, rows)
+        print_containment_rows(rows)
+        print("저장 파일: " + path.as_posix())
+        return 0
     rules_path, runs_path = Path("reports") / (args.out + "_rules.csv"), Path("reports") / (args.out + "_runs.csv")
     write_csv(rules_path, RULE_COLUMNS, rows)
     write_csv(runs_path, RUN_COLUMNS, run_rows(runs, seeds))
