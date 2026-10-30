@@ -5,6 +5,7 @@ Codex 검토 → Claude 수정 자동 반복 루프.
   pwsh -File tools/review-loop.ps1            # 수정 최대 3회
   pwsh -File tools/review-loop.ps1 -MaxFixes 1
 
+최초 검토는 ReviewModel, 재검토는 RecheckModel을 쓴다. reasoning은 Codex 기본 설정(high)을 따른다.
 한 회차 = Codex 검토 → (VERDICT: FIX이면) Claude 수정 → 스크립트가 커밋.
 마지막 수정 뒤에는 확인용 검토를 한 번 더 한다. 그래서 검토는 최대 MaxFixes+1회다.
 
@@ -21,8 +22,10 @@ Claude와 Codex는 커밋하지 않는다. 커밋은 이 스크립트가 한다.
 param(
     [ValidateRange(0, 10)]
     [int]$MaxFixes = 3,
-    # 검토에 쓰는 Codex 모델. 플랜에서 쓸 수 없으면 Codex 실행 실패로 멈춘다.
+    # 최초 검토에 쓰는 Codex 모델. 플랜에서 쓸 수 없으면 Codex 실행 실패로 멈춘다.
     [string]$ReviewModel = 'gpt-6-astra',
+    # 재검토에 쓰는 Codex 모델. 수정 범위 확인이 주목적이라 낮춘다.
+    [string]$RecheckModel = 'gpt-6.1-sol',
     # 수정에 쓰는 Claude 모델.
     [string]$FixModel = 'claude-opus-5-5'
 )
@@ -89,6 +92,12 @@ $baseCommit = (git log --grep '^review:' -n 1 --format=%H | Out-String).Trim()
 if (-not $baseCommit) { $baseCommit = (git rev-list --max-parents=0 HEAD | Select-Object -First 1).Trim() }
 $prevReviewCommit = $null
 $prevReviewFile = $null
+# 마지막 검토가 FIX였으면 중단된 루프를 재검토로 이어 간다.
+$lastReview = (git log --grep '^review:' -n 1 --format=%s | Out-String).Trim()
+if ($lastReview -match '^review: (\d{3}) \(FIX\)$') {
+    $prevReviewCommit = $baseCommit
+    $prevReviewFile = "handoff/reviews/$($Matches[1])-review.md"
+}
 $fixes = 0
 
 while ($true) {
@@ -104,16 +113,20 @@ while ($true) {
 - 이전 높음/중간 항목이 해결됐는지 항목별로 판정한다.
 - handoff/gpt-log.md의 반박이 근거 있으면 받아들이고 해결로 처리한다.
 - 수정이 새 문제를 만들지 않았는지 반례로 다시 확인한다. 새 지적도 중간 이상이면 올린다.
+- 반례는 이번 diff에 집중한다. 이전 반례 파일 전체를 다시 실행하지 않는다.
+- 전체 테스트는 한 번만 실행한다. 플러그인 리뷰 스킬과 보조 에이전트를 쓰지 않는다.
 "@
     } else {
         $scope = "첫 검토다. 변경 범위는 git diff $baseCommit..HEAD 와 git log $baseCommit..HEAD 로 확인한다(직전 검토 이후 커밋 전체)."
     }
 
+    $currentModel = if ($prevReviewCommit) { $RecheckModel } else { $ReviewModel }
     $reviewPrompt = @"
 AGENTS.md의 검수자 규칙을 따른다. 자동 검토 루프의 검토 단계다.
 handoff/tasks.md 맨 위 「현행 작업」의 명세와 기대표를 기준으로 코드를 검수하라.
 이전 단계들의 보존 조건(기존 테스트 무수정 통과, 기존 보고서 동일)도 반드시 확인한다.
 $scope
+- 리뷰 파일 첫머리에 검수 모델 $currentModel 을 적는다.
 - 테스트는 py -m unittest discover -s tests 로 직접 실행하고 명령과 결과를 붙인다.
 - AGENTS.md의 「반례 탐색」대로 명세 밖 반례를 최소 5개 handoff/reviews/probes/test_probe_$num.py 에 쓰고 실행한다.
 - 결과는 $reviewFile 와 handoff/reviews/probes/test_probe_$num.py 에만 쓴다. 다른 파일은 만들거나 고치지 않는다.
@@ -124,7 +137,7 @@ $scope
 "@
 
     $reviewLog = Join-Path $logDir "$num-codex.txt"
-    $reviewPrompt | codex exec -C $root -m $ReviewModel -s workspace-write - 2>&1 | Tee-Object -FilePath $reviewLog
+    $reviewPrompt | codex exec -C $root -m $currentModel -s workspace-write - 2>&1 | Tee-Object -FilePath $reviewLog
     if ($LASTEXITCODE -ne 0) { Stop-Loop "Codex 실행 실패 (종료 코드 $LASTEXITCODE). 로그: $reviewLog" }
 
     # 샌드박스는 파일 단위로 막지 못하므로 검수자의 쓰기 범위를 여기서 확인한다.
