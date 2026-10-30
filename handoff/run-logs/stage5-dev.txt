@@ -1,10 +1,10 @@
-rule | runs | detection_rate | mean_delay | stop_precision | mean_false_stops | false_stop_runs | full_outage_runs | unfinished_min | unfinished_median | unfinished_max | mean_normal_held | mean_defective_completed | criteria
-3:2 | 100 | 1.0000 | 9.71 | 0.3448 | 1.90 | 82 | 3 | 8 | 18.0 | 26 | 8.16 | 0.30 | 확인
-5:2 | 100 | 1.0000 | 7.84 | 0.2227 | 3.49 | 97 | 6 | 8 | 17.0 | 27 | 7.96 | 0.28 | 확인
-5:3 | 100 | 1.0000 | 19.77 | 0.8772 | 0.14 | 13 | 0 | 10 | 18.0 | 30 | 8.72 | 0.19 | 미확인
-10:3 | 100 | 1.0000 | 11.31 | 0.5291 | 0.89 | 58 | 0 | 10 | 18.0 | 30 | 8.18 | 0.16 | 미확인
-10:4 | 100 | 1.0000 | 17.40 | 0.9346 | 0.07 | 6 | 0 | 10 | 17.0 | 26 | 8.17 | 0.24 | 미확인
-20:4 | 100 | 1.0000 | 13.64 | 0.6623 | 0.51 | 43 | 0 | 10 | 17.0 | 25 | 7.93 | 0.21 | 미확인
+rule | runs | detection_rate | mean_delay | stop_precision | mean_false_stops | false_stop_runs | full_outage_runs | unfinished_min | unfinished_median | unfinished_max | mean_held | mean_normal_held | mean_defective_completed | criteria
+3:2 | 100 | 1.0000 | 9.71 | 0.3448 | 1.90 | 82 | 3 | 8 | 18.0 | 26 | 13.45 | 8.16 | 0.30 | 확인
+5:2 | 100 | 1.0000 | 7.84 | 0.2227 | 3.49 | 97 | 6 | 8 | 17.0 | 27 | 13.30 | 7.96 | 0.28 | 확인
+5:3 | 100 | 1.0000 | 19.77 | 0.8772 | 0.14 | 13 | 0 | 10 | 18.0 | 30 | 13.87 | 8.72 | 0.19 | 미확인
+10:3 | 100 | 1.0000 | 11.31 | 0.5291 | 0.89 | 58 | 0 | 10 | 18.0 | 30 | 13.56 | 8.18 | 0.16 | 미확인
+10:4 | 100 | 1.0000 | 17.40 | 0.9346 | 0.07 | 6 | 0 | 10 | 17.0 | 26 | 13.45 | 8.17 | 0.24 | 미확인
+20:4 | 100 | 1.0000 | 13.64 | 0.6623 | 0.51 | 43 | 0 | 10 | 17.0 | 25 | 13.16 | 7.93 | 0.21 | 미확인
 생성 데이터의 확률은 가정이며 실제 설비 진단 근거가 아니다.
 3:2 선택
 저장 파일: reports/eval_dev_rules.csv, reports/eval_dev_runs.csv

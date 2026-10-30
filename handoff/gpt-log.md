@@ -3621,3 +3621,7 @@ T44 seed=7 products=200 generation_seconds=0.049024 judgment_analysis_seconds=0.
 T44 seed=42 all_rows_deepcopy_invariant_seconds=37.870942
 T44 seed=7 all_rows_deepcopy_invariant_seconds=5.768965
 ```
+
+### 산출물 재생성 (리뷰 010 수정 후속, 2026-10-30)
+- `reports/eval_dev_*`, `eval_holdout_*`, `eval_baseline_*`와 `handoff/run-logs/stage5-*.txt`를 다시 만들었다. rules 보고서의 기존 열 값은 이전 커밋과 모두 같고 `mean_held` 열만 추가됐다. 전체 테스트 138개 통과.
+- 리뷰 011은 Codex 사용량 한도로 완료되지 못했다. 미완성 로그와 반례 파일은 저장소에 넣지 않았다.

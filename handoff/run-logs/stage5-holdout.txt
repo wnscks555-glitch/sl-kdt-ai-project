@@ -1,4 +1,4 @@
-rule | runs | detection_rate | mean_delay | stop_precision | mean_false_stops | false_stop_runs | full_outage_runs | unfinished_min | unfinished_median | unfinished_max | mean_normal_held | mean_defective_completed | criteria
-3:2 | 100 | 1.0000 | 8.47 | 0.3268 | 2.06 | 86 | 0 | 9 | 18.0 | 28 | 8.26 | 0.29 | 확인
+rule | runs | detection_rate | mean_delay | stop_precision | mean_false_stops | false_stop_runs | full_outage_runs | unfinished_min | unfinished_median | unfinished_max | mean_held | mean_normal_held | mean_defective_completed | criteria
+3:2 | 100 | 1.0000 | 8.47 | 0.3268 | 2.06 | 86 | 0 | 9 | 18.0 | 28 | 13.39 | 8.26 | 0.29 | 확인
 생성 데이터의 확률은 가정이며 실제 설비 진단 근거가 아니다.
 저장 파일: reports/eval_holdout_rules.csv, reports/eval_holdout_runs.csv
