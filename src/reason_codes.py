@@ -37,12 +37,22 @@ REASON_CODE_TABLE = (
     ("PRESERVE_RESTART_PRODUCT", "RULE_PRESERVE", "EQUIP_RESTART의 product_id는 빈칸이어야 함"),
     ("PRESERVE_RESTART_FIELDS", "RULE_PRESERVE", "EQUIP_RESTART의 inspection과 model은 빈칸이어야 함"),
     ("PRESERVE_BAD_RESTART_RESULT", "RULE_PRESERVE", "잘못된 재가동 결과 (FIXED 또는 NO_FAULT 필요)"),
+    ("PRESERVE_RESULT_FIELD", "RULE_PRESERVE", "측정 모드의 INSPECT result는 빈칸이어야 함"),
+    ("PRESERVE_BAD_VALUE", "RULE_PRESERVE", "value는 소수 형식이어야 함"),
+    ("PRESERVE_VALUE_FIELD", "RULE_PRESERVE", "INSPECT 이외의 value는 빈칸이어야 함"),
 )
 
 REASON_CODES = {code: (rule, template) for code, rule, template in REASON_CODE_TABLE}
 INJECTED_ERROR_CODES = (
     "SEQ_SKIP", "PRESERVE_BAD_RESULT", "PRESERVE_DUP_RESULT", "EQUIP_UNKNOWN", "RECIPE_UNKNOWN_STEP",
 )
+MEASURED_INJECTED_ERROR_CODES = (
+    "SEQ_SKIP", "PRESERVE_BAD_VALUE", "PRESERVE_DUP_RESULT", "EQUIP_UNKNOWN", "RECIPE_UNKNOWN_STEP",
+)
+
+
+def injected_error_codes(measured):
+    return MEASURED_INJECTED_ERROR_CODES if measured else INJECTED_ERROR_CODES
 
 
 def rejection_code(decision, event, models):

@@ -10,16 +10,28 @@ TRACE_COLUMNS = (
     "decision", "reason", "state", "stop_row_index", "stop_seq", "stop_product_id",
     "cause_row_indices", "cause_seqs", "cause_product_ids", "incomplete_reason", "history",
 )
+MEASURED_TRACE_COLUMNS = TRACE_COLUMNS + ("value", "lsl", "usl")
 
 
-def _row(section, product_id, **values):
+def _row(section, product_id, columns=TRACE_COLUMNS, **values):
     values.update(section=section, product_id=product_id)
-    return {column: values.get(column, "") for column in TRACE_COLUMNS}
+    return {column: values.get(column, "") for column in columns}
+
+
+def _spec(process, event):
+    """측정 행의 규격 열이다. 레시피에 없는 검사는 규격을 비운다."""
+    items = [item for model in process.models.values() for item in model.inspections
+             if event.get("event") == "INSPECT" and item.id == event.get("inspection")]
+    if not items:
+        return {}
+    return {"lsl": items[0].lsl or "", "usl": items[0].usl or ""}
 
 
 def build_trace(analysis, product_id):
     if not product_id and analysis.process.equipment_book.restart_enabled:
         raise ValueError("입력에 없는 제품 ID: " + product_id)
+    measured = analysis.process.measured
+    columns = MEASURED_TRACE_COLUMNS if measured else TRACE_COLUMNS
     rows = []
     for row_index, (event, decision) in enumerate(zip(analysis.events, analysis.decisions), 1):
         if decision.product_id != product_id:
@@ -33,8 +45,10 @@ def build_trace(analysis, product_id):
                 "cause_seqs": ";".join(item.seq for item in stop.fail_causes),
                 "cause_product_ids": ";".join(item.product_id for item in stop.fail_causes),
             }
+        if measured:
+            causes.update(value=decision.value, **_spec(analysis.process, event))
         rows.append(_row(
-            "event", product_id, row_index=row_index, seq=decision.seq, input=decision.input_text,
+            "event", product_id, columns, row_index=row_index, seq=decision.seq, input=decision.input_text,
             model=event.get("model", ""), equipment=event.get("equipment", ""), rule_id=decision.rule_id,
             decision="허용" if decision.accepted else "거절", reason=decision.reason, state=decision.state, **causes,
         ))
@@ -45,12 +59,13 @@ def build_trace(analysis, product_id):
     if product is not None and not analysis.process.retest_enabled:
         history = "; ".join(
             item.id + ": " + " → ".join(record.result + "@" + record.seq + "[" + record.equipment + "]"
+                                        + ("(value=" + record.value + ")" if record.value else "")
                                         for record in analysis.all_inspections
                                         if record.product_id == product_id and record.inspection == item.id)
             for item in product.recipe.inspections if item.id in product.inspections
         )
     rows.append(_row(
-        "current_state", product_id, state=product.status if product is not None else "미등록",
+        "current_state", product_id, columns, state=product.status if product is not None else "미등록",
         incomplete_reason=product.incomplete_reason if product is not None else "등록된 제품 없음", history=history,
     ))
     return rows
@@ -64,7 +79,7 @@ def write_trace(stem, product_id, rows, product_ids):
     path = Path("reports") / (stem + "_trace_" + component + ".csv")
     path.parent.mkdir(parents=True, exist_ok=True)
     with path.open("w", encoding="utf-8-sig", newline="") as target:
-        writer = csv.DictWriter(target, fieldnames=TRACE_COLUMNS)
+        writer = csv.DictWriter(target, fieldnames=tuple(rows[0]))
         writer.writeheader()
         writer.writerows(rows)
     return path
@@ -72,9 +87,10 @@ def write_trace(stem, product_id, rows, product_ids):
 
 def print_trace(rows, path):
     print("[제품 추적: " + rows[0]["product_id"] + "]")
-    print(" | ".join(TRACE_COLUMNS[1:-2]))
+    columns = [column for column in rows[0] if column not in ("section", "incomplete_reason", "history")]
+    print(" | ".join(columns))
     for row in rows[:-1]:
-        print(" | ".join(str(row[column]) for column in TRACE_COLUMNS[1:-2]))
+        print(" | ".join(str(row[column]) for column in columns))
     final = rows[-1]
     print("현재 상태의 근거")
     for column in ("state", "incomplete_reason", "history"):

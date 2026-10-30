@@ -102,12 +102,14 @@ def run_recipe(input_csv: Path, recipe_path: Path, parser, equipment_path=None, 
     from .recipe_reports import (
         LOT_COLUMN_INDEX, PRODUCT_COLUMNS as RECIPE_PRODUCT_COLUMNS, RETEST_PRODUCT_COLUMNS, build_recipe_reports,
     )
-    from .recipe_rules import INPUT_COLUMNS as RECIPE_INPUT_COLUMNS, EQUIPMENT_INPUT_COLUMNS, LOT_INPUT_COLUMNS
+    from .recipe_rules import input_columns
 
     try:
         book = load_recipe(recipe_path)
     except RecipeError as error:
         parser.exit(3, "레시피 오류:\n" + "\n".join(error.errors) + "\n")
+    if book.measured and equipment_path is None:
+        parser.exit(2, "오류: 측정 레시피에는 --equipment가 필요함\n")
     equipment_book = None
     if equipment_path is not None:
         from .equipment import EquipmentError, load_equipment
@@ -121,10 +123,7 @@ def run_recipe(input_csv: Path, recipe_path: Path, parser, equipment_path=None, 
         print("설비: " + equipment_path.as_posix() + " | SHA-256: " + equipment_book.sha256[:12])
     try:
         lot_mode = equipment_book is not None and equipment_book.lot_tracking
-        input_columns = RECIPE_INPUT_COLUMNS
-        if equipment_book is not None:
-            input_columns = LOT_INPUT_COLUMNS if lot_mode else EQUIPMENT_INPUT_COLUMNS
-        events = read_events(input_csv, input_columns)
+        events = read_events(input_csv, input_columns(equipment_book, book.measured))
         reports = build_recipe_reports(events, book.models, equipment_book)
         summary_rows = None
         traces = []
@@ -133,7 +132,7 @@ def run_recipe(input_csv: Path, recipe_path: Path, parser, equipment_path=None, 
 
             analysis = build_analysis(events, book.models, equipment_book)
         if summary:
-            from .reason_codes import INJECTED_ERROR_CODES
+            from .reason_codes import injected_error_codes
             from .summary import build_summary
 
             meta_path = Path(str(input_csv) + ".meta.json")
@@ -147,7 +146,7 @@ def run_recipe(input_csv: Path, recipe_path: Path, parser, equipment_path=None, 
                 if not isinstance(injected, dict) or any(
                         type(count) is not int or count < 0 for count in injected.values()):
                     raise ValueError("meta.json의 injected_errors는 값이 0 이상의 정수인 객체여야 함")
-                if not set(injected) <= set(INJECTED_ERROR_CODES):
+                if not set(injected) <= set(injected_error_codes(book.measured)):
                     raise ValueError("meta.json의 injected_errors 키는 주입 오류 5종 코드만 허용됨")
                 if "defective_products" in meta:
                     defective = meta["defective_products"]

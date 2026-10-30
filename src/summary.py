@@ -7,7 +7,7 @@ from decimal import Decimal, ROUND_HALF_UP
 from pathlib import Path
 
 from .recipe_rules import RESTART_EVENT, RecipeProcess
-from .reason_codes import INJECTED_ERROR_CODES, REASON_CODES, rejection_code
+from .reason_codes import REASON_CODES, injected_error_codes, rejection_code
 
 
 ASSUMPTION_NOTICE = "생성 데이터의 확률은 가정이며 실제 설비 진단 근거가 아니다."
@@ -30,6 +30,7 @@ class InspectionRecord:
     equipment: str
     result: str
     retest_number: int
+    value: str = ""
 
 
 @dataclass(frozen=True)
@@ -87,8 +88,8 @@ def build_analysis(events, models, equipment_book):
             continue
         product = process.products[event["product_id"]]
         record = InspectionRecord(
-            row_index, decision.seq, decision.product_id, inspection, event["equipment"], event["result"],
-            0 if is_first else product.retest_counts[inspection],
+            row_index, decision.seq, decision.product_id, inspection, event["equipment"], decision.result,
+            0 if is_first else product.retest_counts[inspection], decision.value,
         )
         all_results.append(record)
         if not is_first:
@@ -232,7 +233,7 @@ def build_summary(analysis, meta=None):
     if meta is not None:
         normal_rows = meta["normal_rows"]
         injected = meta["injected_errors"]
-        for code in INJECTED_ERROR_CODES:
+        for code in injected_error_codes(process.measured):
             count = injected.get(code, 0)
             rows.append(_row("injection_comparison", code, rule_id=REASON_CODES[code][0], normal_rows=normal_rows,
                              injected_count=count, injection_rate=_ratio(count, normal_rows),

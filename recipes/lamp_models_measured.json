@@ -1,0 +1,60 @@
+{
+  "A": {
+    "steps": [
+      "P1",
+      "P2",
+      "P3",
+      "P4",
+      "P5"
+    ],
+    "inspections": [
+      {
+        "id": "LEAK",
+        "after": "P3",
+        "lsl": "7.000",
+        "usl": "13.000",
+        "unit": "가상 단위"
+      },
+      {
+        "id": "LIGHT",
+        "after": "P5",
+        "lsl": "7.000",
+        "usl": "13.000",
+        "unit": "가상 단위"
+      },
+      {
+        "id": "FINAL",
+        "after": "P5",
+        "lsl": "7.000",
+        "usl": "13.000",
+        "unit": "가상 단위"
+      }
+    ],
+    "retest_limit": 2
+  },
+  "B": {
+    "steps": [
+      "P1",
+      "P2",
+      "P3",
+      "P4"
+    ],
+    "inspections": [
+      {
+        "id": "LEAK",
+        "after": "P2",
+        "lsl": "7.000",
+        "usl": "13.000",
+        "unit": "가상 단위"
+      },
+      {
+        "id": "LIGHT",
+        "after": "P4",
+        "lsl": "7.000",
+        "usl": "13.000",
+        "unit": "가상 단위"
+      }
+    ],
+    "retest_limit": 2
+  }
+}
