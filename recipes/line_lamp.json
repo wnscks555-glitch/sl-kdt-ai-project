@@ -1,0 +1,193 @@
+{
+  "generator": "generator_measured.json",
+  "period_seconds": "28800.000",
+  "planned_stop_seconds": "3000.000",
+  "demand_units": 1300,
+  "buffer_units": 2,
+  "repair_seconds": "600.000",
+  "elements": [
+    {
+      "id": "P1-1",
+      "step": "P1",
+      "seconds": {
+        "A": "9.000",
+        "B": "9.000"
+      },
+      "predecessors": []
+    },
+    {
+      "id": "P1-2",
+      "step": "P1",
+      "seconds": {
+        "A": "7.000",
+        "B": "7.000"
+      },
+      "predecessors": [
+        "P1-1"
+      ]
+    },
+    {
+      "id": "P2-1",
+      "step": "P2",
+      "seconds": {
+        "A": "11.000",
+        "B": "10.000"
+      },
+      "predecessors": [
+        "P1-2"
+      ]
+    },
+    {
+      "id": "P2-2",
+      "step": "P2",
+      "seconds": {
+        "A": "6.000",
+        "B": "6.000"
+      },
+      "predecessors": [
+        "P2-1"
+      ]
+    },
+    {
+      "id": "P3-1",
+      "step": "P3",
+      "seconds": {
+        "A": "12.000",
+        "B": "9.000"
+      },
+      "predecessors": [
+        "P2-2"
+      ]
+    },
+    {
+      "id": "P3-2",
+      "step": "P3",
+      "seconds": {
+        "A": "5.000",
+        "B": "5.000"
+      },
+      "predecessors": [
+        "P3-1"
+      ]
+    },
+    {
+      "id": "LEAK",
+      "step": "LEAK",
+      "seconds": {
+        "A": "34.000",
+        "B": "34.000"
+      },
+      "predecessors": [
+        "P3-2"
+      ]
+    },
+    {
+      "id": "P4-1",
+      "step": "P4",
+      "seconds": {
+        "A": "10.000",
+        "B": "10.000"
+      },
+      "predecessors": [
+        "LEAK"
+      ]
+    },
+    {
+      "id": "P4-2",
+      "step": "P4",
+      "seconds": {
+        "A": "8.000",
+        "B": "6.000"
+      },
+      "predecessors": [
+        "P4-1"
+      ]
+    },
+    {
+      "id": "P5-1",
+      "step": "P5",
+      "seconds": {
+        "A": "9.000",
+        "B": "0.000"
+      },
+      "predecessors": [
+        "P4-2"
+      ]
+    },
+    {
+      "id": "LIGHT",
+      "step": "LIGHT",
+      "seconds": {
+        "A": "18.000",
+        "B": "18.000"
+      },
+      "predecessors": [
+        "P5-1"
+      ]
+    },
+    {
+      "id": "FINAL",
+      "step": "FINAL",
+      "seconds": {
+        "A": "15.000",
+        "B": "0.000"
+      },
+      "predecessors": [
+        "LIGHT"
+      ]
+    }
+  ],
+  "machines": {
+    "LEAK": {
+      "counts": [
+        1,
+        2,
+        3
+      ],
+      "load": "5.000",
+      "clamp": "3.000",
+      "test": "22.000",
+      "unload": "4.000",
+      "width_mm": 1500,
+      "depth_mm": 1200,
+      "service_mm": 300
+    },
+    "LIGHT": {
+      "counts": [
+        1,
+        2
+      ],
+      "load": "3.000",
+      "clamp": "2.000",
+      "test": "11.000",
+      "unload": "2.000",
+      "width_mm": 1200,
+      "depth_mm": 1000,
+      "service_mm": 300
+    },
+    "FINAL": {
+      "counts": [
+        1,
+        2
+      ],
+      "load": "3.000",
+      "clamp": "2.000",
+      "test": "8.000",
+      "unload": "2.000",
+      "width_mm": 1200,
+      "depth_mm": 1000,
+      "service_mm": 300
+    }
+  },
+  "manual_station": {
+    "width_mm": 1200,
+    "depth_mm": 1000
+  },
+  "floor": {
+    "length_mm": 20000,
+    "width_mm": 7000,
+    "aisle_mm": 1000,
+    "pitch_mm": 300,
+    "gap_mm": 200
+  }
+}

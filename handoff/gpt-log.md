@@ -3781,3 +3781,34 @@ OK
 - M2 반영: Markdown에 근거 참조, 조치 근거, 효과 판정의 관측값을 넣었다. 회귀를 `test_t129_submitted_table`에 넣었다.
 
 리뷰 015가 기록한 `py` 런처 실패는 검수 샌드박스 환경 문제다. 사용자 PC에서 전체 테스트를 실행했다.
+
+## v2 9단계 구현 (2026-10-31, T130–T152)
+
+구현 담당 Claude Code. 명세는 사용자 위임으로 Claude가 확정했다. Sol 명세 검토 14건과 기능 제안(검사 구간 분해, 보전 공간, 피치 기반 버퍼)을 반영했다.
+
+### 기대·실제 대조
+| ID | 결과 | 테스트 |
+| --- | --- | --- |
+| T130–T133 | 일치 | `test_t130_definitions`, `test_t131_optimal_balance`, `test_t132_heuristic_gap`, `test_t133_mixed_and_fractional_takt` |
+| T134, T135 | 일치 | `test_t134_input_errors`, `test_t134_cli_exits_3_without_reports`, `test_t135_argument_errors_exit_2` |
+| T136–T142 | 일치 | `test_t136_*`–`test_t142_*` |
+| T143 | **명세 이견** | `test_t143_good_excludes_escaped_defects` |
+| T144, T145 | 일치 | `test_t144_t145_cycle_limits` |
+| T146, T147 | 일치 | `test_t146_t147_reports` |
+| T148, T149 | 일치 | `test_t148_selection`, `test_t149_holdout` |
+| T150, T151 | 일치 | `test_t150_layout_numbers`, `test_t151_svg` |
+| T152 | 일치 | 전체 테스트, 기존 보고서 변경 없음 |
+
+### 명세 이견
+- T143: 기대표는 `pass_uph` 180, `good_uph` 90이지만 명세 작성 때의 내 산술 오류다. 10초 제품 2개의 종료 시각은 20초이므로 정의대로면 `pass_uph` 360, `good_uph` 180이다. 정의를 따르는 값으로 테스트를 썼고, `handoff/tasks.md`의 기대표는 고치지 않았다.
+
+### 절차 차이
+- 명세는 9-1, 9-2, 9-3을 각각 커밋하라고 했지만 `src/line.py` 하나로 작성해 한 커밋으로 묶었다.
+- 리뷰 015의 지적 2건은 재검토 없이 회귀 테스트로 확인했으므로 이번 검토가 재검토를 겸한다.
+- 미리보기로 SVG를 볼 수 없어 좌표를 계산으로 확인했고, 하단 문구가 잘리는 문제를 찾아 고친 뒤 T151에 범위 검사를 넣었다. 실제 화면은 보지 못했다.
+
+### 결과
+선택 `2-1-1`, 개발 양품 UPH 182.8008, 홀드아웃 185.6781 `확인`. 조합 12개 표는 README에 있다.
+
+### 한계
+경로와 정지는 외생 입력이므로 후보들의 양품 수가 같고 종료 시각만 다르다. 설비 증설의 품질·신뢰성 효과를 평가하지 않는다.
