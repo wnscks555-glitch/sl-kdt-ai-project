@@ -1,4 +1,229 @@
-# 현행 작업: v2 7a단계 — 측정값 판정과 공정능력
+# 현행 작업: v2 8단계 — 합성 공정 PFMEA 연습과 근거 연결
+
+상태: **사용자 위임 확정** (2026-10-31). 결정 근거는 `handoff/decisions.md`. 1–7a단계(아래 명세)는 완료이며, 그 동작과 테스트는 보존한다.
+
+## 목표와 경계
+- 합성 램프 공정의 고장 모드를 PFMEA 형식으로 정리하고, 현재 관리와 조치를 판정 규칙·테스트·평가 수치에 연결한다.
+- 조치마다 목적·사전 성공 기준·관측 결과·잔여 위험을 묶어 보여 주고, 재검사 조건 대안을 같은 시드로 비교한다.
+- **연습이다.** 실제 공정, 실제 고객 영향, 실무 PFMEA 경험이 아니다. 기존 고정 문장을 유지하고 모든 보고서에 연습임을 표시한다.
+- 프로그램은 심각도·발생도·검출도를 추정하지 않는다. 합성 수치는 참고 관측치이고 점수 환산표가 아니다. 제출 표의 점수 칸은 비운다.
+- 제외: 실제 라인 데이터, AIAG/VDA AP 표, DFMEA, 관리계획서, 측정 시스템 분석.
+
+## 보존 조건
+- `src/rules.py`, 기존 테스트, 기존 설정, 샘플, 보고서는 수정하지 않는다. 판정기·생성기 동작은 바꾸지 않는다.
+- 새 코드는 `src/pfmea.py`, 새 테스트는 `tests/test_pfmea.py`다.
+
+## 입력 표 `data/pfmea_lamp.csv`
+UTF-8 BOM CSV다. 값을 다듬지 않는다. 열은 정확히 다음 순서다.
+
+`id,failure_type,process_step,function_requirement,failure_mode,effect,cause,prevention_control,detection_control,severity,occurrence,detection,evidence,evidence_note,action,action_owner,action_state,action_goal,control_before,control_after,success_reference,success_op,success_value,action_evidence,residual_risk,post_severity,post_occurrence,post_detection`
+
+| 열 | 규칙 |
+| --- | --- |
+| `id` | `PF-` + 두 자리 숫자, 중복 불가, 행은 `id` 오름차순 |
+| `failure_type` | `product`(제품 불량), `equipment`(설비 이상), `record`(데이터 기록 오류) |
+| `process_step` | 측정 레시피의 공정 또는 검사 ID, 또는 `ALL` |
+| `function_requirement`, `failure_mode`, `effect`, `cause` | 공백만 있으면 안 됨 |
+| `prevention_control`, `detection_control` | 공백 불가. 없으면 `없음` |
+| `severity`, `occurrence`, `detection` | `^(10\|[1-9])$`. 셋 다 있거나 셋 다 빈칸 |
+| `evidence` | **현재 관리**의 근거 참조. `;`로 구분. 빈칸 가능 |
+| `evidence_note` | `evidence`가 있으면 필수. 이 근거가 이 고장 모드와 왜 관련되는지 쓴다 |
+
+조치 열의 허용 조합은 다음과 같다. 표 밖 조합은 오류다.
+
+| `action_state` | `action`, `action_owner`, `action_goal` | `control_before`, `control_after` | `success_*` 3열 | `action_evidence` | `residual_risk` | `post_*` 3열 |
+| --- | --- | --- | --- | --- | --- | --- |
+| 빈칸 (조치 없음) | 빈칸 | 빈칸 | 빈칸 | 빈칸 | 빈칸 | 빈칸 |
+| `계획` | 필수 | 빈칸 | 셋 다 있거나 셋 다 빈칸 | 빈칸 | 빈칸 | 빈칸 |
+| `완료` | 필수 | 필수 | 빈칸 | 필수 | 빈칸 | 빈칸 |
+| `효과 확인` | 필수 | 필수 | 필수 | 필수 | 필수 | 셋 다 있거나 셋 다 빈칸 |
+
+- `control_before`, `control_after`는 조치 전후 점수가 평가하는 관리 상태다. 버전이나 T 번호를 적는다.
+- `success_reference`는 `metric:` 또는 `report:` 참조 1개다. `success_op`는 `>=` 또는 `<=`다. `success_value`는 `^-?[0-9]+(\.[0-9]+)?$`이다.
+- `post_*` 점수는 조치 전 점수가 있어야 쓸 수 있다.
+- 오류는 모두 종료 코드 3이고 `행번호.열이름` 위치를 표시하며 보고서를 만들지 않는다. 행번호는 헤더 다음 행을 1로 센다.
+
+## 근거 참조
+형식은 `종류:값`이다. 참조 앞뒤 공백, 빈 조각, 같은 칸의 중복 참조는 오류다. 없는 대상도 오류다. 모두 종료 코드 3이다.
+
+| 종류 | 값 | 확인 방법 | 관측 대상 |
+| --- | --- | --- | --- |
+| `rule` | `RULE_SEQ` 등 | 규칙 ID 목록과 `RULE_RETEST`, `RULE_EQUIP` | `record` |
+| `reason` | `SEQ_SKIP` 등 | `REASON_CODES` | `record` |
+| `test` | `tests/파일.py::클래스::메서드` | `ast`로 파일을 읽어 메서드 존재 확인. 실행하지 않음. 구문 오류도 위반 | `record` |
+| `metric` | 지표 ID | 이번 실행에서 계산 | 지표의 대상 |
+| `report` | `eval_lot_dev_containment:since_restart:capture_rate` | 아래 보고서 규칙 | `product` |
+
+**보고서 근거**: `reports/<파일>.csv`에서 `section=method`이고 해당 `method`인 행이 정확히 하나여야 한다. 열은 `capture_rate`, `mean_quarantine`, `precision`, `mean_residual`만 허용한다. 값이 빈칸이면 값 없음이고, 소수 형식이 아니면 오류다. 생성기 버전, 시드, 제품 수, 설정 SHA-256은 그 보고서의 `section=provenance`에서 읽고, 없으면 오류다. 같은 보고서의 `section=selection` 값이 있으면 `text`에 함께 싣는다.
+
+**근거 판정**은 현재 관리의 `evidence`만 본다. `action_evidence`는 존재 확인만 한다.
+
+| `evidence_status` | 조건 |
+| --- | --- |
+| `근거 없음` | 참조가 0개 |
+| `근거 부족` | 행의 `failure_type`과 관측 대상이 같은 참조가 없음 |
+| `값 없음` | 대상이 맞는 참조가 있으나 `metric`·`report`뿐이고 값이 모두 없음 |
+| `연결됨` | 그 밖 |
+
+- `product`·`equipment` 행에는 `rule`, `reason`, `test`의 관측 대상이 맞지 않는다. 입력 오류 거절 테스트는 데이터 기록 오류의 근거일 뿐이기 때문이다.
+- `record` 행에 제품 지표만 있으면 `근거 부족`이다.
+- `연결됨`은 참조가 이어졌다는 뜻이고, 관리 효과가 검증됐다는 뜻이 아니다. 보고서에 이 문장을 고정한다.
+
+## 지표
+측정 설정을 시드마다 `Generator(seed, config, models, book).normal_events(products)`로 생성해 정상 행만 `build_analysis`로 분석한다. `build_rows`는 쓰지 않으므로 오류 주입 후보 부족이 지표를 막지 않는다. 판정 결과는 실제 판정 경로에서 얻고, 결함 표식은 지표 계산에만 쓴다.
+
+합산은 실행별 원시 분자·분모를 더한다. 제품은 `(시드, product_id)`로 구분한다. 분모가 0이면 값 없음이다.
+
+| ID | 대상 | 범위 | 분자 | 분모 |
+| --- | --- | --- | --- | --- |
+| `defect_escape` | product | 전체 흐름, 실행 끝 상태 | 완료 상태 결함품 | 결함품 |
+| `all_defect_first_fail` | product | 모든 검사 | 결함품의 허용된 최초 측정 중 FAIL | 결함품의 허용된 최초 측정 |
+| `leak_defect_first_fail` | product | LEAK | 결함품의 LEAK 최초 측정 중 FAIL | 결함품의 LEAK 최초 측정 |
+| `leak_defect_retest_pass` | product | LEAK | LEAK 재검사가 있고 최종 LEAK 결과가 PASS인 결함품 | LEAK 재검사가 있는 결함품 |
+| `normal_reject` | product | 전체 흐름, 실행 끝 상태 | 보류·폐기 상태 정상품 | 정상품 |
+| `fault_stop_run` | equipment | 고장 설비 | 1회 이상 정지한 (실행, 고장 설비) 쌍 | (실행, 고장 설비) 쌍 |
+| `fault_no_stop_run` | equipment | 고장 설비 | 정지하지 않은 쌍 | (실행, 고장 설비) 쌍 |
+| `fault_stop_delay` | equipment | 고장 설비, 첫 정지까지 | 정지한 쌍의 첫 정지까지 최초 측정 수 합 | 정지한 쌍 |
+| `normal_stop_rate` | equipment | 고장 키에 없는 모든 설비, 실행 전체 | 정지 횟수 | 허용된 최초 측정 수 |
+
+- 고장 설비는 `fault_shift_sigma`의 키다. 0대면 `fault_*` 지표의 분모가 0이라 값이 없다. 여러 대면 쌍 단위로 세며, `fault_detail` 절에 설비별 정지 쌍·전체 쌍을 낸다.
+- `fault_stop_delay`는 시간이나 비율이 아니라 **검출된 쌍의 평균 최초 측정 건수**다. 미검출 쌍은 빠지므로 `fault_no_stop_run`과 함께 읽는다. `fault_stop_delay`는 소수 넷째 자리 값으로, 나머지도 소수 넷째 자리 `ROUND_HALF_UP`으로 표시한다.
+- 고장 설비의 측정은 수리 뒤 포함 `normal_stop_rate`에 어떤 경우에도 넣지 않는다. `NO_FAULT` 재가동을 거친 정상 설비의 측정은 넣는다.
+- 제품 지표는 실행 전체다. 고장·수리와 무관하게 모든 제품과 측정을 쓴다.
+- `defect_escape`, `all_defect_first_fail`, `normal_reject`, `normal_stop_rate`는 행별 보고서에 `전체 흐름 참고값`으로 표시한다.
+- 고정 문장: `최초 FAIL률은 원인 발생률이 아니고, 설비 정지율은 제품 불량 검출률이 아니다.`
+
+## 대안 비교
+PF-05의 조치 근거다. 측정 설정에서 `retest_probability`만 바꾼 세 조건을 같은 시드 범위로 실행해 지표를 나란히 낸다.
+
+| 조건 | `retest_probability` |
+| --- | --- |
+| `current` | 설정값 (0.70) |
+| `half` | 0.35 |
+| `none` | 0.00 |
+
+- `section=alternative` 행에 조건별 `defect_escape`, `leak_defect_retest_pass`, `normal_reject`, `all_defect_first_fail`을 분자·분모·값으로 낸다.
+- 난수 흐름이 달라지므로 같은 제품의 짝지은 비교가 아니다. 합산 비교만 뜻한다. 프로그램은 대안을 고르지 않는다.
+- `current`의 값은 `metric` 절의 값과 같아야 한다.
+
+## 효과 판정과 점수
+`효과 확인` 행은 `success_reference`의 값을 사전 기준과 비교한다.
+
+| `effect_result` | 조건 |
+| --- | --- |
+| `충족` | 값이 기준을 만족 |
+| `미충족` | 값이 기준을 만족하지 않음 |
+| `값 없음` | 값이 없음 |
+
+- 기준 비교는 소수 넷째 자리로 표시한 값이 아니라 `Decimal` 계산값으로 한다. `metric`은 분자/분모, `report`는 보고서 문자열이다.
+- 이것은 현재 관리의 성능 확인이다. 다른 가정의 이전 단계와 비교한 개선 전후 수치가 아니다. 보고서에 이 문장을 고정한다.
+- 미충족이어도 프로그램 오류가 아니다. 기준을 바꾸지 않고 그대로 보고한다.
+
+S·O·D는 1–10 정수이고 프로젝트 자체 기준 `docs/pfmea_scale.md`를 쓴다. AIAG/VDA 평가표나 AP가 아니다.
+
+- `rpn = S × O × D`, `post_rpn`도 같다. RPN으로 합격을 판정하지 않는다.
+- `severity >= 9`이면 `priority=우선`이다. 빈칸은 저위험이 아니라 `S≥9 표시 대상 아님`이다.
+- 조치 전후 점수가 모두 있으면 `rpn_change = post_rpn − rpn`을 표시한다. 차이만큼 위험이 줄었다는 뜻은 아니다. 조치 전후 관리 상태는 `control_before`, `control_after`로 읽는다.
+- 점수가 없으면 `score_status=점수 대기`, 있으면 `점수 입력`이다.
+
+`docs/pfmea_scale.md`는 다음을 정한다.
+- S는 가정한 영향, O는 원인과 예방 관리, D는 검출 대상·시점·관리의 유효성을 기준으로 삼는다.
+- 각 점수를 1–2, 3–4, 5–6, 7–8, 9–10 다섯 구간으로 문장 설명한다.
+- 합성 수치는 참고 관측치이며 점수로 환산하지 않는다. 고장을 처음부터 넣은 실행의 정지율은 O가 아니고, 최초 FAIL률의 여집합은 곧바로 D가 아니다.
+
+## 실행과 보고서
+```powershell
+py -m src.pfmea data/pfmea_lamp.csv --config recipes/generator_measured.json --seeds 0-29 --products 500
+```
+
+- `reports/pfmea_lamp_report.csv`, `reports/pfmea_lamp_report.md`를 쓴다. 이름은 입력 파일 stem에서 얻는다.
+- 같은 입력은 바이트까지 같다. 실행 시각을 쓰지 않는다.
+- 측정 설정이 아니면 종료 코드 2다. `--seeds` 형식은 `src.evaluate`와 같다. 제품 수는 1 이상이다. 파일 오류도 종료 코드 2다. 입력 표 오류는 종료 코드 3이다. 규칙은 표 검증을 지표 계산보다 먼저 한다.
+
+CSV 열은 `section`, 입력 표의 모든 열, 그리고 다음 열이다.
+
+`score_status,rpn,post_rpn,priority,rpn_change,evidence_status,effect_result,reference,condition,target,scope,numerator,denominator,value,generator_version,config_sha256,recipe_sha256,equipment_sha256,seeds,products,assumption,text`
+
+| `section` | 내용 |
+| --- | --- |
+| `notice` | 고정 문장 4개: 합성 연습, 기존 가정, 지표 해석, `연결됨`·효과 판정의 의미 |
+| `item` | 표의 행마다 1행. 입력 열 전부와 계산 열 |
+| `evidence` | 행과 현재 관리 참조마다 1행 |
+| `action` | `효과 확인` 행마다 1행. `reference`, 관측값, 기준, `effect_result` |
+| `metric` | 지표마다 1행. 분자·분모·값·범위·출처 SHA 3개·시드·제품 수 |
+| `fault_detail` | 고장 설비마다 1행 |
+| `alternative` | 조건·지표마다 1행 |
+| `coverage` | `failure_type`별 행 수와 `evidence_status`별 건수 |
+
+- `metric` 참조의 `assumption`은 `7a 측정 설정`이다.
+- `report` 참조의 `assumption`은 `이전 단계 가정, 7a 결과 아님`이다. 분자·분모는 빈칸이고 출처는 그 보고서의 provenance다.
+- Markdown 보고서는 첫 줄에 연습임을 적고, 행마다 기능 → 고장 모드 → 영향 → 원인 → 현재 관리 → 근거 → 조치 → 사전 기준과 결과 → 잔여 위험을 적은 뒤, 지표 표와 대안 표를 싣는다. 값이 없는 칸은 `-`다.
+
+## 제출 표의 내용
+`data/pfmea_lamp.csv`는 6행이다. 점수와 `post_*`는 빈칸이다. `effect`와 `cause`는 합성 공정의 가정이며 실제 불량 사례가 아니다.
+
+| ID | 유형 | 대상 | 기능 | 고장 모드 | 현재 관리 근거 | 조치와 사전 기준 |
+| --- | --- | --- | --- | --- | --- | --- |
+| PF-01 | product | LEAK | LEAK 검사가 기밀 규격 초과 제품을 걸러 낸다 | 결함품이 LEAK에서 PASS | `leak_defect_first_fail`, `defect_escape` | 측정값 판정, `효과 확인`, `leak_defect_first_fail >= 0.80` |
+| PF-02 | equipment | LEAK | LEAK 설비가 치우침 없이 측정한다 | 측정 평균이 위로 이동 | `fault_stop_run`, `fault_no_stop_run`, `fault_stop_delay`, `normal_stop_rate` | 재가동 기록, `효과 확인`, `fault_stop_run >= 0.95` |
+| PF-03 | record | ALL | 공정 순서대로 기록한다 | 앞 공정 누락 입력 | `rule:RULE_SEQ`, `reason:SEQ_SKIP`, 테스트 | 없음 |
+| PF-04 | record | ALL | 모델의 레시피 공정만 기록한다 | 다른 모델의 공정 입력 | `reason:RECIPE_UNKNOWN_STEP`, 테스트 | 없음 |
+| PF-05 | product | LEAK | 재검사가 결함품을 다시 걸러 낸다 | 결함품이 재검사에서 PASS | `leak_defect_retest_pass`, `normal_reject` | 재검사 조건 대안 비교, `완료`, 근거는 대안 테스트 |
+| PF-06 | product | ALL | 정지 뒤 의심 제품 **후보 목록**을 만든다 | 유출품이 후보 목록에서 누락 | `report:eval_lot_dev_containment:since_restart:capture_rate` | 격리 후보 보고서, `효과 확인`, `report:...:capture_rate >= 0.90` |
+
+- 사전 기준은 표에 적은 값이고 결과를 본 뒤 바꾸지 않는다. 0.95와 0.90은 5·6단계의 선택 기준을 그대로 쓴 값이고, 0.80은 가정한 결함품 FAIL 확률 약 84%에서 정한 값이다.
+- PF-06은 후보 목록 보고서다. 자동 격리가 아니고 제품 상태를 바꾸지 않는다. 6단계 가정의 값이다.
+
+## 사전 기대표
+공통 초기 상태 F: 측정 레시피, 재가동 설비. 모든 제품은 B 모델로 등록하고 P1·P2까지 마친다. 입력은 CSV 행을 `build_analysis`에 넣어 실제 판정 경로로 만든다. 행의 조치 열은 표기가 없으면 빈칸이다.
+
+- a(결함): LEAK-1 값 14 → 요청 → LEAK-1 값 10 → P3 → P4 → LIGHT-1 값 10
+- b(결함): LEAK-2 값 14
+- c(정상): LEAK-3 값 10 → P3 → P4 → LIGHT-1 값 10
+- d(정상): LEAK-3 값 14
+
+| ID | 입력 | 기대 결과 |
+| --- | --- | --- |
+| T113 | 제출 표, 시드 0–1, 제품 50 | 종료 0, 두 보고서 생성. 6개 행 모두 `점수 대기`, RPN 빈칸 |
+| T114 | 같은 입력을 두 폴더에서 실행 | CSV·Markdown 전체 바이트 동일 |
+| T115 | F의 제품 지표 | `defect_escape` 1/2, `all_defect_first_fail` 2/3, `leak_defect_first_fail` 2/2, `leak_defect_retest_pass` 1/1, `normal_reject` 1/2 |
+| T116 | 고장 설비 LEAK-2. 실행 ①: 서로 다른 제품의 최초 검사로 LEAK-2 값 `10,14,14`, LEAK-1 값 `14,14`. 실행 ②: LEAK-2 값 `10`, LEAK-1 값 `10`. 나머지 설비 측정 없음 | `fault_stop_run` 1/2, `fault_no_stop_run` 1/2, `fault_stop_delay` 3/1, `normal_stop_rate` 1/3 |
+| T117 | 분모 0: 결함품·재검사 없는 실행, 고장 설비 0대 | 결함·`fault_*` 지표 값 없음, 오류 없음 |
+| T118 | 고장 LEAK-2. 다른 제품으로 값 `14,14` 정지 → `FIXED` → 값 `14,14` 정지. LEAK-1은 다른 제품으로 값 `14,14` 정지 → `NO_FAULT` → 값 `10` | `fault_stop_delay` 2/1, `normal_stop_rate` 1/3. LEAK-2의 측정·정지는 분자·분모에 없음, LEAK-1의 재가동 뒤 측정은 있음 |
+| T119 | 합산: 실행별 `1/1`, `0/9` | 합산 `1/10`, 값 0.1000. 같은 `GEN_0001`이 두 실행에 있어도 각각 센다 |
+| T120 | 고장 설비 2대: 실행 1개에서 한 대만 정지 | `fault_stop_run` 1/2, `fault_no_stop_run` 1/2, `fault_detail` 2행, 두 지표 분자 합이 분모와 같음 |
+| T121 | 표 오류: ① 열 순서 ② 중복 id ③ `id` 형식 ④ `id` 역순 ⑤ `failure_type` ⑥ 없는 `process_step` ⑦ `severity`만 입력 ⑧ `11` ⑨ `01` ⑩ 공백만 있는 `effect` ⑪ `evidence_note` 없음 ⑫ 조치 없이 담당 입력 ⑬ `계획`에 `action_evidence` ⑭ `완료`에 근거 없음 ⑮ `효과 확인`에 `success_value` 없음 ⑯ `효과 확인`에 `residual_risk` 없음 ⑰ `계획`에 `post_severity` ⑱ 조치 전 점수 없이 `post_*` ⑲ `success_op`가 `>` ⑳ `success_reference`가 `test:` | 모두 종료 코드 3, 위치 표시, 보고서 미생성 |
+| T122 | 근거 오류: ① 없는 규칙 ② 없는 사유 코드 ③ 없는 테스트 파일 ④ 없는 메서드 ⑤ 없는 지표 ⑥ 없는 보고서 ⑦ 없는 방식 ⑧ 허용 밖 열 ⑨ 알 수 없는 종류 ⑩ 빈 조각 ⑪ 앞뒤 공백 ⑫ 중복 참조 ⑬ 비수치 보고서 값 ⑭ 같은 방식 행 2개 ⑮ provenance 없는 보고서 ⑯ 구문 오류 테스트 파일 | 모두 종료 코드 3, 위치 표시, 보고서 미생성 |
+| T123 | `evidence_status`: ① 근거 빈칸 ② `product` + `test`만 ③ `product` + `metric:fault_stop_run` ④ `equipment` + `metric:fault_stop_run` ⑤ `record` + `reason:SEQ_SKIP` ⑥ `product` + 분모 0 지표뿐 ⑦ `record` + `metric:defect_escape`뿐 ⑧ `evidence` 빈칸 + `action_evidence` 있음 | ① `근거 없음` ②③ `근거 부족` ④⑤ `연결됨` ⑥ `값 없음` ⑦ `근거 부족` ⑧ `근거 없음` |
+| T124 | 점수: S 8, O 3, D 4, 조치 후 S 8, O 2, D 4, `효과 확인`. 다른 행: S 9, O 1, D 1 | `rpn` 96, `post_rpn` 64, `rpn_change` −32, `priority` 빈칸, `점수 입력`. 다른 행은 `rpn` 9, `priority` `우선` |
+| T125 | `report:eval_lot_dev_containment:since_restart:capture_rate`, `>= 0.90` | 값 0.8525, 생성기 버전 `1.3.0`, 시드 `0-99`, `effect_result` `미충족`, 분자·분모 빈칸, `selection` 문구가 `text`에 있음 |
+| T126 | `metric` 기준: 값 2/3과 `>= 0.6667`, `<= 0.6667`, 분모 0 | `미충족`, `충족`, `값 없음` (표시값이 아니라 계산값으로 비교) |
+| T127 | 비측정 설정, 잘못된 시드, 제품 0, 없는 입력 파일 | 모두 종료 코드 2, 보고서 미생성 |
+| T128 | 대안 비교, 시드 0–1, 제품 50 | 조건 3개·지표 4개 12행. `current`가 `metric` 값과 같음. `none`의 `leak_defect_retest_pass` 값 없음 |
+| T129 | 제출 표 + 시드 0–29, 제품 500 | 6개 행 모두 `연결됨`, 점수 칸 빈칸, `notice` 4행, `metric` 9행, 생성기 버전 `1.4.0`, `action` 3행, 고정 문장이 CSV와 Markdown에 있고 `AIAG/VDA`를 평가 방식으로 표시하지 않음. 입력 표와 기존 보고서 바이트 불변 |
+
+## 구현 순서
+1. **8-1**: 입력 표 검증, 근거 해석, 점수, T121–T124, T127.
+2. **8-2**: 지표, 효과 판정, 대안 비교, T115–T120, T125, T126, T128.
+3. **8-3**: 보고서, 제출 표, 기준표 문서, T113, T114, T129.
+
+각각 커밋하고 뒤에 검수 루프를 한 번 돌린다.
+
+## 산출물
+- `src/pfmea.py`, `tests/test_pfmea.py`, `data/pfmea_lamp.csv`, `docs/pfmea_scale.md`
+- `reports/pfmea_lamp_report.csv`, `reports/pfmea_lamp_report.md`
+- README 「합성 공정 PFMEA 연습 (v2 8단계)」 절, 표현 규칙 포함
+
+## 완료 보고 (반드시 포함)
+- 실행 명령과 출력 원문, 전체 테스트 결과, T113–T129 기대·실제 대조
+- 지표 9개와 대안 3조건의 분자·분모·값, 효과 판정 결과, 해석의 한계
+- 명세와 다르게 구현한 부분, 또는 "명세 이견" 항목
+
+## 사용자 몫
+- S·O·D 점수 입력. 점수를 넣으면 보고서를 다시 실행한다. 점수가 없어도 프로그램은 완료 상태다.
+- `effect`와 `cause` 문장을 자기 말로 고치기. 면접에서 설명할 수 있어야 한다.
+
+# v2 7a단계 명세 (구현 완료, 2026-10-31 · 리뷰 014 지적 수정, 사용자 승인 전)
 
 상태: **사용자 확정** (2026-10-31). 결정 근거는 `handoff/decisions.md`. 1–6단계(아래 명세)는 완료이며, 그 동작과 테스트는 보존한다.
 
