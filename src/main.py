@@ -97,7 +97,7 @@ def print_reports(reports, paths, product_heading="product_id | 최종 상태 | 
 
 
 def run_recipe(input_csv: Path, recipe_path: Path, parser, equipment_path=None, *, summary=False, trace=(),
-               containment=False) -> int:
+               containment=False, capability=False) -> int:
     from .recipe import RecipeError, load_recipe
     from .recipe_reports import (
         LOT_COLUMN_INDEX, PRODUCT_COLUMNS as RECIPE_PRODUCT_COLUMNS, RETEST_PRODUCT_COLUMNS, build_recipe_reports,
@@ -110,6 +110,8 @@ def run_recipe(input_csv: Path, recipe_path: Path, parser, equipment_path=None, 
         parser.exit(3, "레시피 오류:\n" + "\n".join(error.errors) + "\n")
     if book.measured and equipment_path is None:
         parser.exit(2, "오류: 측정 레시피에는 --equipment가 필요함\n")
+    if capability and not book.measured:
+        parser.exit(2, "오류: --capability는 측정 레시피에서만 사용 가능\n")
     equipment_book = None
     if equipment_path is not None:
         from .equipment import EquipmentError, load_equipment
@@ -127,7 +129,7 @@ def run_recipe(input_csv: Path, recipe_path: Path, parser, equipment_path=None, 
         reports = build_recipe_reports(events, book.models, equipment_book)
         summary_rows = None
         traces = []
-        if summary or trace or containment:
+        if summary or trace or containment or capability:
             from .summary import build_analysis
 
             analysis = build_analysis(events, book.models, equipment_book)
@@ -189,6 +191,12 @@ def run_recipe(input_csv: Path, recipe_path: Path, parser, equipment_path=None, 
 
             containment_rows = build_containment(analysis)
             containment_path = write_containment(input_csv.stem, containment_rows)
+        capability_rows = None
+        if capability:
+            from .capability import build_capability, write_capability
+
+            capability_rows = build_capability(analysis)
+            capability_path = write_capability(input_csv.stem, capability_rows)
         trace_paths = []
         if traces:
             from .trace import write_trace
@@ -214,6 +222,10 @@ def run_recipe(input_csv: Path, recipe_path: Path, parser, equipment_path=None, 
         from .containment import print_containment
 
         print_containment(containment_rows, containment_path)
+    if capability_rows is not None:
+        from .capability import print_capability
+
+        print_capability(capability_rows, capability_path)
     return 0
 
 
@@ -225,6 +237,7 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
     parser.add_argument("--summary", action="store_true", help="설비 모드의 지표·파레토 분석 보고서")
     parser.add_argument("--trace", action="append", default=[], metavar="제품ID", help="설비 모드의 제품 추적 (반복 가능)")
     parser.add_argument("--containment", action="store_true", help="설비 모드의 정지별 격리 범위 보고서")
+    parser.add_argument("--capability", action="store_true", help="측정 모드의 설비별 Cpk·Ppk 보고서")
     args = parser.parse_args(argv)
     if args.equipment is not None and args.recipe is None:
         parser.error("--equipment는 --recipe와 함께만 사용 가능")
@@ -232,9 +245,11 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
         parser.error("--summary와 --trace는 설비 모드에서만 사용 가능")
     if args.containment and args.equipment is None:
         parser.error("--containment는 설비 모드에서만 사용 가능")
+    if args.capability and args.equipment is None:
+        parser.error("--capability는 측정 모드에서만 사용 가능")
     if args.recipe is not None:
         return run_recipe(args.input_csv, args.recipe, parser, args.equipment, summary=args.summary, trace=args.trace,
-                          containment=args.containment)
+                          containment=args.containment, capability=args.capability)
     try:
         reports = build_reports(read_events(args.input_csv))
         paths = write_reports(args.input_csv.stem, reports)

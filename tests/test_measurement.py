@@ -8,6 +8,7 @@ import sys
 import tempfile
 import unittest
 
+from src.capability import capability, show
 from src.equipment import load_equipment
 from src.reason_codes import MEASURED_INJECTED_ERROR_CODES, rejection_code
 from src.recipe import RecipeError, is_decimal_text, load_recipe
@@ -372,6 +373,172 @@ class ReportTests(unittest.TestCase):
             keys = {item["key"] for item in summary if item["section"] == "injection_comparison"}
             self.assertTrue(set(MEASURED_INJECTED_ERROR_CODES) <= keys)
             self.assertNotIn("PRESERVE_BAD_RESULT", keys)
+
+
+def stats(values, lsl="7", usl="13"):
+    return capability([[Decimal(str(value)) for value in values]], lsl, usl)
+
+
+class CapabilityFunctionTests(unittest.TestCase):
+    BASE = [9, 10, 11, 10, 10, 10, 11, 9, 10, 10]
+
+    def check(self, result, **expected):
+        for name, value in expected.items():
+            self.assertEqual(show(getattr(result, name)), value, name)
+
+    def test_t96_two_subgroups(self):
+        self.check(stats(self.BASE), xbarbar="10.0000", rbar="2.0000", sigma_within="0.8598", cpk="1.1630",
+                   sample_sd="0.6667", ppk="1.5000")
+
+    def test_t96_cpk_uses_unrounded_sigma(self):
+        self.assertEqual(show(Decimal(3) / (3 * Decimal("0.8598"))), "1.1631")
+        self.assertEqual(show(stats(self.BASE).cpk), "1.1630")
+
+    def test_t97_remainder_counts_only_for_ppk(self):
+        result = stats(self.BASE + [12])
+        self.assertEqual((result.n, result.subgroups), (11, 2))
+        self.check(result, cpk="1.1630", sample_sd="0.8739", ppk="1.0750")
+
+    def test_t98_one_sided(self):
+        self.check(stats(self.BASE, None, "13"), cpk="1.1630", ppk="1.5000")
+        self.check(stats(self.BASE, "7", None), cpk="1.1630", ppk="1.5000")
+
+    def test_t99_mean_outside_spec_is_negative(self):
+        self.check(stats([14, 15, 16, 15, 15, 15, 16, 14, 15, 15]), cpk="-0.7753", ppk="-1.0000")
+
+    def test_t100_wider_range(self):
+        self.check(stats([8, 10, 12, 10, 10, 10, 12, 8, 10, 10]), rbar="4.0000", cpk="0.5815", ppk="0.7500")
+
+    def test_t110_degenerate_inputs(self):
+        for values in ([], [10]):
+            result = stats(values)
+            self.assertEqual(result.subgroups, 0)
+            for name in ("xbarbar", "rbar", "sigma_within", "cpk", "sample_sd", "ppk"):
+                self.assertIsNone(getattr(result, name), name)
+        result = stats([9, 10, 11, 10])
+        self.assertEqual(result.subgroups, 0)
+        self.assertIsNone(result.xbarbar)
+        self.assertIsNone(result.cpk)
+        self.check(result, sample_sd="0.8165", ppk="1.2247")
+        result = stats([9, 10, 11, 10, 10])
+        self.assertEqual(result.subgroups, 1)
+        self.assertIsNone(result.cpk)
+        self.check(result, xbarbar="10.0000", rbar="2.0000", sample_sd="0.7071", ppk="1.4142")
+        result = stats([10] * 10)
+        self.assertEqual(result.subgroups, 2)
+        self.assertEqual((result.sigma_within, result.sample_sd), (0, 0))
+        self.assertIsNone(result.cpk)
+        self.assertIsNone(result.ppk)
+
+    def test_t110_large_spec_displays_fixed_point(self):
+        result = stats(self.BASE, None, "1" + "0" * 29)
+        for name in ("cpk", "ppk"):
+            text = show(getattr(result, name))
+            self.assertNotIn("E", text.upper())
+            self.assertEqual(len(text.split(".")[1]), 4)
+
+    def test_t110_negative_zero_is_display_only(self):
+        result = stats(["12", "13", "14", "13", "13", "13", "14", "12", "13", "13.00002"])
+        self.assertLess(result.cpk, 0)
+        self.assertLess(result.ppk, 0)
+        self.assertEqual((show(result.cpk), show(result.ppk)), ("0.0000", "0.0000"))
+
+
+class CapabilityReportTests(unittest.TestCase):
+    def report(self, rows, *extra):
+        with tempfile.TemporaryDirectory() as folder:
+            folder = Path(folder)
+            source = folder / "in.csv"
+            write_csv(source, rows)
+            result = run_cli("src.main", source, "--recipe", RECIPE, "--equipment", EQUIPMENT, "--capability",
+                             *extra, cwd=folder)
+            self.assertEqual(result.returncode, 0, result.stderr)
+            names = sorted(path.name for path in (folder / "reports").iterdir())
+            return read_csv(folder / "reports" / "in_capability.csv"), names
+
+    def measured(self, values):
+        products = ["p" + str(index) for index in range(len(values))]
+        rows = prepared(products)
+        rows += [leak(len(rows) + index + 1, product_id, str(value))
+                 for index, (product_id, value) in enumerate(zip(products, values))]
+        return rows
+
+    def leak1(self, rows):
+        return next(row for row in rows if row["equipment"] == "LEAK-1")
+
+    def test_t101_restart_splits_subgroups(self):
+        before = ["p" + str(index) for index in range(7)]
+        after = ["q" + str(index) for index in range(8)]
+        rows = prepared(before + after)
+        values = [10, 10, 10, 10, 10, 14, 14]
+        rows += [leak(len(rows) + index + 1, product_id, str(value))
+                 for index, (product_id, value) in enumerate(zip(before, values))]
+        rows.append(restart(len(rows) + 1))
+        rows += [leak(len(rows) + index + 1, product_id, "10") for index, product_id in enumerate(after)]
+        report, _ = self.report(rows)
+        row = self.leak1(report)
+        self.assertEqual((row["n"], row["subgroups"]), ("15", "2"))
+        self.assertEqual((row["xbarbar"], row["rbar"], row["sample_sd"]), ("10.0000", "0.0000", "1.4075"))
+        self.assertEqual((row["status"], row["cpk"], row["ppk"]), ("표본 부족", "", ""))
+
+    def test_rejected_restart_keeps_segment(self):
+        rows = self.measured([10, 10, 10, 10, 10])
+        rows.insert(-2, restart(len(rows) + 1, "NO_FAULT"))
+        report, _ = self.report(rows)
+        self.assertEqual((self.leak1(report)["n"], self.leak1(report)["subgroups"]), ("5", "1"))
+
+    def test_t102_retest_values_are_excluded(self):
+        rows = prepared(["p", "q"])
+        rows += [leak(len(rows) + 1, "p", "14"), row(len(rows) + 2, "p", "RETEST_REQUEST", "LEAK"),
+                 leak(len(rows) + 3, "p", "10"), leak(len(rows) + 4, "q", "11")]
+        report, _ = self.report(rows)
+        leak1 = self.leak1(report)
+        self.assertEqual((leak1["n"], leak1["subgroups"]), ("2", "0"))
+        self.assertEqual(leak1["sample_sd"], "2.1213")
+
+    def test_t103_status_rules(self):
+        pattern = [9, 10, 11, 10, 10]
+        report, _ = self.report(self.measured(pattern * 24))
+        row = self.leak1(report)
+        self.assertEqual((row["status"], row["n"], row["subgroups"], row["rbar"], row["cpk"], row["ppk"]),
+                         ("표본 부족", "120", "24", "2.0000", "", ""))
+        report, _ = self.report(self.measured(pattern * 25))
+        row = self.leak1(report)
+        self.assertEqual((row["status"], row["cpk"], row["sample_sd"], row["ppk"]),
+                         ("계산됨", "1.1630", "0.6350", "1.5748"))
+        other = next(item for item in report if item["equipment"] == "LEAK-3")
+        self.assertEqual((other["status"], other["n"], other["xbarbar"], other["sample_sd"], other["cpk"]),
+                         ("표본 부족", "0", "", "", ""))
+        report, _ = self.report(self.measured([10] * 125))
+        row = self.leak1(report)
+        self.assertEqual((row["status"], row["cpk"], row["ppk"]), ("변동 없음", "", ""))
+        report, _ = self.report(self.measured([9] * 65 + [11] * 60))
+        row = self.leak1(report)
+        self.assertEqual((row["status"], row["rbar"], row["cpk"], row["sample_sd"], row["ppk"]),
+                         ("변동 없음", "0.0000", "", "1.0032", "0.9835"))
+
+    def test_report_layout(self):
+        report, _ = self.report(self.measured([10]))
+        self.assertEqual(report[0]["section"], "notice")
+        self.assertIn("구간을 합친 값이며 안정 공정의 능력을 보증하지 않는다", report[0]["value"])
+        self.assertIn("생성 데이터의 확률은 가정이며", report[0]["value"])
+        keys = [(item["inspection"], item["equipment"]) for item in report[1:]]
+        self.assertEqual(keys, sorted(keys))
+        self.assertEqual(len(keys), 7)
+        self.assertEqual({item["unit"] for item in report[1:]}, {"가상 단위"})
+
+    def test_t104_mode_and_combination(self):
+        with tempfile.TemporaryDirectory() as folder:
+            folder = Path(folder)
+            source = folder / "in.csv"
+            write_csv(source, [], input_columns(BOOK))
+            result = run_cli("src.main", source, "--recipe", PLAIN_RECIPE, "--equipment", EQUIPMENT, "--capability",
+                             cwd=folder)
+            self.assertEqual(result.returncode, 2)
+            self.assertFalse((folder / "reports").exists())
+        _, names = self.report(self.measured([10]), "--summary", "--containment")
+        for suffix in ("capability", "summary", "containment"):
+            self.assertIn("in_" + suffix + ".csv", names)
 
 
 if __name__ == "__main__":
