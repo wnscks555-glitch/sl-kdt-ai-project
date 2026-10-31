@@ -151,7 +151,9 @@ def _seconds(value, location, errors, positive=False):
     if not isinstance(value, str) or re.fullmatch(SECONDS_PATTERN, value) is None:
         errors.append(location + ": 소수 셋째 자리까지의 문자열 초여야 함")
         return 0
-    milliseconds = int(Decimal(value) * 1000)
+    # 긴 입력도 반올림되지 않게 문자열을 정수로 바꾼다.
+    whole, _, fraction = value.partition(".")
+    milliseconds = int(whole) * 1000 + int(fraction.ljust(3, "0") or 0)
     if positive and milliseconds == 0:
         errors.append(location + ": 0보다 커야 함")
     return milliseconds
@@ -223,14 +225,24 @@ def _check_order(elements, models, errors):
             require(model, working(model, item.after), working(model, item.id), "after")
 
 
-def load_line(path, models):
-    """라인 파일을 읽어 검증한다. 문제는 위치와 함께 모아서 보고한다."""
+def read_line_file(path):
+    """측정 설정을 찾기 전에 파일 구조를 본다. 파일 접근 오류는 호출자에게 그대로 넘긴다."""
     try:
         data = json.loads(Path(path).read_bytes().decode("utf-8-sig"))
     except ValueError as error:
         raise LineError(["$: JSON 오류: " + str(error)]) from error
     if not isinstance(data, dict):
         raise LineError(["$: 최상위는 객체여야 함"])
+    if "generator" not in data:
+        raise LineError(["$.generator: 없는 키"])
+    if not isinstance(data["generator"], str) or not data["generator"].strip():
+        raise LineError(["$.generator: 비어 있지 않은 문자열이어야 함"])
+    return data
+
+
+def load_line(path, models):
+    """라인 파일을 읽어 검증한다. 문제는 위치와 함께 모아서 보고한다."""
+    data = read_line_file(path)
     errors = []
     _keys(data, ("generator", "period_seconds", "planned_stop_seconds", "demand_units", "buffer_units",
                  "repair_seconds", "elements", "machines", "manual_station", "floor"), "$", errors)
@@ -264,6 +276,9 @@ def load_line(path, models):
             errors.append(location + ".id: 비어 있거나 중복")
             continue
         seen.add(name)
+        if not isinstance(step, str):
+            errors.append(location + ".step: 문자열이어야 함")
+            continue
         if step not in steps | inspections:
             errors.append(location + ".step: 레시피에 없는 공정 또는 검사")
         seconds = item["seconds"]
@@ -274,6 +289,9 @@ def load_line(path, models):
         parents = item["predecessors"]
         if not isinstance(parents, list) or any(not isinstance(parent, str) for parent in parents):
             errors.append(location + ".predecessors: 문자열 배열이어야 함")
+            continue
+        if len(set(parents)) != len(parents):
+            errors.append(location + ".predecessors: 같은 선행 요소가 중복됨")
             continue
         elements.append(Element(name, step, times, tuple(parents), step in inspections))
     names = {element.id for element in elements}
@@ -757,8 +775,8 @@ def product_routes(config, recipe, book, seed, products):
         stops.setdefault(stop.product_id, set()).add(book.equipment[stop.equipment])
     defective = set(generator.defective_products)
     routes = []
-    for product_id in sorted(process.products):
-        state = process.products[product_id]
+    # 판정기의 등록 순서가 생성 번호 순서다. 문자열로 정렬하면 GEN_10000이 GEN_1001 앞에 온다.
+    for product_id, state in process.products.items():
         completed = state.status == COMPLETED
         routes.append(Route(product_id, state.model, dict(attempts.get(product_id, {})), completed,
                             product_id in defective, "" if completed else last.get(product_id, ""),
@@ -851,8 +869,14 @@ def run_combo(line, balance, combo, seed_routes):
     return stations, total
 
 
+def machine_order(line):
+    """동률 키와 조합 표기의 순서다. 입력 파일의 키 순서와 무관하다."""
+    fixed = [name for name in ("LEAK", "LIGHT", "FINAL") if name in line.machines]
+    return fixed + sorted(set(line.machines) - set(fixed))
+
+
 def compare(line, balance, seed_text, holdout_text, products, dev_routes, holdout_routes):
-    names = list(line.machines)
+    names = machine_order(line)
     target = target_uph(line)
     meets_takt = _manual_fit(line, balance)
     rows = [_row(COMPARE_COLUMNS, "notice", value=text) for text in (COMPARE_NOTICE, SYNTHETIC_NOTICE, ROUTE_NOTICE)]
@@ -925,7 +949,7 @@ def run(path, seed_text, holdout_text, products):
     seeds, holdout = parse_seeds(seed_text), parse_seeds(holdout_text)
     if set(seeds) & set(holdout):
         raise ValueError("--seeds와 --holdout-seeds는 겹칠 수 없음")
-    raw = json.loads(path.read_bytes().decode("utf-8-sig"))
+    raw = read_line_file(path)
     config, _, recipe, book = load_setup(path.parent / raw["generator"])
     if "process_cpk" not in config:
         raise ValueError("generator는 측정 설정이어야 함")
@@ -943,7 +967,7 @@ def run(path, seed_text, holdout_text, products):
         _write_csv(directory / (stem + "_compare.csv"), COMPARE_COLUMNS,
                    [_row(COMPARE_COLUMNS, "notice", value=COMPARE_NOTICE),
                     _row(COMPARE_COLUMNS, "selection", value=NO_BALANCE)])
-        return NO_BALANCE, None, None
+        return NO_BALANCE, None, [directory / (stem + "_balance.csv"), directory / (stem + "_compare.csv")]
     dev_routes = [product_routes(config, recipe, book, seed, products) for seed in seeds]
     holdout_routes = [product_routes(config, recipe, book, seed, products) for seed in holdout]
     routes = [route for run_routes in dev_routes for route in run_routes]
@@ -965,7 +989,8 @@ def run(path, seed_text, holdout_text, products):
         title += " (바닥 제약 초과)"
     with (directory / (stem + "_layout.svg")).open("w", encoding="utf-8", newline="\n") as target:
         target.write(render_svg(line, layout, combo, title))
-    return ("선택" if selected else NO_COMBO), rows, selected
+    paths = [directory / (stem + suffix) for suffix in ("_balance.csv", "_compare.csv", "_layout.svg")]
+    return ("선택" if selected else NO_COMBO), rows, paths
 
 
 def main(argv=None):
@@ -976,7 +1001,7 @@ def main(argv=None):
     parser.add_argument("--products", type=int, default=500)
     args = parser.parse_args(argv)
     try:
-        outcome, rows, selected = run(args.line, args.seeds, args.holdout_seeds, args.products)
+        outcome, rows, paths = run(args.line, args.seeds, args.holdout_seeds, args.products)
     except LineError as error:
         parser.exit(3, "라인 입력 오류:\n" + "\n".join(error.errors) + "\n")
     except (OSError, UnicodeError, csv.Error, ValueError, KeyError) as error:
@@ -991,8 +1016,7 @@ def main(argv=None):
         print(next(row["value"] for row in rows if row["section"] == "selection"))
     else:
         print(outcome)
-    stem = args.line.stem
-    print("저장 파일: reports/" + stem + "_balance.csv, reports/" + stem + "_compare.csv, reports/" + stem + "_layout.svg")
+    print("저장 파일: " + ", ".join(path.as_posix() for path in paths))
     return 0
 
 

@@ -12,10 +12,11 @@ import unittest
 import xml.etree.ElementTree as ElementTree
 
 from src.line import (
-    Element, Floor, LineError, Route, SimStation, area_of, cycle_limits, fits, heuristic_balance, holdout_result,
-    layout_of, load_line, manual_bound, optimal_balance, render_svg, select_combo, show, simulate, takt_of, target_uph,
-    uph,
+    Element, Floor, LineError, Route, SimStation, _seconds, area_of, cycle_limits, fits, heuristic_balance, holdout_result,
+    layout_of, load_line, machine_order, manual_bound, optimal_balance, product_routes, render_svg, select_combo, show,
+    simulate, takt_of, target_uph, uph,
 )
+from src.generate import load_setup
 from src.recipe import load_recipe
 
 
@@ -147,6 +148,36 @@ class DefinitionTests(unittest.TestCase):
             with self.subTest(index=index):
                 self.assertIn(text, self.changed(change))
 
+    def test_t134_structure_errors_exit_3(self):
+        with tempfile.TemporaryDirectory() as folder:
+            folder = Path(folder)
+            no_generator = {key: value for key, value in RAW.items() if key != "generator"}
+            bad_step = copy.deepcopy(RAW)
+            bad_step["generator"] = str(ROOT / "recipes" / "generator_measured.json")
+            bad_step["elements"][0]["step"] = ["P1"]
+            for name, data in (("none", no_generator), ("list", []), ("number", dict(RAW, generator=1)), ("step", bad_step)):
+                with self.subTest(name=name):
+                    path = folder / (name + ".json")
+                    path.write_text(json.dumps(data, ensure_ascii=False), encoding="utf-8")
+                    result = run_cli(path, "--seeds", "0-0", "--holdout-seeds", "1-1", "--products", 5, cwd=folder)
+                    self.assertEqual(result.returncode, 3, result.stderr)
+                    self.assertIn("$", result.stderr)
+                    self.assertNotIn("Traceback", result.stderr)
+            self.assertFalse((folder / "reports").exists())
+
+    def test_t134_duplicate_predecessor_is_rejected(self):
+        def change(data):
+            data["elements"][1]["predecessors"] = ["P1-1", "P1-1"]
+
+        self.assertIn("중복", self.changed(change))
+
+    def test_seconds_keep_every_digit(self):
+        errors = []
+        self.assertEqual(_seconds("123456789012345678901234567890.123", "$", errors),
+                         123456789012345678901234567890123)
+        self.assertEqual((_seconds("1.5", "$", errors), _seconds("2", "$", errors)), (1500, 2000))
+        self.assertEqual(errors, [])
+
     def test_t134_cli_exits_3_without_reports(self):
         data = copy.deepcopy(RAW)
         data["generator"] = str(ROOT / "recipes" / "generator_measured.json")
@@ -248,7 +279,18 @@ class SimulationTests(unittest.TestCase):
         self.assertEqual(simulate([manual("S1", 0)], routes(1, "B"), 0, 0).end, 0)
 
 
+class RouteTests(unittest.TestCase):
+    def test_routes_follow_generation_order_past_9999(self):
+        config, _, recipe, book = load_setup(ROOT / "recipes" / "generator_measured.json")
+        numbers = [int(route.product_id[4:]) for route in product_routes(config, recipe, book, 0, 10001)]
+        self.assertEqual(numbers, list(range(1, 10002)))
+
+
 class SelectionTests(unittest.TestCase):
+    def test_machine_key_order_does_not_change_combo_order(self):
+        reordered = replace(BASE, machines=dict(reversed(list(BASE.machines.items()))))
+        self.assertEqual(machine_order(reordered), ["LEAK", "LIGHT", "FINAL"])
+
     def test_t148_selection(self):
         self.assertEqual(select_combo([(10, 4, (2, 1, 1), True), (12, 3, (1, 1, 1), True)]), (2, 1, 1))
         self.assertEqual(select_combo([(10, 5, (2, 2, 1), True), (10, 4, (2, 1, 1), True)]), (2, 1, 1))
@@ -316,6 +358,21 @@ class CommandTests(unittest.TestCase):
         self.assertTrue(any(row["section"] == "spec" and row["key"] == "LEAK:2" for row in balance))
         self.assertTrue(any(row["section"] == "visit" and row["key"] == "good_rate" for row in balance))
         self.assertTrue(any("조건부" in row["value"] for row in compare if row["section"] == "notice"))
+
+    def test_infeasible_balance_lists_only_written_files(self):
+        data = copy.deepcopy(RAW)
+        data["generator"] = str(ROOT / "recipes" / "generator_measured.json")
+        data["demand_units"] = 2600
+        with tempfile.TemporaryDirectory() as folder:
+            folder = Path(folder)
+            path = folder / "tight.json"
+            path.write_text(json.dumps(data, ensure_ascii=False), encoding="utf-8")
+            result = run_cli(path, "--seeds", "0-0", "--holdout-seeds", "1-1", "--products", 5, cwd=folder)
+            self.assertEqual(result.returncode, 0, result.stderr)
+            self.assertIn("배치 불가", result.stdout)
+            self.assertNotIn("layout.svg", result.stdout)
+            self.assertEqual(sorted(item.name for item in (folder / "reports").iterdir()),
+                             ["tight_balance.csv", "tight_compare.csv"])
 
 
 if __name__ == "__main__":

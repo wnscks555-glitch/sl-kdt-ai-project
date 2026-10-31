@@ -1,9 +1,9 @@
-.........................................................................................................................................................................................................................................................
+...............................................................................................................................................................................................................................................................
 ----------------------------------------------------------------------
-Ran 249 tests in 104.288s
+Ran 255 tests in 107.321s
 
 OK
-T44 seed=42 products=500 generation_seconds=0.089688 judgment_analysis_seconds=0.047368
-T44 seed=7 products=200 generation_seconds=0.033945 judgment_analysis_seconds=0.018729
-T44 seed=42 all_rows_deepcopy_invariant_seconds=26.266477
-T44 seed=7 all_rows_deepcopy_invariant_seconds=4.313638
+T44 seed=42 products=500 generation_seconds=0.092877 judgment_analysis_seconds=0.048190
+T44 seed=7 products=200 generation_seconds=0.034660 judgment_analysis_seconds=0.018928
+T44 seed=42 all_rows_deepcopy_invariant_seconds=26.481245
+T44 seed=7 all_rows_deepcopy_invariant_seconds=4.336072
