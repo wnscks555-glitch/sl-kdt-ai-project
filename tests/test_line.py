@@ -29,6 +29,25 @@ BASE = load_line(LINE, MODELS)
 RAW = json.loads(LINE.read_text(encoding="utf-8-sig"))
 
 
+class LongValueTests(unittest.TestCase):
+    def test_show_is_exact_past_decimal_precision(self):
+        long_value = Fraction("123456789012345678901234567890.12345")
+        self.assertEqual(show(long_value), "123456789012345678901234567890.1235")
+        self.assertEqual(show(Fraction(1, 3)), "0.3333")
+        self.assertEqual(show(Fraction(-1, 3)), "-0.3333")
+        self.assertEqual(show(Fraction(-1, 1000000)), "0.0000")
+
+    def test_long_period_runs_through_reports(self):
+        data = copy.deepcopy(RAW)
+        data["period_seconds"] = "123456789012345678901234567890.123"
+        data["generator"] = str(ROOT / "recipes" / "generator_measured.json")
+        with tempfile.TemporaryDirectory() as folder:
+            path = Path(folder) / "line.json"
+            path.write_text(json.dumps(data), encoding="utf-8")
+            result = run_cli(path, "--seeds", "0-0", "--holdout-seeds", "1000-1000", "--products", 1, cwd=folder)
+            self.assertEqual(result.returncode, 0, result.stderr)
+
+
 def manual(name, milliseconds, model="A"):
     return SimStation(name, 1, {model: milliseconds})
 

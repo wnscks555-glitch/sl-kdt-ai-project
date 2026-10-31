@@ -4,7 +4,6 @@ import argparse
 from collections import Counter, deque
 import csv
 from dataclasses import dataclass, field
-from decimal import Decimal, ROUND_HALF_UP
 from fractions import Fraction
 import heapq
 from itertools import product as combinations_of
@@ -623,14 +622,16 @@ def simulate(stations, routes, buffer_units, repair):
     return result
 
 
-def _fixed(value):
-    return format(value.quantize(Decimal("0.0001"), rounding=ROUND_HALF_UP), ".4f")
-
-
 def show(value):
-    """분수를 표시 문자열로 바꾼다. 비교에는 쓰지 않는다."""
+    """분수를 소수 넷째 자리 ROUND_HALF_UP으로 표시한다. 비교에는 쓰지 않는다.
+
+    입력 자릿수에 상한이 없으므로 Decimal 문맥을 거치지 않고 정수로 반올림한다.
+    """
     fraction = Fraction(value)
-    return _fixed(Decimal(fraction.numerator) / Decimal(fraction.denominator))
+    scaled = abs(fraction) * 10000
+    whole, part = divmod((2 * scaled.numerator + scaled.denominator) // (2 * scaled.denominator), 10000)
+    sign = "-" if fraction < 0 and (whole or part) else ""
+    return "%s%d.%04d" % (sign, whole, part)
 
 
 def uph(count, end):

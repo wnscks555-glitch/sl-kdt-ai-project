@@ -95,7 +95,7 @@ class Plc:
         self.measure_id = 0
         self.value = ""
         self.verdict = 0
-        self.rejected = None
+        self.rejected = set()
         self.processed = 0
         self.ok_count = 0
         self.ng_count = 0
@@ -149,7 +149,7 @@ class Plc:
             self.table.holding[JUDGE_REGISTER:JUDGE_REGISTER + 2] = [0, 0]
             self.table.input_registers[REG_VALUE_HIGH] = high
             self.table.input_registers[REG_VALUE_LOW] = low
-        self.rejected = None
+        self.rejected = set()
         return self._go(WAIT_JUDGE)
 
     def _judge(self, snap):
@@ -160,8 +160,8 @@ class Plc:
             self.verdict = pair[1]
             self.events.append("판정 접수")
             return self._go(UNCLAMP)
-        if pair != self.rejected:
-            self.rejected = pair
+        if pair not in self.rejected:
+            self.rejected.add(pair)
             reason = "ID 불일치" if pair[0] != self.measure_id else "판정 값 오류"
             self.events.append("판정 거절: " + reason)
         return False

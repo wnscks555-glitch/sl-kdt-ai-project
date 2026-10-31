@@ -17,6 +17,7 @@ from src.equipment import EquipmentState
 from src.generate import confirm_value, load_setup
 from src.recipe import is_measured
 from src.recipe_rules import judge_value
+from src.station import two_sided_item
 
 
 NOTICE = ("합성 평균 이동 가정 안의 비교다. 실제 설비 데이터가 아니고, 예지보전 구현이나 이상 예측이 아니다. "
@@ -195,11 +196,7 @@ def load_process(settings):
     config, _, recipe, book = load_setup(settings.generator)
     if "process_cpk" not in config or not is_measured(recipe.models):
         raise ValueError("generator는 측정 설정이어야 함")
-    items = {(item.lsl, item.usl): item for model in recipe.models.values() for item in model.inspections
-             if item.id == settings.inspection}
-    if len(items) != 1 or None in next(iter(items)):
-        raise ValueError(settings.inspection + ": 모든 모델에서 같은 양측 규격이어야 함")
-    item = next(iter(items.values()))
+    item = two_sided_item(recipe.models, settings.inspection)
     lsl, usl = float(item.lsl), float(item.usl)
     return Process(item, (lsl + usl) / 2, (usl - lsl) / (6 * config["process_cpk"]),
                    config["defective_product_probability"], config["defect_shift_sigma"])

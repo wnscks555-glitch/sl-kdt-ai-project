@@ -3,6 +3,7 @@
 import argparse
 import csv
 from dataclasses import dataclass
+from decimal import Decimal
 import json
 from pathlib import Path
 
@@ -110,15 +111,22 @@ def load_station(path):
                    dict(data["delays"]), data["post_alarm_cycles"], data["max_cycles"])
 
 
+def two_sided_item(models, inspection):
+    """모든 모델에서 수치가 같은 양측 규격의 검사를 돌려준다. `7`과 `7.000`은 같은 규격이다."""
+    items = [item for model in models.values() for item in model.inspections if item.id == inspection]
+    if not items or any(item.lsl is None or item.usl is None for item in items):
+        raise ValueError(inspection + ": 모든 모델에서 양측 규격이어야 함")
+    if len({(Decimal(item.lsl), Decimal(item.usl)) for item in items}) != 1:
+        raise ValueError(inspection + ": 모든 모델에서 규격이 같아야 함")
+    return items[0]
+
+
 def load_values(station, seed, products):
     """측정 설정의 정상 사건에서 LEAK 최초 측정 value를 제품 순서대로 가져온다."""
     config, _, recipe, book = load_setup(station.generator)
     if "process_cpk" not in config or not is_measured(recipe.models):
         raise ValueError("generator는 측정 설정이어야 함")
-    items = {(item.lsl, item.usl): item for model in recipe.models.values() for item in model.inspections
-             if item.id == station.inspection}
-    if len(items) != 1 or None in next(iter(items)):
-        raise ValueError(station.inspection + ": 모든 모델에서 같은 양측 규격이어야 함")
+    item = two_sided_item(recipe.models, station.inspection)
     first = {}
     for row in Generator(seed, config, recipe.models, book).normal_events(products):
         if row["inspection"] == station.inspection and row["value"]:
@@ -127,7 +135,7 @@ def load_values(station, seed, products):
         raise ValueError(station.inspection + ": 측정값이 없는 제품이 있음")
     # 문자열로 정렬하면 GEN_10000이 GEN_1001 앞에 온다.
     ordered = sorted(first, key=lambda product: int(product.rpartition("_")[2]))
-    return [first[product] for product in ordered], next(iter(items.values()))
+    return [first[product] for product in ordered], item
 
 
 class Plant:

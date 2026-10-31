@@ -2,6 +2,7 @@ from decimal import Decimal
 import socket
 import struct
 import threading
+import time
 import unittest
 
 from src.modbus import (
@@ -162,7 +163,8 @@ class PduTests(unittest.TestCase):
 class FakeServer:
     """요청 하나마다 reply가 만든 바이트를 돌려준다."""
 
-    def __init__(self, reply):
+    def __init__(self, reply, send=None):
+        self.send = send or (lambda connection, answer: connection.sendall(answer))
         self.listener = socket.socket()
         self.listener.bind(("127.0.0.1", 0))
         self.listener.listen()
@@ -177,8 +179,14 @@ class FakeServer:
             frame = connection.recv(512)
             answer = self.reply(frame)
             if answer:
-                connection.sendall(answer)
-            connection.recv(16)
+                try:
+                    self.send(connection, answer)
+                except OSError:
+                    return
+            try:
+                connection.recv(16)
+            except OSError:
+                return
 
     def close(self):
         self.listener.close()
@@ -216,6 +224,27 @@ class ClientTests(unittest.TestCase):
 
     def test_eof_and_timeout(self):
         client = self.client(lambda frame: None, timeout=0.05)
+        with self.assertRaises(ModbusTimeout):
+            client.read_registers(READ_HOLDING, 0, 1)
+        self.assertTrue(client.closed)
+
+    def slow_client(self, gap, timeout):
+        def dribble(connection, reply):
+            for byte in reply:
+                connection.sendall(bytes((byte,)))
+                time.sleep(gap)
+
+        server = FakeServer(lambda frame: frame[:4] + b"\x00\x05\x01\x03\x02\x00\x07", dribble)
+        self.addCleanup(server.close)
+        client = ModbusClient(server.port, timeout)
+        self.addCleanup(client.close)
+        return client
+
+    def test_t170_slow_split_reply_passes_inside_the_deadline(self):
+        self.assertEqual(self.slow_client(0.005, 2).read_registers(READ_HOLDING, 0, 1), [7])
+
+    def test_t170_slow_split_reply_misses_the_deadline(self):
+        client = self.slow_client(0.05, 0.2)
         with self.assertRaises(ModbusTimeout):
             client.read_registers(READ_HOLDING, 0, 1)
         self.assertTrue(client.closed)

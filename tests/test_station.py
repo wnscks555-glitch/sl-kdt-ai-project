@@ -1,5 +1,6 @@
 import copy
 import csv
+from dataclasses import replace
 import json
 import os
 from pathlib import Path
@@ -11,11 +12,12 @@ import unittest
 from unittest import mock
 
 from src import station as module
+from src.generate import load_setup
 from src.modbus import ModbusClient, ModbusTimeout, Table, to_words
 from src.plc import OUTPUTS
 from src.recipe_rules import judge_value
 from src.station import (
-    Pc, Plant, SCENARIOS, StationError, load_station, load_values, run_scenario,
+    Pc, Plant, SCENARIOS, StationError, load_station, load_values, run_scenario, two_sided_item,
 )
 
 
@@ -110,6 +112,22 @@ class ScenarioTests(unittest.TestCase):
 
 
 class ValueOrderTests(unittest.TestCase):
+    def test_same_limits_in_other_notation_are_one_spec(self):
+        models = load_setup(load_station(CONFIG).generator)[2].models
+        other = {name: replace(model, inspections=tuple(replace(item, lsl="7", usl="13") for item in model.inspections))
+                 for name, model in list(models.items())[:1]}
+        mixed = {**models, **other}
+        self.assertEqual(two_sided_item(mixed, "LEAK").id, "LEAK")
+
+    def test_different_or_one_sided_limits_are_rejected(self):
+        models = load_setup(load_station(CONFIG).generator)[2].models
+        name = next(iter(models))
+        for change in (dict(usl="14"), dict(usl=None)):
+            model = replace(models[name], inspections=tuple(replace(item, **change)
+                                                            for item in models[name].inspections))
+            with self.assertRaises(ValueError):
+                two_sided_item({**models, name: model}, "LEAK")
+
     def test_values_follow_product_number_past_9999(self):
         station = load_station(CONFIG)
         rows = [{"inspection": "LEAK", "product_id": name, "value": value}

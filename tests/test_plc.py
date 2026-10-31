@@ -346,6 +346,18 @@ class JudgeTests(unittest.TestCase):
         rig.scan()
         self.assertEqual(rig.plc.events, [])
 
+    def test_t165_returning_pair_is_not_recorded_again(self):
+        rig = Rig()
+        rig.reach(WAIT_JUDGE)
+        recorded = []
+        for pair in ((2, 1), (1, 3), (2, 1), (0, 0), (1, 3)):
+            rig.judge(*pair)
+            rig.scan()
+            recorded.extend(rig.plc.events)
+        self.assertEqual(len(recorded), 2)
+        rig.judge(1, 1)
+        self.assertEqual(rig.scan(), UNCLAMP)
+
     def test_t165_judge_written_after_entry_is_kept_and_accepted(self):
         rig = Rig()
         rig.reach(WAIT_JUDGE)

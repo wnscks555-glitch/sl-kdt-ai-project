@@ -4,6 +4,7 @@ from decimal import Decimal, InvalidOperation, localcontext
 import socket
 import struct
 import threading
+import time
 
 from src.recipe import is_decimal_text
 
@@ -303,7 +304,7 @@ class ModbusClient:
 
     def __init__(self, port, timeout=1.0, on_frame=None):
         self.socket = socket.create_connection(("127.0.0.1", port), timeout=timeout)
-        self.socket.settimeout(timeout)
+        self.timeout = timeout
         self.socket.setsockopt(socket.IPPROTO_TCP, socket.TCP_NODELAY, 1)
         self.buffer = FrameBuffer()
         self.transaction = 0
@@ -320,8 +321,13 @@ class ModbusClient:
         self.close()
         raise ModbusResponseError(message)
 
-    def _chunk(self):
+    def _chunk(self, deadline):
+        """제한 시간은 요청 하나의 마감이다. 조각마다 다시 세면 느린 응답이 통과한다."""
+        remaining = deadline - time.monotonic()
         try:
+            if remaining <= 0:
+                raise socket.timeout
+            self.socket.settimeout(remaining)
             return self.socket.recv(4096)
         except socket.timeout as error:
             self.close()
@@ -330,10 +336,10 @@ class ModbusClient:
             self.close()
             raise ModbusResponseError("수신 실패: " + str(error)) from error
 
-    def _receive(self):
+    def _receive(self, deadline):
         frames = []
         while not frames:
-            chunk = self._chunk()
+            chunk = self._chunk(deadline)
             if not chunk:
                 self._fail("연결 끊김")
             frames = self.buffer.feed(chunk)
@@ -350,12 +356,17 @@ class ModbusClient:
         self.transaction = self.transaction % 65535 + 1
         frame = struct.pack(">HHHB", self.transaction, 0, len(pdu) + 1, UNIT_ID) + pdu
         self.on_frame("request", pdu[0], frame.hex(" "))
+        deadline = time.monotonic() + self.timeout
         try:
+            self.socket.settimeout(self.timeout)
             self.socket.sendall(frame)
+        except socket.timeout as error:
+            self.close()
+            raise ModbusTimeout("응답 제한 시간 초과") from error
         except OSError as error:
             self.close()
             raise ModbusResponseError("송신 실패: " + str(error)) from error
-        reply = self._receive()
+        reply = self._receive(deadline)
         self.on_frame("response", reply[7] if len(reply) > 7 else 0, reply.hex(" "))
         transaction, _, _, unit = struct.unpack(">HHHB", reply[:7])
         body = reply[7:]
