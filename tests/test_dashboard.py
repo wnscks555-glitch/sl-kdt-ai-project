@@ -279,6 +279,30 @@ class PageTests(unittest.TestCase):
                 self.assertEqual(run_cli(folder).returncode, 2)
                 self.assertFalse((reports / "dashboard.html").exists())
 
+    def test_t265_finite_inputs_that_overflow_refused(self):
+        with tempfile.TemporaryDirectory() as folder:
+            reports = copy_inputs(folder)
+            path = reports / "anomaly_lamp_replay.csv"
+            rows = rows_of(path)
+            for row in rows:
+                if row["alarm"] == "1":
+                    row.update(s_mean="1e308", s_sd="1e308", s_max="0", s_slope="0", s_ewma="0", s_fail_share="0")
+            with path.open("w", encoding="utf-8-sig", newline="") as target:
+                writer = csv.DictWriter(target, fieldnames=list(rows[0]))
+                writer.writeheader()
+                writer.writerows(rows)
+            model = reports / "anomaly_lamp_model.csv"
+            changed = rows_of(model)
+            for row in changed:
+                if row["section"] == "weight":
+                    row["value"] = {"mean": "1e308", "sd": "-1e308"}.get(row["name"], "0")
+            with model.open("w", encoding="utf-8-sig", newline="") as target:
+                writer = csv.DictWriter(target, fieldnames=list(changed[0]))
+                writer.writeheader()
+                writer.writerows(changed)
+            self.assertEqual(run_cli(folder).returncode, 2)
+            self.assertFalse((reports / "dashboard.html").exists())
+
     def test_t266_incident_chain(self):
         section = self.text[self.text.index("<section id=\"incident\""):]
         timeline = rows_of(REPORTS / "incident_lamp_timeline.csv")

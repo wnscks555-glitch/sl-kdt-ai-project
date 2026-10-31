@@ -298,7 +298,10 @@ def contribution_rows(reports):
     result = []
     for alarm in alarms:
         parts = [(name, weights[name] * _finite(alarm["s_" + name])) for name in FEATURES]
-        if abs(bias + sum(value for _, value in parts) - _finite(alarm["z"])) > 1e-8:
+        total = bias + sum(value for _, value in parts)
+        if not math.isfinite(total) or not all(math.isfinite(value) for _, value in parts):
+            raise DashboardError("로지스틱 기여값 계산이 유한하지 않음")
+        if abs(total - _finite(alarm["z"])) > 1e-8:
             raise DashboardError("로지스틱 기여값 합이 z와 다름")
         result.append((alarm, parts))
     return bias, result
