@@ -1,0 +1,22 @@
+{
+  "generator": "generator_measured.json",
+  "inspection": "LEAK",
+  "length": 400,
+  "onset_min": 100,
+  "onset_max": 300,
+  "shifts": [1.0, 1.5, 2.5],
+  "window": 10,
+  "ewma_lambda": 0.2,
+  "splits": {
+    "train": {"seed_start": 0, "count": 300},
+    "validation": {"seed_start": 1000, "count": 240},
+    "holdout": {"seed_start": 2000, "count": 240}
+  },
+  "learning_rate": 0.1,
+  "iterations": 2000,
+  "l2": 0.001,
+  "false_limit": 2,
+  "min_detection": 0.90,
+  "min_shift_detection": 0.70,
+  "repair_minutes": 10
+}
