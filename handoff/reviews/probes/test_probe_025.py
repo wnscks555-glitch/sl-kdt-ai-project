@@ -432,15 +432,7 @@ class Probe025(unittest.TestCase):
             dest=inputs(tmp);(dest/'line_lamp_layout.svg').write_text(payload,encoding='utf-8')
             target=dest/'dashboard.html';target.write_bytes(b'previous')
             result=cli('src.dashboard',['--root',tmp,'--out','reports/dashboard.html'],tmp)
-            chrome=Path(r'C:\Program Files\Google\Chrome\Application\chrome.exe')
-            if result.returncode==0 and chrome.exists():
-                run=subprocess.run([str(chrome),'--headless','--no-sandbox','--disable-gpu','--no-first-run',
-                                    '--no-default-browser-check','--disable-background-networking','--disable-extensions',
-                                    '--user-data-dir='+str(Path(tmp)/'profile'),'--dump-dom',target.as_uri()],
-                                   capture_output=True,timeout=30)
-                executed='data-probe025="executed"' in run.stdout.decode('utf-8',errors='replace')
-                print('P11 CLI',result.returncode,'previous_preserved',target.read_bytes()==b'previous',
-                      'Chrome exit',run.returncode,'injected_script_executed',executed)
+            print('P11 CLI',result.returncode,'previous_preserved',target.read_bytes()==b'previous')
             self.assertEqual(result.returncode,2,'XML comment can become executable HTML; original output must survive')
             self.assertEqual(target.read_bytes(),b'previous')
 
@@ -492,6 +484,224 @@ class Probe025(unittest.TestCase):
             if filename=='spc_lamp.json':current.pop('anomaly_replay')
             self.assertEqual(original,current)
         print('P15 base protected files',len(protected),'only permitted PLC additions; numerical recipes unchanged')
+
+    def test_p16_svg_xml_html_variants_and_recovery(self):
+        svg = 'http://www.w3.org/2000/svg'
+        bad = [
+            '<svg xmlns="%s"><!-- --!><script>1</script> --></svg>' % svg,
+            '<svg xmlns="%s"><![CDATA[</svg><script>1</script>]]></svg>' % svg,
+            '<svg xmlns="%s"><?probe ?><script>1</script></svg>' % svg,
+            '<!DOCTYPE svg [<!ENTITY x "probe">]><svg xmlns="%s">&x;</svg>' % svg,
+            '<svg xmlns="%s"><rect fill="URL(&#47;&#47;example.invalid/x)"/></svg>' % svg,
+            '<svg xmlns="%s"><rect fill="url(&#35;missing)"/></svg>' % svg,
+            '<svg xmlns="%s" xmlns:s="%s"><s:script>1</s:script></svg>' % (svg, svg),
+            '<svg xmlns="%s"><text xmlns="http://www.w3.org/1999/xhtml">x</text></svg>' % svg,
+        ]
+        with tempfile.TemporaryDirectory() as tmp:
+            dest=inputs(tmp);target=dest/'dashboard.html';target.write_bytes(b'previous')
+            for index,payload in enumerate(bad):
+                with self.subTest(index=index):
+                    (dest/'line_lamp_layout.svg').write_text(payload,encoding='utf-8')
+                    result=cli('src.dashboard',['--root',tmp,'--out','reports/dashboard.html'],tmp)
+                    self.assertEqual(result.returncode,2,result.stderr)
+                    self.assertEqual(target.read_bytes(),b'previous')
+            safe='<?xml version="1.0"?><svg xmlns="%s"><text>&lt;script&gt; &amp; &quot;</text></svg>' % svg
+            (dest/'line_lamp_layout.svg').write_text(safe,encoding='utf-8')
+            result=cli('src.dashboard',['--root',tmp,'--out','reports/dashboard.html'],tmp)
+            self.assertEqual(result.returncode,0,result.stderr)
+            text=target.read_text(encoding='utf-8');page=Page();page.feed(text)
+            self.assertEqual(page.scripts,3);self.assertNotIn('<?xml',text)
+        print('P16 eight XML/HTML, entity, namespace and reference variants refused; safe recovery: OK')
+
+    def test_p17_valid_degenerate_msa_reaches_dashboard(self):
+        # A permitted tight distribution rounds every study cell to 10.000.
+        # Generate the real upstream files, rather than inventing blank result cells.
+        with tempfile.TemporaryDirectory() as tmp:
+            root=Path(tmp);dest=inputs(tmp);shutil.copytree(ROOT/'recipes',root/'recipes')
+            generator=root/'recipes/generator_measured.json'
+            raw=json.loads(generator.read_text(encoding='utf-8'));raw['process_cpk']=1e6
+            generator.write_text(json.dumps(raw),encoding='utf-8')
+            config=root/'recipes/msa_lamp.json';raw=json.loads(config.read_text(encoding='utf-8'))
+            raw.update(products=12,dev_seeds='7-7',holdout_seeds='1007-1007')
+            config.write_text(json.dumps(raw),encoding='utf-8')
+            upstream=cli('src.msa',[config],tmp)
+            self.assertEqual(upstream.returncode,0,upstream.stderr)
+            grr=rows(dest/'msa_lamp_grr.csv')
+            self.assertEqual({r['pct_grr'] for r in grr},{''})
+            self.assertEqual({r['verdict'] for r in grr},{'판정 불가'})
+            target=dest/'dashboard.html';target.write_bytes(b'previous')
+            result=cli('src.dashboard',['--root',tmp,'--out','reports/dashboard.html'],tmp)
+            print('P17 upstream=0 blank_pct_grr=3 dashboard=',result.returncode,'stderr=',result.stderr.strip())
+            self.assertEqual(result.returncode,0,'Valid T192/T250 output must be displayed: '+result.stderr)
+            self.assertIn('판정 불가',target.read_text(encoding='utf-8'))
+
+    def test_p18_valid_replay_without_alarm(self):
+        base=anomaly.load_settings(ROOT/'recipes/anomaly_lamp.json')
+        source=rows(REPORTS/'anomaly_lamp_model.csv')
+        values={(r['section'],r['name']):r['value'] for r in source}
+        model=anomaly.Model(*[[float(values[section,name]) for name in anomaly.FEATURES]
+                              for section in ('mean','scale','weight')],
+                            float(values['bias','bias']),float(values['fit','gradient_norm']),1,1)
+        scenario=anomaly.build_split(base.splits['holdout'],base,anomaly.load_process(base))[1]
+        high=max(anomaly.logistic_scores(scenario,model))+1
+        for threshold in (None,high):
+            with self.subTest(threshold=threshold),tempfile.TemporaryDirectory() as tmp:
+                dest=inputs(tmp)
+                replay=anomaly.replay_rows(scenario,model,threshold,base)
+                self.assertTrue(replay);self.assertFalse(any(str(r['alarm'])=='1' for r in replay))
+                save_rows(dest/'anomaly_lamp_replay.csv',replay)
+                result=cli('src.dashboard',['--root',tmp,'--out','reports/dashboard.html'],tmp)
+                print('P18 upstream_status=',replay[0]['status'],'rows=',len(replay),
+                      'dashboard=',result.returncode,'stderr=',result.stderr.strip())
+                self.assertEqual(result.returncode,0,'Valid no-alarm replay must not require an alarm: '+result.stderr)
+
+    def test_p19_incident_links_cannot_silently_disappear(self):
+        data=dashboard.load_reports(ROOT)
+        text=(REPORTS/'incident_lamp_pfmea.md').read_text(encoding='utf-8')
+        links=dashboard.pfmea_links(text);chains=dashboard.chain_rows(data,links)
+        missing=[r[0] for r in chains if not r[-1]]
+        print('P19 submitted incident chains=',len(chains),'missing PFMEA=',missing)
+        # Remove the PFMEA rows for a true stop, for which scope is unambiguously required.
+        with tempfile.TemporaryDirectory() as tmp:
+            dest=inputs(tmp)
+            (dest/'incident_lamp_pfmea.md').write_text('\n'.join(line for line in text.splitlines()
+                                                               if 'cusum-3' not in line),encoding='utf-8')
+            target=dest/'dashboard.html';target.write_bytes(b'previous')
+            result=cli('src.dashboard',['--root',tmp,'--out','reports/dashboard.html'],tmp)
+            print('P19 removed true-stop PFMEA: exit=',result.returncode,'preserved=',target.read_bytes()==b'previous')
+            self.assertEqual(result.returncode,2,'Required T266 true-stop linkage must not silently become blank')
+            self.assertEqual(target.read_bytes(),b'previous')
+
+    def test_p21_repair_seed_isolation_all_splits(self):
+        settings=incident.load_settings(ROOT/'recipes/incident_lamp.json')
+        base=anomaly.load_settings(ROOT/'recipes/anomaly_lamp.json')
+        for split in anomaly.SPLITS:
+            changed=replace(base,splits=dict(base.splits,**{split:range(1009000,1009001)}))
+            for candidate in (replace(settings,story_seed=9000,summary_seeds=range(8000,8001)),
+                              replace(settings,story_seed=8000,summary_seeds=range(8999,9001))):
+                with self.subTest(split=split,story=candidate.story_seed):
+                    with self.assertRaises(incident.IncidentError):incident.check_seeds(candidate,changed)
+            incident.check_seeds(replace(settings,story_seed=9001,summary_seeds=range(9002,9003)),changed)
+        print('P21 shifted story/summary overlap with every split refused; adjacent seed accepted')
+
+    def test_p22_estimation_selection_and_sensitive_limits_isolation(self):
+        config=spc.load_settings(ROOT/'recipes/spc_lamp.json')
+        base=replace(anomaly.load_settings(config.anomaly),length=40,onset_min=20,onset_max=20,
+                     splits={'train':range(0,12),'validation':range(1000,1012),'holdout':range(2000,2012)})
+        process=anomaly.load_process(base)
+        splits={s:anomaly.build_split(seeds,base,process) for s,seeds in base.splits.items()}
+        limits=spc.estimate(spc.training_series(splits['train'],process))
+        altered=copy.deepcopy(splits)
+        for s in altered['train']:
+            if s.onset is not None:s.values=['-9999.000']*len(s.values)
+        self.assertEqual(spc.estimate(spc.training_series(altered['train'],process)),limits)
+        reference=spc.load_reference(REPORTS/'anomaly_lamp_methods.csv')
+        original=spc.compare(splits,limits,limits,config.tuning,process,base,reference)
+        for s in altered['holdout']:s.values=['9999.000']*len(s.values)
+        altered_result=spc.compare(altered,limits,limits,config.tuning,process,base,reference)
+        self.assertEqual(original[1],altered_result[1])
+        keep=lambda rs:[r for r in rs if r['section'] in ('validation','validation_shift')]
+        self.assertEqual(keep(original[0]),keep(altered_result[0]))
+        clean=replace(limits,rbar=limits.rbar/2,sigma_hat=limits.sigma_hat/2)
+        changed_clean=spc.compare(splits,limits,clean,config.tuning,process,base,reference)
+        self.assertEqual(original[1:],changed_clean[1:])
+        self.assertEqual([r for r in original[0] if not r['section'].startswith('clean')],
+                         [r for r in changed_clean[0] if not r['section'].startswith('clean')])
+        print('P22 fault-train, holdout and clean-limit mutations do not enter estimation/selection')
+
+    def test_p23_readme_numeric_tables_match_reports(self):
+        readme=(ROOT/'README.md').read_text(encoding='utf-8')
+        md=[[c.strip().replace('`','').replace('**','') for c in line.strip('|').split('|')]
+            for line in readme.splitlines() if line.startswith('|')]
+        count=0
+        for r in rows(REPORTS/'msa_lamp_grr.csv'):
+            expected=[r[k] for k in ('gauge','pct_grr','pct_tolerance','ndc','verdict','p_int','cpk_obs')]
+            self.assertIn(expected,md);count+=1
+        guard=rows(REPORTS/'msa_lamp_guard.csv')
+        for r in guard:
+            if r['section']=='holdout':
+                self.assertIn([r['gauge'],r['multiplier'],r['lower']+'–'+r['upper'],r['false_accept'],
+                               r['false_reject'],r['value']],md);count+=1
+        for name in ('good','marginal','poor'):
+            self.assertIn([name]+[r['false_accept'] for r in guard if r['section']=='operator_sensitivity'
+                                 and r['gauge']==name],md);count+=1
+        for report,stage in (('anomaly_lamp_methods.csv',11),('spc_lamp_methods.csv',13)):
+            data=rows(REPORTS/report)
+            for r in data:
+                if r['section'] not in ('validation','holdout'):continue
+                rates=[next(x['detection_rate'] for x in data if x['section']==r['section']+'_shift'
+                            and x['method']==r['method'] and float(x['shift'])==s) for s in (1.,1.5,2.5)]
+                expected=[('검증 ' if r['section']=='validation' else '홀드아웃 ')+r['method'],
+                          r['threshold'] if stage==11 else r['decision_interval'],r['detection_rate']]+rates
+                expected += [r[k] for k in ('early','missed','mean_delay_cost','false_per_1000')]
+                self.assertIn(expected,md);count+=1
+        data=rows(REPORTS/'incident_lamp_compare.csv')
+        for r in data:
+            if r['section']=='story':
+                self.assertIn([r[k] for k in ('method','stops','false_stops','detection','a','delay',
+                                              'suspect_measured','suspect_passed')],md);count+=1
+        for method in incident.METHODS:
+            value={r['name']:r['value'] for r in data if r['section']=='summary' and r['method']==method}
+            self.assertIn([method]+[value[k] for k in ('detected','early','missed','mean_delay',
+                         'mean_suspect_passed','mean_stops','mean_false_stops')],md);count+=1
+            for scope in incident.SCOPES:
+                target=[r for r in data if r['section']=='summary_scope' and r['method']==method and r['scope']==scope]
+                if not target or not target[0]['value']:continue
+                value={r['name']:r['value'] for r in target}
+                self.assertIn([method+' '+scope]+[value[k] for k in ('run_capture_rate','part_capture_rate',
+                              'mean_scope_size','mean_over_scope')],md);count+=1
+        print('P23 README independent table-cell/report matches=',count)
+
+    def test_p24_overflow_cli_preserves_output_then_recovers(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            dest=inputs(tmp);target=dest/'dashboard.html';target.write_bytes(b'previous')
+            model=rows(dest/'anomaly_lamp_model.csv');replay=rows(dest/'anomaly_lamp_replay.csv')
+            for r in model:
+                if r['section']=='weight':r['value']={'mean':'1e308','sd':'-1e308'}.get(r['name'],'0')
+                if r['section']=='bias':r['value']='0'
+            for r in replay:
+                if r['alarm']=='1':
+                    r['z']='1'
+                    for name in dashboard.FEATURES:r['s_'+name]='2' if name in ('mean','sd') else '0'
+            save_rows(dest/'anomaly_lamp_model.csv',model);save_rows(dest/'anomaly_lamp_replay.csv',replay)
+            result=cli('src.dashboard',['--root',tmp,'--out','reports/dashboard.html'],tmp)
+            self.assertEqual(result.returncode,2,result.stderr);self.assertEqual(target.read_bytes(),b'previous')
+            for name in ('anomaly_lamp_model.csv','anomaly_lamp_replay.csv'):
+                shutil.copyfile(REPORTS/name,dest/name)
+            result=cli('src.dashboard',['--root',tmp,'--out','reports/dashboard.html'],tmp)
+            self.assertEqual(result.returncode,0,result.stderr)
+            self.assertEqual(target.read_bytes(),(REPORTS/'dashboard.html').read_bytes())
+        print('P24 opposing finite overflow CLI exit=2, old HTML preserved, restored output identical')
+
+    def test_p25_reference_duplicates_and_measurement_collision(self):
+        base=anomaly.load_settings(ROOT/'recipes/anomaly_lamp.json')
+        with tempfile.TemporaryDirectory() as tmp:
+            path=Path(tmp)/'reference.csv'
+            reference=rows(REPORTS/'anomaly_lamp_methods.csv')
+            original=next(r for r in reference if r['section']=='validation' and r['method']=='rule_3_2')
+            wrong=dict(original,mean_delay_cost='999.0000')
+            for candidate in ([wrong]+reference,reference+[wrong],reference+[original]):
+                save_rows(path,candidate)
+                with self.assertRaises(ValueError):spc.load_reference(path)
+            save_rows(path,reference);spc.load_reference(path)
+            model=rows(REPORTS/'anomaly_lamp_model.csv')
+            duplicate=next(r for r in model if r['section']=='setting')
+            for candidate in ([dict(duplicate,value='wrong')]+model,model+[dict(duplicate,value='wrong')],model+[duplicate]):
+                save_rows(path,candidate)
+                with self.assertRaises(ValueError):spc.check_model(path,base)
+            save_rows(path,model);spc.check_model(path,base)
+            # Same pass/fail series does not imply identical measurements.
+            cfg=replace(base,length=40,onset_min=20,onset_max=20)
+            p=replace(anomaly.load_process(base),sigma=.2,defect_probability=0)
+            old=anomaly.build_scenario(2001,1.,cfg,p)
+            new=anomaly.build_scenario(2001,1.,cfg,replace(p,sigma=1/6))
+            self.assertNotEqual(old.values,new.values)
+            self.assertEqual(old.fails,new.fails)
+            save_rows(path,[{'seed':old.seed,'t':t,'value':old.values[t],
+                             'window_values':' '.join(old.values[t-cfg.window+1:t+1])} for t in (19,20,21)])
+            spc.check_replay(path,old)
+            with self.assertRaises(ValueError):spc.check_replay(path,new)
+        print('P25 reference/model duplicate orders rejected; identical FAIL series, changed values refused')
 
     def test_p20_readme_pipeline_end_to_end(self):
         before={str(p.relative_to(ROOT)):p.read_bytes() for folder in ('reports','data','recipes')
