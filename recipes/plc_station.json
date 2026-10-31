@@ -1,0 +1,24 @@
+{
+  "generator": "generator_measured.json",
+  "inspection": "LEAK",
+  "heartbeat_scans": 10,
+  "plc_stale_cycles": 20,
+  "timeouts": {
+    "check_scans": 30,
+    "clamp_scans": 20,
+    "measure_scans": 50,
+    "judge_scans": 30,
+    "unclamp_scans": 20,
+    "discharge_scans": 30
+  },
+  "delays": {
+    "arrive": 2,
+    "seat": 1,
+    "clamp_close": 3,
+    "measure": 5,
+    "clamp_open": 3,
+    "discharge": 2
+  },
+  "post_alarm_cycles": 20,
+  "max_cycles": 5000
+}
