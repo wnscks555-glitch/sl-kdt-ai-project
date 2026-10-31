@@ -6,9 +6,45 @@
 
 모든 공정 순서와 검사 조건은 **교육용 가상 규칙이며 SL 실제 기준이 아닙니다.** 점등·누설 결과는 실측값이 아닌 합성 `PASS`/`FAIL` 입력입니다. **「선택한 두 검사까지의 모의 흐름 완료」는 출하·양품·SL 기준 적합을 뜻하지 않습니다.**
 
+## 한눈에 보기
+
+조립·검사 공정을 합성 데이터로 모의해, 판정 규칙이 맞는지와 검사·정지 기준이 얼마나 듣는지를 수치로 확인하는 연습 프로젝트입니다. 실제 설비, 실제 라인, SL 기준이 아닙니다.
+
+결과는 [`reports/dashboard.html`](reports/dashboard.html)을 브라우저로 열면 탭 8개로 볼 수 있습니다.
+
+| 단계 | 내용 | 사전 기준 결과 |
+| --- | --- | --- |
+| 1–4 | 공정 진행 판정, 모델별 레시피, 재검사, 3:2 설비 정지 | 기대표 통과 |
+| 5–6 | 정지 규칙 평가, 격리 범위 평가 | 5단계 3:2 선택·확인, 6단계 기준 충족 방식 없음 |
+| 7a | 측정값 판정, Cpk·Ppk | 기준 없음, 수치 보고 |
+| 8 | 합성 공정 PFMEA 연습 | PF-01 충족, PF-02·PF-06 미충족, S·O·D는 사람이 매김 |
+| 9 | 라인 밸런싱, 레이아웃 도식 | 조합 2-1-1, 홀드아웃 확인 |
+| 10 | Python PLC 스캔 모의, 소프트웨어 간 Modbus TCP | 시나리오 8개 재현 |
+| 11 | 합성 이상 검출 | `logistic`, 홀드아웃 확인, 학습 수렴 미달 공개 |
+| 12 | 합성 Gage R&R, 가드밴드 | 세 게이지 모두 가드밴드 확인, %GRR은 13.4–64.6 |
+| 13 | SPC 관리도 비교 | 기준 충족 관리도 없음 |
+| 14 | 평균 이동 → 경보 → PLC 정지 → 복구 → 격리 → PFMEA 추적 | 선택 없음, 표로 비교 |
+| 15 | 단일 HTML 대시보드 | 표시 전용 |
+
+기준을 충족하지 못한 결과도 기준을 바꾸지 않고 그대로 둡니다. 13단계가 그 예입니다. 선택 기준은 결과를 보기 전에 정했고, 홀드아웃 시드는 확인에만 씁니다. 수치는 모두 가정한 합성 분포 안에서만 뜻이 있습니다.
+
+전체 재현 순서입니다. 이상 검출 학습 때문에 약 4분 걸립니다.
+
+```powershell
+py -m unittest discover -s tests
+py -m src.msa recipes/msa_lamp.json
+py -m src.anomaly recipes/anomaly_lamp.json
+py -m src.spc recipes/spc_lamp.json
+py -m src.station recipes/plc_station.json --scenario all
+py -m src.incident recipes/incident_lamp.json
+py -m src.dashboard --out reports/dashboard.html
+```
+
+작업 방식은 단계별로 다릅니다. 1–4단계는 Codex가 구현하고 Claude Code가 읽기 전용으로 검수했고, 5단계부터는 Claude Code가 구현하고 Codex가 읽기 전용으로 검수했습니다. 규칙과 기대표는 사람이 확인한 명세로 고정하고, 리뷰 지적과 처리는 `handoff/reviews/`, `handoff/gpt-log.md`에 남깁니다.
+
 ## 실행과 테스트
 
-Python 3 표준 라이브러리만 사용하며 별도 패키지 설치가 필요 없습니다. 이 PC의 실행 환경은 Python 3.9.13이고, `python` 명령은 Microsoft Store 안내로 연결되므로 `py`를 사용합니다. 저장소 `project/`에서 실행합니다.
+Python 3 표준 라이브러리만 사용하며 별도 패키지 설치가 필요 없습니다. 이 PC의 실행 환경은 Python 3.12.10이고, `python` 명령은 Microsoft Store 안내로 연결되므로 `py`를 사용합니다. 저장소 `project/`에서 실행합니다.
 
 ```powershell
 py -m src.main data/sample_events.csv

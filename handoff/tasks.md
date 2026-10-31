@@ -22,7 +22,7 @@
 | PFMEA | `reports/pfmea_lamp_report.csv` |
 | 라인 | `reports/line_lamp_compare.csv`, `reports/line_lamp_layout.svg` |
 | PLC | `reports/plc_station_<scenario>.csv` 8개 |
-| 사건 | `reports/incident_lamp_timeline.csv`, `reports/incident_lamp_compare.csv`, `reports/incident_lamp_suspects.csv` |
+| 사건 | `reports/incident_lamp_timeline.csv`, `reports/incident_lamp_compare.csv`, `reports/incident_lamp_suspects.csv`, `reports/incident_lamp_pfmea.md`(사건 ID와 PFMEA 행의 표) |
 
 파일이나 필요한 열이 없으면 종료 코드 2이고 HTML을 만들지 않는다. 일부만 있는 화면을 내지 않는다. 로지스틱 수렴 상태는 `anomaly_lamp_model.csv`의 `fit, status`와 `fit, gradient_norm` 행에서 읽는다.
 

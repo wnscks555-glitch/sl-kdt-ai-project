@@ -25,7 +25,8 @@ PLC_COLUMNS = ("cycle", "state", "alarm", "outputs", "processed", "events", "val
 INPUTS = {
     "gen_measured_seed42_capability.csv": ("section", "inspection", "equipment", "n", "cpk", "ppk", "status"),
     "msa_lamp_grr.csv": ("gauge", "pct_grr", "pct_tolerance", "ndc", "verdict", "cpk_obs"),
-    "msa_lamp_guard.csv": ("section", "gauge", "operator", "multiplier", "false_accept", "false_reject", "value"),
+    "msa_lamp_guard.csv": ("section", "gauge", "operator", "multiplier", "lower", "upper", "false_accept",
+                           "false_reject", "value"),
     "anomaly_lamp_methods.csv": ("section", "method", "shift", "threshold", "detection_rate", "early", "missed",
                                  "mean_delay_cost", "false_per_1000", "value"),
     "anomaly_lamp_model.csv": ("section", "name", "value"),
@@ -33,9 +34,10 @@ INPUTS = {
                                 "s_fail_share"),
     "spc_lamp_methods.csv": ("section", "method", "shift", "name", "value", "detection_rate", "early", "missed",
                              "mean_delay_cost", "false_per_1000", "decision_interval"),
-    "spc_lamp_chart.csv": ("onset", "t", "z", "ewma_limit", "c_plus", "c_minus"),
+    "spc_lamp_chart.csv": ("onset", "t", "value", "z", "ewma_limit", "c_plus", "c_minus", "xbar", "range"),
     "pfmea_lamp_report.csv": ("section", "id", "failure_mode", "severity", "occurrence", "detection",
-                              "evidence_status", "effect_result"),
+                              "evidence_status", "effect_result", "reference", "scope", "numerator", "denominator",
+                              "value"),
     "line_lamp_compare.csv": ("section", "combo", "area_mm2", "pass_uph", "good_uph", "bottleneck", "reject_reason",
                               "selected", "value"),
     "incident_lamp_timeline.csv": ("method", "incident_id", "cycle", "product", "event", "detail"),
@@ -116,7 +118,7 @@ def check_svg(text):
             references = SVG_REFERENCE.findall(value)
             if any(reference not in ids for reference in references):
                 raise DashboardError("SVG: 없는 id 참조")
-            if ":" in value or "\\" in value or "url(" in SVG_REFERENCE.sub("", value):
+            if ":" in value or "\\" in value or "url(" in SVG_REFERENCE.sub("", value).lower():
                 raise DashboardError("SVG: 허용 밖 참조")
     return text
 
@@ -278,24 +280,34 @@ def selection_of(rows):
     return picked[0]["value"], picked[1]["value"]
 
 
+def _finite(text):
+    value = float(text)
+    if not math.isfinite(value):
+        raise DashboardError("로지스틱 기여값 입력이 유한하지 않음")
+    return value
+
+
 def contribution_rows(reports):
-    """`b + Σ w_j s_j`를 경보 행에서 펼친다. 이 곱셈이 화면의 유일한 계산이고 보고서 z와 맞아야 한다."""
+    """`b + Σ w_j s_j`를 모든 경보 행에서 펼친다. 이 곱셈이 화면의 유일한 계산이고 보고서 z와 맞아야 한다."""
     model = reports["anomaly_lamp_model.csv"]
-    weights = {row["name"]: float(row["value"]) for row in model if row["section"] == "weight"}
-    bias = next((float(row["value"]) for row in model if row["section"] == "bias"), None)
-    alarm = next((row for row in reports["anomaly_lamp_replay.csv"] if row["alarm"] == "1"), None)
-    if alarm is None or bias is None or set(weights) != set(FEATURES):
+    weights = {row["name"]: _finite(row["value"]) for row in model if row["section"] == "weight"}
+    bias = next((_finite(row["value"]) for row in model if row["section"] == "bias"), None)
+    alarms = [row for row in reports["anomaly_lamp_replay.csv"] if row["alarm"] == "1"]
+    if not alarms or bias is None or set(weights) != set(FEATURES):
         raise DashboardError("로지스틱 기여값 입력이 모자람")
-    parts = [(name, weights[name] * float(alarm["s_" + name])) for name in FEATURES]
-    if abs(bias + sum(value for _, value in parts) - float(alarm["z"])) > 1e-8:
-        raise DashboardError("로지스틱 기여값 합이 z와 다름")
-    return alarm, bias, parts
+    result = []
+    for alarm in alarms:
+        parts = [(name, weights[name] * _finite(alarm["s_" + name])) for name in FEATURES]
+        if abs(bias + sum(value for _, value in parts) - _finite(alarm["z"])) > 1e-8:
+            raise DashboardError("로지스틱 기여값 합이 z와 다름")
+        result.append((alarm, parts))
+    return bias, result
 
 
 def overview_section(reports):
     capability = [row for row in section_rows(reports["gen_measured_seed42_capability.csv"], "capability")
                   if row["cpk"]]
-    lowest = min(capability, key=lambda row: float(row["cpk"]))
+    lowest = min(capability, key=lambda row: float(row["cpk"]), default=None)
     grr = reports["msa_lamp_grr.csv"]
     guard = section_rows(reports["msa_lamp_guard.csv"], "holdout")
     model_pick, model_hold = selection_of(reports["anomaly_lamp_methods.csv"])
@@ -308,7 +320,8 @@ def overview_section(reports):
     held = section_rows(line, "holdout")[0]
     stories = section_rows(reports["incident_lamp_compare.csv"], "story")
     rows = [
-        ("측정", "가장 낮은 Cpk %s %s" % (lowest["equipment"], lowest["cpk"]), lowest["status"]),
+        ("측정", "가장 낮은 Cpk %s %s" % (lowest["equipment"], lowest["cpk"]) if lowest else "유효한 Cpk 없음",
+         lowest["status"] if lowest else "표본 부족"),
         ("측정 시스템", ", ".join("%s %%GRR %s" % (row["gauge"], row["pct_grr"]) for row in grr),
          ", ".join("%s %s" % (row["gauge"], row["verdict"]) for row in grr) + " / 가드밴드 "
          + ", ".join("%s %s" % (row["gauge"], row["value"]) for row in guard)),
@@ -375,24 +388,35 @@ def detect_section(reports):
                         ("C−", [float(row["c_minus"]) for row in chart], "s2")],
                        [("고장 시작", onset, "x"), ("h", bound, "y")])
     model = {row["name"]: row["value"] for row in reports["anomaly_lamp_model.csv"] if row["section"] == "fit"}
-    alarm, bias, parts = contribution_rows(reports)
+    bias, alarms = contribution_rows(reports)
     picks = (selection_of(anomaly), selection_of(spc))
     notes = ("<p>11단계 선택: %s, %s. 13단계 선택: %s, %s.</p><p>로지스틱 학습: %s, 경사 노름 %s.</p>"
              % (e(picks[0][0]), e(picks[0][1]), e(picks[1][0]), e(picks[1][1]), status(model["status"]),
                 e(model["gradient_norm"])))
-    rows = [("bias", "%.4f" % bias)] + [(name, "%.4f" % value) for name, value in parts]
-    rows.append(("합 z", alarm["z"]))
-    terms = table(("항", "기여값"), rows, "경보 측정 t=%s의 b + Σ w_j s_j, 임계값 %s" % (alarm["t"], alarm["threshold"]))
+    terms = ""
+    for alarm, parts in alarms:
+        rows = [("bias", "%.4f" % bias)] + [(name, "%.4f" % value) for name, value in parts]
+        rows.append(("합 z", alarm["z"]))
+        terms += table(("항", "기여값"), rows, "경보 측정 t=%s의 b + Σ w_j s_j, 임계값 %s" % (alarm["t"], alarm["threshold"]))
     headers = ("단계", "방법", "검출률", "조기", "무경보", "평균 지연 비용", "측정 1,000건당 오경보")
-    return notes + table(headers, combined, "홀드아웃 비교") + shift_chart + ewma + cusum + terms
+    shift_table = table(("방법",) + tuple(shift + "σ" for shift in shifts), [(name,) + tuple(values) for name, values in groups],
+                        "이동량별 검출률 수치")
+    series = table(("t", "측정값", "z", "EWMA 한계", "C+", "C−", "X̄", "R"),
+                   [(row["t"], row["value"], row["z"], row["ewma_limit"], row["c_plus"], row["c_minus"], row["xbar"],
+                     row["range"]) for row in chart])
+    return (notes + table(headers, combined, "홀드아웃 비교") + shift_chart + shift_table + ewma + cusum
+            + "<details><summary>관리도 수치 %d행</summary>%s</details>" % (len(chart), series) + terms)
 
 
 def pfmea_section(reports):
     rows = [(row["id"], row["failure_mode"], row["severity"], row["occurrence"], row["detection"],
              row["evidence_status"], row["effect_result"])
             for row in section_rows(reports["pfmea_lamp_report.csv"], "item")]
+    evidence = [(row["id"], row["reference"], row["scope"], row["numerator"], row["denominator"], row["value"])
+                for row in section_rows(reports["pfmea_lamp_report.csv"], "evidence")]
     return ("<p>S·O·D 빈칸은 아직 사람이 매기지 않은 값입니다. 프로그램이 추정하지 않습니다.</p>"
-            + table(("ID", "고장 모드", "S", "O", "D", "근거 상태", "효과 판정"), rows))
+            + table(("ID", "고장 모드", "S", "O", "D", "근거 상태", "효과 판정"), rows)
+            + table(("ID", "근거 참조", "범위", "분자", "분모", "관측값"), evidence, "행별 근거와 관측값"))
 
 
 def line_section(reports, layout):

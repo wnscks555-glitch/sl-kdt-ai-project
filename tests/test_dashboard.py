@@ -163,7 +163,7 @@ class PageTests(unittest.TestCase):
             self.assertNotIn("수렴 미달", (reports / "dashboard.html").read_text(encoding="utf-8"))
 
     def test_t241_blank_scores(self):
-        section = self.text[self.text.index("<section id=\"pfmea\""):self.text.index("<section id=\"line\"")]
+        section = self.text[self.text.index("<section id=\"pfmea\""):self.text.index("행별 근거와 관측값")]
         rows = re.findall(r"<tr><td>PF-0\d</td>(.*?)</tr>", section)
         self.assertEqual(len(rows), 6)
         for row in rows:
@@ -206,6 +206,22 @@ class PageTests(unittest.TestCase):
             if path.name != "dashboard.html":
                 self.assertEqual(path.read_bytes(), (REPORTS / path.name).read_bytes(), path.name)
 
+    def test_t263_chart_numbers_are_static(self):
+        rows = rows_of(REPORTS / "spc_lamp_chart.csv")
+        for row in (rows[0], rows[len(rows) // 2], rows[-1]):
+            self.assertIn(row["c_plus"], self.body)
+            self.assertIn(row["z"], self.body)
+        for row in rows_of(REPORTS / "spc_lamp_methods.csv"):
+            if row["section"] == "holdout_shift":
+                self.assertIn(row["detection_rate"], self.body)
+
+    def test_t241_evidence_rows(self):
+        rows = [row for row in rows_of(REPORTS / "pfmea_lamp_report.csv") if row["section"] == "evidence"]
+        self.assertTrue(rows)
+        for row in rows:
+            self.assertIn(row["reference"], self.body)
+            self.assertIn(row["value"], self.body)
+
     def test_t263_static_content(self):
         for label in ("개요", "측정", "측정 시스템", "이상 검출", "PFMEA", "라인", "PLC", "사건"):
             self.assertIn("<h2>%s</h2>" % label, self.text)
@@ -232,6 +248,36 @@ class PageTests(unittest.TestCase):
                 writer.writerows(rows)
             self.assertEqual(run_cli(folder).returncode, 2)
             self.assertFalse((reports / "dashboard.html").exists())
+
+    def test_all_samples_short_is_shown(self):
+        with tempfile.TemporaryDirectory() as folder:
+            reports = copy_inputs(folder)
+            path = reports / "gen_measured_seed42_capability.csv"
+            rows = rows_of(path)
+            for row in rows:
+                if row["section"] == "capability":
+                    row.update(cpk="", ppk="", status="표본 부족")
+            with path.open("w", encoding="utf-8-sig", newline="") as target:
+                writer = csv.DictWriter(target, fieldnames=list(rows[0]))
+                writer.writeheader()
+                writer.writerows(rows)
+            result = run_cli(folder)
+            self.assertEqual(result.returncode, 0, result.stderr)
+            self.assertIn("유효한 Cpk 없음", (reports / "dashboard.html").read_text(encoding="utf-8"))
+
+    def test_t265_later_alarm_and_nan_refused(self):
+        rows = rows_of(REPORTS / "anomaly_lamp_replay.csv")
+        alarm = next(row for row in rows if row["alarm"] == "1")
+        for extra in ([alarm, dict(alarm, t=str(int(alarm["t"]) + 1), z="99.0000000000")], [dict(alarm, z="nan")]):
+            with tempfile.TemporaryDirectory() as folder:
+                reports = copy_inputs(folder)
+                changed = [row for row in rows if row is not alarm] + extra
+                with (reports / "anomaly_lamp_replay.csv").open("w", encoding="utf-8-sig", newline="") as target:
+                    writer = csv.DictWriter(target, fieldnames=list(rows[0]))
+                    writer.writeheader()
+                    writer.writerows(changed)
+                self.assertEqual(run_cli(folder).returncode, 2)
+                self.assertFalse((reports / "dashboard.html").exists())
 
     def test_t266_incident_chain(self):
         section = self.text[self.text.index("<section id=\"incident\""):]
@@ -283,6 +329,8 @@ class RefusalTests(unittest.TestCase):
         cases = ("<script>alert(1)</script>", "<foreignObject></foreignObject>", "<rect onclick=\"x()\"></rect>",
                  "<rect style=\"fill:red\"></rect>", "<rect href=\"#a\"></rect>", "<animate></animate>",
                  "<image></image>", "<use></use>", "<line stroke=\"url(http://x/y)\"></line>",
+                 "<rect fill=\"URL(//example.invalid/p.svg#p)\"></rect>",
+                 "<rect fill=\"uRl(//example.invalid/p.svg#p)\"></rect>", "<rect fill=\"URL(#none)\"></rect>",
                  "<line marker-end=\"url(#none)\"></line>", "<rect fill=\"a:b\"></rect>")
         for inner in cases:
             with self.subTest(inner=inner), self.assertRaises(DashboardError):
