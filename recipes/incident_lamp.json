@@ -1,0 +1,16 @@
+{
+  "station": "plc_station.json",
+  "spc": "spc_lamp.json",
+  "spc_report": "../reports/spc_lamp_methods.csv",
+  "pfmea": "../data/pfmea_lamp.csv",
+  "products": 400,
+  "onset_product": 200,
+  "shift_sigma": 1.5,
+  "repair_cycles": 30,
+  "max_cycles": 20000,
+  "story_seed": 3042,
+  "summary_seeds": "3000-3099",
+  "methods": ["rule_3_2", "ewma_chart", "cusum"],
+  "scopes": ["last_20", "last_50", "change_point"],
+  "pfmea_links": ["PF-02", "PF-06"]
+}

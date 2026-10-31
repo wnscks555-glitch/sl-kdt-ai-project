@@ -1,0 +1,95 @@
+﻿method,incident_id,cycle,product,event,detail
+rule_3_2,,4792,199,fault_start,value=10.397
+rule_3_2,,9600,399,finish,OK=392 NG=8 aborted=0
+ewma_chart,ewma_chart-1,1264,52,alarm,value=13.773 z=1.2774 limit=1.1477
+ewma_chart,ewma_chart-1,1264,52,pc_stop,frame=5161
+ewma_chart,ewma_chart-1,1265,52,alarm_26,
+ewma_chart,ewma_chart-1,1265,52,release,
+ewma_chart,ewma_chart-1,1270,52,clamp_open,
+ewma_chart,ewma_chart-1,1270,52,remove,
+ewma_chart,ewma_chart-1,1301,52,reset,guard_closed=1 clamp_open=1 clamp_closed=0 part_present=0 pc_stop=0
+ewma_chart,ewma_chart-1,1302,53,restart,
+ewma_chart,ewma_chart-2,1702,69,alarm,value=11.248 z=1.2682 limit=1.1474
+ewma_chart,ewma_chart-2,1702,69,pc_stop,frame=6971
+ewma_chart,ewma_chart-2,1703,69,alarm_26,
+ewma_chart,ewma_chart-2,1703,69,release,
+ewma_chart,ewma_chart-2,1708,69,clamp_open,
+ewma_chart,ewma_chart-2,1708,69,remove,
+ewma_chart,ewma_chart-2,1739,69,reset,guard_closed=1 clamp_open=1 clamp_closed=0 part_present=0 pc_stop=0
+ewma_chart,ewma_chart-2,1740,70,restart,
+ewma_chart,,4852,199,fault_start,value=10.397
+ewma_chart,ewma_chart-3,4972,204,alarm,value=11.804 z=1.2815 limit=1.1477
+ewma_chart,ewma_chart-3,4972,204,pc_stop,frame=20345
+ewma_chart,ewma_chart-3,4973,204,alarm_26,
+ewma_chart,ewma_chart-3,4973,204,release,
+ewma_chart,ewma_chart-3,4978,204,clamp_open,
+ewma_chart,ewma_chart-3,4978,204,remove,
+ewma_chart,ewma_chart-3,5009,204,reset,guard_closed=1 clamp_open=1 clamp_closed=0 part_present=0 pc_stop=0
+ewma_chart,ewma_chart-3,5010,205,restart,
+ewma_chart,ewma_chart-4,7234,297,alarm,value=14.530 z=1.4152 limit=1.1477
+ewma_chart,ewma_chart-4,7234,297,pc_stop,frame=29603
+ewma_chart,ewma_chart-4,7235,297,alarm_26,
+ewma_chart,ewma_chart-4,7235,297,release,
+ewma_chart,ewma_chart-4,7240,297,clamp_open,
+ewma_chart,ewma_chart-4,7240,297,remove,
+ewma_chart,ewma_chart-4,7271,297,reset,guard_closed=1 clamp_open=1 clamp_closed=0 part_present=0 pc_stop=0
+ewma_chart,ewma_chart-4,7272,298,restart,
+ewma_chart,ewma_chart-5,8368,343,alarm,value=11.106 z=1.2737 limit=1.1477
+ewma_chart,ewma_chart-5,8368,343,pc_stop,frame=34255
+ewma_chart,ewma_chart-5,8369,343,alarm_26,
+ewma_chart,ewma_chart-5,8369,343,release,
+ewma_chart,ewma_chart-5,8374,343,clamp_open,
+ewma_chart,ewma_chart-5,8374,343,remove,
+ewma_chart,ewma_chart-5,8405,343,reset,guard_closed=1 clamp_open=1 clamp_closed=0 part_present=0 pc_stop=0
+ewma_chart,ewma_chart-5,8406,344,restart,
+ewma_chart,,9750,399,finish,OK=383 NG=12 aborted=5
+cusum,cusum-1,400,16,alarm,value=8.622 C+=0.0000 C-=5.8353 bound=5.7383
+cusum,cusum-1,400,16,pc_stop,frame=1633
+cusum,cusum-1,401,16,alarm_26,
+cusum,cusum-1,401,16,release,
+cusum,cusum-1,406,16,clamp_open,
+cusum,cusum-1,406,16,remove,
+cusum,cusum-1,437,16,reset,guard_closed=1 clamp_open=1 clamp_closed=0 part_present=0 pc_stop=0
+cusum,cusum-1,438,17,restart,
+cusum,cusum-2,2638,108,alarm,value=13.700 C+=6.3267 C-=0.0000 bound=5.7383
+cusum,cusum-2,2638,108,pc_stop,frame=10793
+cusum,cusum-2,2639,108,alarm_26,
+cusum,cusum-2,2639,108,release,
+cusum,cusum-2,2644,108,clamp_open,
+cusum,cusum-2,2644,108,remove,
+cusum,cusum-2,2675,108,reset,guard_closed=1 clamp_open=1 clamp_closed=0 part_present=0 pc_stop=0
+cusum,cusum-2,2676,109,restart,
+cusum,,4852,199,fault_start,value=10.397
+cusum,cusum-3,5044,207,alarm,value=10.948 C+=5.7999 C-=0.0000 bound=5.7383
+cusum,cusum-3,5044,207,pc_stop,frame=20639
+cusum,cusum-3,5045,207,alarm_26,
+cusum,cusum-3,5045,207,release,
+cusum,cusum-3,5050,207,clamp_open,
+cusum,cusum-3,5050,207,remove,
+cusum,cusum-3,5081,207,reset,guard_closed=1 clamp_open=1 clamp_closed=0 part_present=0 pc_stop=0
+cusum,cusum-3,5082,208,restart,
+cusum,cusum-4,7234,297,alarm,value=14.530 C+=6.0169 C-=0.0000 bound=5.7383
+cusum,cusum-4,7234,297,pc_stop,frame=29603
+cusum,cusum-4,7235,297,alarm_26,
+cusum,cusum-4,7235,297,release,
+cusum,cusum-4,7240,297,clamp_open,
+cusum,cusum-4,7240,297,remove,
+cusum,cusum-4,7271,297,reset,guard_closed=1 clamp_open=1 clamp_closed=0 part_present=0 pc_stop=0
+cusum,cusum-4,7272,298,restart,
+cusum,cusum-5,7888,323,alarm,value=13.117 C+=5.9250 C-=0.0000 bound=5.7383
+cusum,cusum-5,7888,323,pc_stop,frame=32295
+cusum,cusum-5,7889,323,alarm_26,
+cusum,cusum-5,7889,323,release,
+cusum,cusum-5,7894,323,clamp_open,
+cusum,cusum-5,7894,323,remove,
+cusum,cusum-5,7925,323,reset,guard_closed=1 clamp_open=1 clamp_closed=0 part_present=0 pc_stop=0
+cusum,cusum-5,7926,324,restart,
+cusum,cusum-6,8374,342,alarm,value=13.829 C+=5.9317 C-=0.0000 bound=5.7383
+cusum,cusum-6,8374,342,pc_stop,frame=34301
+cusum,cusum-6,8375,342,alarm_26,
+cusum,cusum-6,8375,342,release,
+cusum,cusum-6,8380,342,clamp_open,
+cusum,cusum-6,8380,342,remove,
+cusum,cusum-6,8411,342,reset,guard_closed=1 clamp_open=1 clamp_closed=0 part_present=0 pc_stop=0
+cusum,cusum-6,8412,343,restart,
+cusum,,9780,399,finish,OK=385 NG=9 aborted=6

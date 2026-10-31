@@ -4,7 +4,7 @@ from dataclasses import dataclass
 from typing import Mapping
 
 from src.modbus import (
-    HEARTBEAT_REGISTER, JUDGE_REGISTER, RELEASE_COIL, RESET_COIL, Table, ValueConversionError, to_words,
+    HEARTBEAT_REGISTER, JUDGE_REGISTER, PC_STOP_COIL, RELEASE_COIL, RESET_COIL, Table, ValueConversionError, to_words,
 )
 
 
@@ -25,6 +25,7 @@ ALARM_GUARD = 22
 ALARM_CONVERSION = 23
 ALARM_CLAMP_CONFLICT = 24
 ALARM_MEASURE_SIGNAL = 25
+ALARM_PC_STOP = 26
 
 TIMEOUT_ALARMS = {
     CHECK: ("check_scans", ALARM_CHECK),
@@ -56,6 +57,7 @@ class Snapshot:
     release: bool
     heartbeat: int
     judge: tuple
+    pc_stop: bool
 
 
 def interlock(requested, previous, inputs, state):
@@ -106,7 +108,7 @@ class Plc:
             return Snapshot(
                 dict(zip(INPUTS, self.table.discrete)), value, self.table.coils[RESET_COIL],
                 self.table.coils[RELEASE_COIL], self.table.holding[HEARTBEAT_REGISTER],
-                tuple(self.table.holding[JUDGE_REGISTER:JUDGE_REGISTER + 2]))
+                tuple(self.table.holding[JUDGE_REGISTER:JUDGE_REGISTER + 2]), self.table.coils[PC_STOP_COIL])
 
     def _go(self, state):
         self.state = state
@@ -136,6 +138,8 @@ class Plc:
             return ALARM_MEASURE_SIGNAL
         if self.state == MEASURE and inputs["measure_done"] and not self._measure_ready(snap):
             return ALARM_MEASURE_SIGNAL
+        if snap.pc_stop:
+            return ALARM_PC_STOP
         return 0
 
     def _publish(self):
@@ -179,7 +183,7 @@ class Plc:
     def _recoverable(self, snap):
         inputs = snap.inputs
         return (inputs["guard_closed"] and not self._heartbeat_late() and inputs["clamp_open"]
-                and not inputs["clamp_closed"] and not inputs["part_present"])
+                and not inputs["clamp_closed"] and not inputs["part_present"] and not snap.pc_stop)
 
     def _recover(self):
         self.alarm = 0

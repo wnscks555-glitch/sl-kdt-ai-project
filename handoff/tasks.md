@@ -1,4 +1,201 @@
-# 현행 작업: v2 13단계 — 합성 SPC 관리도 비교
+# 현행 작업: v2 14단계 — 합성 사건 통합 추적
+
+상태: **Sol 검토 뒤 진행 확정** (2026-10-31, 사용자 지시). 결정 근거는 `handoff/decisions.md`. 1–13단계(아래 명세)는 완료이며, 그 동작과 테스트는 보존한다.
+
+## 목표와 경계
+- 지금까지 따로 도는 기능을 한 사건으로 잇는다. **측정 평균 이동 → 경보 → PC가 PLC에 정지 요청 → 알람 → 수동 해제·제품 제거·리셋 → 재가동 → 의심 제품 범위 → PFMEA 근거**다.
+- 같은 측정열에 3:2, EWMA, CUSUM을 적용해 정지 시점, 의심 생산량, 격리 포착을 비교한다.
+- 표현은 "합성 고장 시나리오의 경보–정지–격리 추적"이다. "사고 대응 경험", "라인 정지 대응 실무"로 쓰지 않는다. 전부 한 PC 안의 소프트웨어 모의다.
+- 제외: 판정기·기존 생성기 변경, 여러 스테이션, 실제 수리 시간 추정, 재발 방지 자동 판단, 외부 패키지.
+
+## 보존 조건
+- 기존 설정, 테스트, 보고서는 수정하지 않는다. README에 절을 덧붙이는 것만 예외다.
+- `src/plc.py`, `src/modbus.py`, `src/station.py`는 아래 추가만 허용한다. PC가 새 코일을 쓰지 않으면 동작이 같아야 한다. 10단계 보고서 16개는 바이트 그대로다.
+- 새 코드는 `src/incident.py`, 새 테스트는 `tests/test_incident.py`, 새 설정은 `recipes/incident_lamp.json`이다.
+- 측정은 `anomaly.measure`, 관리도 상태는 `spc`의 한계와 같은 식, 판정은 `judge_value`다.
+
+## 10단계 추가
+- 코일 10 `pc_stop`을 추가한다. 쓰기는 PC, FC05, 초기 0이다. `WRITABLE_COILS`에 더한다.
+- 스캔 2단계 즉시 알람에 **PC 정지 요청(26)**을 측정 신호 이상 뒤 순서로 넣는다. 코일이 참이면 `ALARM`으로 전이한다.
+- 리셋 조건 `_recoverable`에 `pc_stop` 거짓을 더한다.
+- 모의 설비에 `feed_hold` 속성을 추가한다. 기본은 거짓이다. 참이면 다음 제품이 들어오지 않는다. 10단계 실행은 이 값을 건드리지 않는다.
+- 모의 설비에 `remove_product()`를 추가한다. 작업자 제거다. `part_present`, `seated`, `direction_ok`를 내리고, `product`를 1 늘리고, `feed_hold`를 켠다. 그 측정값은 다시 쓰지 않는다. 제거 뒤 복귀 완료까지 제품이 없어야 `_recoverable`이 참이 되기 때문이다.
+- 사건 실행은 10단계 `run_scenario`를 고치지 않고 `src/incident.py`의 자체 주기로 돈다. 한 주기의 순서는 같다(`plant.update` → `plc.scan` → PC).
+
+## 설정 `recipes/incident_lamp.json`
+```json
+{
+  "station": "plc_station.json",
+  "spc": "spc_lamp.json",
+  "spc_report": "../reports/spc_lamp_methods.csv",
+  "pfmea": "../data/pfmea_lamp.csv",
+  "products": 400,
+  "onset_product": 200,
+  "shift_sigma": 1.5,
+  "repair_cycles": 30,
+  "max_cycles": 20000,
+  "story_seed": 3042,
+  "summary_seeds": "3000-3099",
+  "methods": ["rule_3_2", "ewma_chart", "cusum"],
+  "scopes": ["last_20", "last_50", "change_point"],
+  "pfmea_links": ["PF-02", "PF-06"]
+}
+```
+- 경로는 설정 파일 폴더 기준이다. 없으면 종료 코드 2다. `pfmea_links`의 ID가 표에 없으면 종료 코드 3이다.
+
+| 키 | 타입 | 범위 |
+| --- | --- | --- |
+| `station`, `spc`, `spc_report`, `pfmea` | 문자열 | 비어 있지 않음 |
+| `products` | 정수 | 1–100000 |
+| `onset_product` | 정수 | 1 이상 `products` 이하. 1부터 센다 |
+| `shift_sigma` | 유한한 수 | 0 초과 100 이하 |
+| `repair_cycles` | 정수 | 1–100000 |
+| `max_cycles` | 정수 | 1–10000000. `plc_station.json`의 `max_cycles`는 쓰지 않는다. 제품당 정상 24주기라 400제품에 9,600주기가 들고, 그 설정은 10단계 값으로 보존한다 |
+| `story_seed` | 정수 | 0 이상 2³¹−1 − 1000000 이하 |
+| `summary_seeds` | 문자열 | `시작-끝`. 정수, 시작 ≤ 끝, 끝 ≤ 2³¹−1 − 1000000 |
+| `methods`, `scopes` | 문자열 목록 | 표의 ID. 비어 있지 않고 중복 없음. `change_point`를 쓰면 `cusum`이 있어야 함 |
+| `pfmea_links` | 문자열 목록 | 비어 있지 않고 중복 없음 |
+
+- 없는 키, 허용 밖 키, 타입·범위 위반은 종료 코드 3이다. bool은 숫자가 아니다. `10**400`도 종료 코드 3이다.
+- `story_seed`와 `summary_seeds`는 11·13단계의 학습·검증·홀드아웃 시드와 겹칠 수 없다(종료 코드 3). 사건 평가에 한계 추정 자료를 다시 쓰지 않기 위해서다.
+
+## 설정 일치 확인
+어긋나면 종료 코드 2이고 보고서를 쓰지 않는다.
+- `station.generator`와 `spc → anomaly.generator`가 같은 파일이고, `station.inspection`과 `anomaly.inspection`이 같다. 두 경로로 얻은 규격·`center`·`sigma`·결함 확률·결함 이동이 같다.
+- `reports/spc_lamp_methods.csv`의 `limits` 행이 없거나, `spc`와 `anomaly` 설정으로 다시 추정한 한계와 `repr` 문자열이 다르면 거절한다.
+
+## 측정열
+시드 하나에 두 열을 전체 제품 번호에 대해 미리 만든다. 번호 `n`은 0부터 센다.
+
+- **고장 열** `F[n]`: `random.Random(시드)`로 `n = 0…`의 값을 `anomaly.measure`로 만든다. `n ≥ o`이면 고장 이동 `shift_sigma`를 쓴다. `o = onset_product − 1`이다.
+- **수리 뒤 열** `N[n]`: `random.Random(시드 + 1000000)`으로 `n = 0…`의 값을 고장 이동 0으로 만든다.
+
+두 열은 방법과 무관하게 같다. 제품 `n`의 값은 수리 전이면 `F[n]`, 수리 뒤면 `N[n]`이다. 수리는 **`a ≥ o`인 첫 정지**에서만 일어나고, 그 제품 다음부터 `N`을 쓴다. 수리 효과의 가정이다. 고장이 시작되기 전의 정지는 고칠 것이 없으므로 재가동 뒤에도 `F`를 그대로 쓰고, 고장은 예정대로 시작한다.
+
+방법 상태는 **구간** 단위다. 구간은 시작 또는 재가동부터 다음 정지까지다. 구간 안 인덱스 `s`는 0부터 세고, 제품 번호 `n`은 전체 번호다.
+
+| ID | 경보 (판단은 `s ≥ 9`) |
+| --- | --- |
+| `rule_3_2` | 구간 안 최근 3건 중 FAIL 2건. 창은 구간 첫 제품부터 쌓는다 |
+| `ewma_chart` | 13단계 식. `t` 자리에 `s`를 쓴다 |
+| `cusum` | 13단계 식. 경보 뒤 변화 시점을 구간 안에서 추정해 `구간 시작 번호 + 위치`로 전체 번호로 바꾼다 |
+
+판단 시작 `9`는 11단계의 `window − 1`을 설정에서 읽은 값이다. 한계와 `σ̂`는 13단계 1단계 추정값이다.
+
+**정지가 여러 번일 수 있다.** 경보는 언제나 정지로 이어지고, 재가동 뒤 상태를 초기값으로 돌려 다시 판단한다. 모든 정지를 `stops`에 기록한다.
+
+## 사건 순서 (소켓 실행)
+`story_seed`로 방법마다 실제 Modbus TCP로 돌린다.
+
+1. 정상 운전은 10단계 주기다. PC는 `WAIT_JUDGE`에서 값을 복원해 판정을 쓴다.
+2. PC는 새 `measure_id`를 볼 때 방법 상태를 갱신한다. 제품 번호는 `measure_id − 1`이고 사건 동안 `plant.product`와 같다. 어긋나면 종료 코드 2다. 경보면 판정을 쓰지 않고 `pc_stop` 코일을 켠다. 그 제품 번호를 정지 위치로 **이때 고정**한다.
+3. PLC는 다음 스캔에 알람 26으로 전이한다. 클램프는 진입 값을 유지한다.
+4. PC는 `REG_ALARM = 26`을 읽은 주기에 `manual_release`를 켠다. 알람 전에 켜면 상승 에지를 놓치므로 순서를 지킨다. 모의 설비가 클램프를 연다.
+5. PC가 `clamp_open`(이산 입력)을 읽어 참이면 `remove_product()`를 호출한다. 제품이 빠지고 투입이 멈춘다.
+6. 제거 주기부터 `repair_cycles` 주기를 기다린다. 이 동안 PC 하트비트는 유지한다.
+7. PC가 `pc_stop`, `manual_release`를 끈다. 다음 주기에 `reset`을 켠다. `REG_STATE = IDLE`, `REG_ALARM = 0`을 읽으면 `reset`을 끄고 `feed_hold`를 끈다. 이 주기가 재가동이다.
+8. 남은 제품을 처리한다. 방법 상태는 초기값으로 되돌리고 구간을 새로 시작한다.
+
+알람 26이 아닌 알람이 나면 종료 코드 2다. 합성 흐름에서 일어나면 안 되는 일이고 복구를 추측하지 않는다.
+
+**완료 조건**은 소비한 제품 수다. `plant.product = products`이고 PLC가 `IDLE`이며 제품이 없을 때 끝난다. 끝나면 `OK + NG + aborted = products`를 단정한다. `aborted`는 판정 없이 제거한 제품 수이고 `plc.processed`, OK, NG에 들어가지 않는다. 기존 `processed < products` 조건은 쓰지 않는다. 끝까지 처리하지 못하고 `max_cycles`를 넘으면 종료 코드 2다.
+
+마지막 제품에서 정지하면 복귀 뒤 들어올 제품이 없으므로 재가동 기록 뒤 바로 끝난다.
+
+## 격리 범위
+정지 제품 번호를 `a`(0부터)라 한다. 후보 범위는 `a`를 포함한다.
+
+| ID | 시작 |
+| --- | --- |
+| `last_20` | `max(0, a − 19)` |
+| `last_50` | `max(0, a − 49)` |
+| `change_point` | `cusum` 변화 시점 추정(전체 번호). `cusum`이 아니면 해당 없음 |
+
+`a`는 **`a ≥ o`인 첫 정지**의 제품 번호다. 없으면 범위도 없다. 고장 전 정지만 있는 실행과 무정지 실행은 범위를 만들지 않는다. `scopes`에서 방법에 맞지 않는 조합은 표에 빈칸으로 둔다.
+
+## 지표
+`o = onset_product − 1`(0부터)이라 한다.
+
+| 지표 | 정의 |
+| --- | --- |
+| `stops` | 전체 정지 수 |
+| `false_stops` | `a` 말고 나머지 정지 수. 고장 전 정지와 수리 뒤 정지를 합친다 |
+| `detection` | `a`가 있으면 `detected`, `a`는 없고 정지가 있으면 `early`, 정지가 없으면 `missed` |
+| `delay` | `a − o`. `a`가 없으면 빈칸 |
+| `suspect_measured` | 고장 이동 값 `F[n]`(`n ≥ o`)을 측정한 제품 수. `suspect_passed + suspect_failed + suspect_aborted`다 |
+| `suspect_passed` | 그중 OK로 배출된 제품 수. 작은 이동이라 대부분 여기 들어가며, 이 수가 격리의 대상이다 |
+| `suspect_failed` | 그중 NG로 배출된 제품 수 |
+| `suspect_aborted` | 그중 판정 없이 제거된 제품 수 |
+| `captured` | `a`가 있고 범위가 `[o, a]`를 다 덮으면 참. `a`가 없으면 거짓 |
+| `captured_parts` | 범위 안 `suspect_passed` 제품 수. 범위가 없으면 0 |
+| `scope_size` | 범위의 제품 수. 범위가 없으면 빈칸 |
+| `over_scope` | 범위 안에서 고장 이동 값이 아닌 제품 수. 범위가 없으면 빈칸 |
+
+## 요약 (소켓 없음)
+`summary_seeds`의 시드마다 방법별로 같은 두 열을 메모리에서 돌려 정지 위치와 지표를 낸다. 메모리 실행은 위 측정열·구간·수리 규칙을 그대로 쓰고, 설비 주기만 빠진다. 비교는 분수, 표시는 소수 넷째 자리 `ROUND_HALF_UP`이다. 선택은 하지 않는다. 표를 그대로 낸다.
+
+| 요약 | 분모 |
+| --- | --- |
+| `detected`, `early`, `missed` | 수 |
+| `mean_delay` | `detected` 실행 수. 0이면 빈칸. 미검출을 빼므로 위 수를 함께 읽는다 |
+| `mean_suspect_passed`, `mean_stops`, `mean_false_stops` | 전체 실행 수 |
+| `run_capture_rate` | `captured` 참인 실행 수 / 전체 실행 수 |
+| `part_capture_rate` | 합산 `captured_parts` / 합산 `suspect_passed`. 분모 0이면 빈칸 |
+| `mean_scope_size`, `mean_over_scope` | 범위가 있는 실행 수. 0이면 빈칸 |
+
+## 실행과 보고서
+```powershell
+py -m src.incident recipes/incident_lamp.json
+```
+- **사건 ID**는 `<method>-<정지 순번>`이다. 예: `cusum-1`. 한 정지의 측정값, 경보 근거, 정지 코일, 알람, 복구 조건, 격리 제품, PFMEA 행이 이 ID로 이어진다.
+- `reports/incident_lamp_timeline.csv`: `method, incident_id, cycle, product, event, detail`. 사건만 적는다. `event`는 `fault_start, alarm, pc_stop, alarm_26, release, clamp_open, remove, reset, restart, finish`다. `alarm`의 `detail`에 측정값, 판단값, 한계를 적는다(`rule_3_2`는 최근 3건 판정). `pc_stop`의 `detail`에 프레임 순번을 적는다. `reset`의 `detail`에 복귀 조건 값을 적는다. `fault_start`, `finish`는 사건 ID가 빈칸이다. 정렬은 방법 순서, 주기, 같은 주기 안의 발생 순서다.
+- `reports/incident_lamp_compare.csv`의 열: `section, method, scope, name, value, stops, false_stops, detection, a, delay, suspect_measured, suspect_passed, suspect_failed, suspect_aborted, captured, captured_parts, scope_start, scope_size, over_scope, seeds`.
+
+| 절 | 행 | 내용 |
+| --- | --- | --- |
+| `notice` | 1 | 합성 경고 문장 |
+| `story` | 방법마다 1 | `story_seed` 소켓 실행의 지표 |
+| `story_scope` | 방법×범위 | `scope`, `captured`, `captured_parts`, `scope_start`, `scope_size`, `over_scope` |
+| `summary` | 방법×요약 지표 | `name`, `value`, `seeds` |
+| `summary_scope` | 방법×범위×요약 지표 | `scope`, `name`, `value`, `seeds` |
+
+- `reports/incident_lamp_suspects.csv`: `method, incident_id, scope, product, value, fault_value, disposition`. `story_seed`의 범위 안 제품마다 한 행이다. `fault_value`는 `1`·`0`, `disposition`은 `OK`·`NG`·`aborted`다.
+- `reports/incident_lamp_modbus.csv`: `cusum` 방법의 **`a` 정지** 전후 20주기 프레임 16진수다. 열은 10단계 프레임 기록에 `incident_id`를 더한 것이다. `a`가 없으면 헤더만 있고 `compare`의 `story`로 사유가 보인다.
+- `reports/incident_lamp_pfmea.md`: `pfmea_links` 행의 고장 모드와 이번 사건의 관측값을 사건 ID별로 나란히 적는다. 조치 판단은 쓰지 않는다. S·O·D는 건드리지 않는다.
+- 같은 입력은 바이트까지 같다. 실행 시각, 포트, 절대 경로는 쓰지 않는다.
+- 설정 오류는 종료 코드 3, 인자·파일 오류와 응답 제한 초과는 종료 코드 2다. 보고서는 전부 성공한 뒤에 쓴다.
+
+## 사전 기대표
+| ID | 입력 | 기대 결과 |
+| --- | --- | --- |
+| T221 | `plc.py`: `CHECK`에서 `pc_stop` 참 / 가드 열림과 동시 / `ALARM` 중 켬 | 알람 26 / 22 / 코드 유지 |
+| T222 | 알람 26, 복귀 조건 충족, `pc_stop` 참인 채 리셋 / 거짓 뒤 새 상승 | `ALARM` 유지 / `IDLE`, `measure_id` 유지 |
+| T223 | FC05 코일 10 / PC가 쓰지 않는 10단계 시나리오 8개 | 에코 / 보고서 16개 바이트 불변 |
+| T224 | `remove_product()` / `feed_hold` 참인 동안 / 끈 뒤 | 입력 내림, `product` 1 증가, 값 소비 없음 / 다음 제품 안 들어옴(복구 대기 30주기) / `arrive` 지연 뒤 들어옴 |
+| T225 | 같은 시드 측정열 / 방법 3개 | 값 동일. 번호 `o − 1`, `o`, `o + 1`에서 이동 적용이 맞음 |
+| T226 | 재가동 뒤 값: 방법별 정지 위치가 다름 | 같은 번호 같은 값 `N[n]`, 이동 없음. `a < o` 정지 뒤에는 `F[n]` 유지 |
+| T227 | 사건 순서: `cusum` 강제 경보, 소켓 | 판정 없음, 알람 26, Q0 유지 → 알람을 읽은 뒤 해제 → 제거 → 복구 대기 동안 제품 없음 → 리셋 → 재가동 → 남은 제품 처리, 순서가 표와 같음 |
+| T228 | 경보 제품 / 전체 | 판정 안 씀, OK·NG 수에 없음, `aborted` 기록 / `OK + NG + aborted = products`, 마지막 제품 정지도 끝남 |
+| T229 | 무경보 | 정지 없이 끝, `missed`, `captured` 거짓, `captured_parts` 0 |
+| T230 | 범위: `a=10`, `a=100`, `change_point=90` | `last_20` 0–10, 81–100. `last_50` 0–10, 51–100. 90–100 |
+| T231 | 지표: `o=100, a=110`, 범위 `100–110` / `105–110` / 정지 `95`만 / 정지 `95`, `120` | 포착 참·`over_scope` 0 / 거짓 / `early`, 포착 거짓, `[o, a]`가 비었다고 참이 되지 않음 / `a=120`, `false_stops` 1 |
+| T232 | 소켓 실행과 메모리 실행의 정지 목록 | `story_seed`의 모든 방법에서 정지 위치 목록과 OK·NG·aborted 수가 같음 |
+| T233 | 잘못된 설정: 없는 키, 허용 밖 키, `onset_product` 0, `onset_product` > `products`, 없는 방법, 중복 범위, `cusum` 없는 `change_point`, 없는 PFMEA ID, 빈 `pfmea_links`, `products: 10**400`, NaN, bool, 학습 시드와 겹치는 `story_seed`·`summary_seeds`, 시드 문자열 오류 | 종료 코드 3 |
+| T234 | `limits` 행 없음, 없는 파일, `max_cycles` 초과, 재계산과 다른 `limits`, 생성 설정 불일치, 알람 26이 아닌 알람 | 종료 코드 2, 보고서 미생성 |
+| T235 | 두 폴더에서 반복 | 보고서 5개 바이트 동일 |
+| T236 | 실행 뒤 기존 파일 | 기존 설정·보고서 바이트 불변, `data/pfmea_lamp.csv` 불변, 전체 기존 테스트 통과 |
+| T258 | 구간 초기화: 재가동 뒤 첫 제품 / 재가동 뒤 `s = 8`, `s = 9`에 초과 / 변화 시점 구간 위치 5, 구간 시작 200 | `s = 0`, EWMA 시작값 복귀, 누적합 0 / 경보는 `s = 9`부터 / 전체 번호 205 |
+| T259 | 다중 정지: 고장 전 정지 뒤 재가동 | 고장이 예정대로 시작, 다시 판단 |
+| T260 | 포착 합산: 실행 2개 `captured` 참·거짓, 합산 분자 분모 / `detected` 0 | `run_capture_rate` 1/2, `part_capture_rate` 합산 값 / `mean_delay` 빈칸 |
+| T261 | 사건 ID: `story` 실행 | 경보, 코일 프레임, 알람, 격리 제품, PFMEA 절이 같은 ID로 이어짐. `pc_stop` 행의 프레임 순번이 실제 FC05 코일 10 프레임 |
+| T262 | 400제품 기본 설정 | `max_cycles` 안에 끝남 |
+
+## 구현 순서
+1. **14-1**: PLC·서버 추가, T221–T224.
+2. **14-2**: 측정열, 구간, 사건 주기, T225–T229, T232, T258–T259, T262.
+3. **14-3**: 범위, 지표, 요약, 보고서, T230–T231, T233–T236, T260–T261.
+
+# v2 13단계 명세 (구현 완료, 2026-10-31, 사용자 승인 전)
 
 상태: **Sol 검토 뒤 진행 확정** (2026-10-31, 사용자 지시). 결정 근거는 `handoff/decisions.md`. 1–12단계(아래 명세)는 완료이며, 그 동작과 테스트는 보존한다.
 

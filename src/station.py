@@ -151,6 +151,7 @@ class Plant:
         self.raw = ""
         self.timers = {}
         self.forced = {}
+        self.feed_hold = False
         self._publish()
 
     def _due(self, name, trigger, cycle):
@@ -173,7 +174,8 @@ class Plant:
         """트리거는 갱신 전 값으로 본다. 주입은 정상 갱신 뒤에 덮어쓴다."""
         now = dict(self.inputs)
         changes = {}
-        if self._due("arrive", not now["part_present"] and self.product < len(self.values), cycle):
+        if self._due("arrive", not now["part_present"] and self.product < len(self.values) and not self.feed_hold,
+                     cycle):
             changes["part_present"] = True
         if self._due("seat", now["part_present"] and not now["seated"], cycle):
             changes["seated"] = changes["direction_ok"] = True
@@ -195,6 +197,13 @@ class Plant:
             changes["part_present"] = changes["seated"] = changes["direction_ok"] = False
             self.product += 1
         self.inputs.update(changes)
+        self._publish()
+
+    def remove_product(self):
+        """작업자 제거다. 복귀 조건이 제품 부재이므로 복귀 완료까지 투입을 막는다. 값은 다시 쓰지 않는다."""
+        self.inputs.update(part_present=False, seated=False, direction_ok=False)
+        self.product += 1
+        self.feed_hold = True
         self._publish()
 
 
