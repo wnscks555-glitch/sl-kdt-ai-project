@@ -3,7 +3,7 @@
 import argparse
 import csv
 from dataclasses import dataclass, field
-from decimal import ROUND_CEILING, ROUND_FLOOR, Decimal
+from decimal import Decimal
 from fractions import Fraction
 import json
 import math
@@ -11,8 +11,9 @@ from pathlib import Path
 import random
 import re
 
-from src.anomaly import Process, _integer, _keys, _number, _write_csv, load_process, show
+from src.anomaly import _integer, _keys, _number, _write_csv, load_process
 from src.generate import confirm_value, load_setup
+from src.line import show
 from src.recipe_rules import judge_value
 
 
@@ -35,6 +36,7 @@ ACCEPT_LIMIT = 10
 MARGINAL_LIMIT = 30
 NDC_FACTOR = 1.41
 NDC_MIN = 5
+LIMIT_SCALE = 1000
 BETA_ITERATIONS = 300
 BETA_EPSILON = 3e-14
 BETA_FLOOR = 1e-300
@@ -345,7 +347,7 @@ def ndc_ok(ndc):
 
 def observed_cpk(cpk, sigma, grr):
     """공정이 중앙이라 가정한 관측 Cpk다. σ² 대신 σ²+GRR²를 쓴다."""
-    return cpk * sigma / math.sqrt(sigma ** 2 + grr ** 2)
+    return cpk / math.hypot(1.0, grr / sigma)
 
 
 def build_study(rng, center, sigma, gauge, settings):
@@ -400,13 +402,17 @@ def fixed_operator_pairs(seed, products, process, offsets, noise):
     return pairs
 
 
+def _thousandths(number):
+    """Decimal 문맥의 자릿수 제한을 거치지 않고 소수 셋째 자리 값을 만든다."""
+    return Decimal((int(number < 0), tuple(map(int, str(abs(number)))), -3))
+
+
 def acceptance_limits(lsl, usl, multiplier, grr):
     """항상 안쪽으로 자른다. 반올림하면 12.9995가 13.000이 되어 규격 밖 값을 합격시킨다. 불가능하면 None이다."""
-    width = Decimal(multiplier) * Decimal(repr(grr))
-    unit = Decimal("0.001")
-    lower = (Decimal(lsl) + width).quantize(unit, rounding=ROUND_CEILING)
-    upper = (Decimal(usl) - width).quantize(unit, rounding=ROUND_FLOOR)
-    return None if lower >= upper else (lower, upper)
+    width = Fraction(multiplier) * Fraction(repr(grr))
+    lower = math.ceil((Fraction(lsl) + width) * LIMIT_SCALE)
+    upper = math.floor((Fraction(usl) - width) * LIMIT_SCALE)
+    return None if lower >= upper else (_thousandths(lower), _thousandths(upper))
 
 
 @dataclass
@@ -468,7 +474,9 @@ def evaluate_seeds(seeds, settings, process, noise, candidates):
 def _text(value, digits=4):
     if value is None:
         return ""
-    return show(Fraction(value)) if digits == 4 else "%.*f" % (digits, value)
+    if digits != 4:
+        return "%.*f" % (digits, value)
+    return show(Fraction(repr(value)) if isinstance(value, float) else value)
 
 
 def _flag(value):

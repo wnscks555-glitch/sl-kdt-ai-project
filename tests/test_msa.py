@@ -123,6 +123,9 @@ class AnovaTests(unittest.TestCase):
         self.assertAlmostEqual(observed_cpk(1.33, sigma, 0.5 * sigma), 1.1896, places=4)
         self.assertEqual(observed_cpk(1.33, sigma, 0), 1.33)
 
+    def test_t196_small_sigma_does_not_underflow(self):
+        self.assertEqual(observed_cpk(1e200, 1e-200, 0.0), 1e200)
+
 
 class StudyTests(unittest.TestCase):
     def test_t197_same_seed(self):
@@ -146,6 +149,12 @@ class GuardTests(unittest.TestCase):
         self.assertEqual(tuple(map(str, acceptance_limits("7", "13", "1.5", 0.1))), ("7.150", "12.850"))
         self.assertIsNone(acceptance_limits("7", "13", "40", 0.1))
         self.assertEqual(tuple(map(str, acceptance_limits("7", "13", "0.5", 0.001))), ("7.001", "12.999"))
+
+    def test_t198_exact_width_beyond_decimal_context(self):
+        self.assertEqual(tuple(map(str, acceptance_limits("7", "13", "0." + "0" * 34 + "1", 0.1))),
+                         ("7.001", "12.999"))
+        self.assertIsNone(acceptance_limits("7", "13", "1" + "0" * 40, 0.1))
+        self.assertEqual(tuple(map(str, acceptance_limits("7", "13", "0", 0.1))), ("7.000", "13.000"))
 
     def test_t199_counts(self):
         tally = Tally()
@@ -292,6 +301,12 @@ class ReportTests(unittest.TestCase):
         flat = table(("5", "5"), ("5", "5"), ("5", "5"), ("5", "5"))
         row = grr_row("flat", flat, anova(flat), 6.0, PROCESS, 1.33)
         self.assertEqual((row["ndc"], row["ndc_ok"], row["pct_grr"], row["verdict"]), ("", "", "", "판정 불가"))
+
+    def test_t250_large_cpk_is_shown(self):
+        result = anova(T190)
+        row = grr_row("large", T190, result, 6.0, PROCESS, 1e200)
+        self.assertTrue(row["cpk_true"].endswith(".0000"))
+        self.assertGreater(len(row["cpk_true"]), 200)
 
     def test_t250_pool_flag_values(self):
         for row in self.rows("msa_grr.csv"):
