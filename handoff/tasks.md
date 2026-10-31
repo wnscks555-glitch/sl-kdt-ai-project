@@ -1,4 +1,96 @@
-# 현행 작업: v2 14단계 — 합성 사건 통합 추적
+# 현행 작업: v2 15단계 — 시연 대시보드
+
+상태: **Sol 검토 뒤 진행 확정** (2026-10-31, 사용자 지시). 결정 근거는 `handoff/decisions.md`. 1–14단계(아래 명세)는 완료이며, 그 동작과 테스트는 보존한다.
+
+## 목표와 경계
+- 이미 나온 보고서를 읽어 한 화면에서 볼 수 있는 HTML 파일 하나를 만든다. 면접과 포트폴리오에서 바로 보여 주기 위해서다.
+- 새 계산을 하지 않는다. 화면의 모든 수치는 보고서 파일에서 읽은 값이다. 예외는 로지스틱 기여값 `w_j × s_j` 표시용 곱셈 하나이고, 합이 보고서의 `z`와 맞는지 확인한다.
+- 표현은 "합성 결과 대시보드"다. "실시간 모니터링 시스템", "MES", "HMI 개발 경험"으로 쓰지 않는다.
+- 제외: 서버, 실시간 갱신, 외부 라이브러리·CDN·웹폰트, 사용자 입력 저장, 판정 변경.
+
+## 보존 조건
+- 기존 코드, 설정, 테스트, 기존 보고서는 수정하지 않는다. README에 절을 덧붙이는 것만 예외다.
+- 새 코드는 `src/dashboard.py`, 새 테스트는 `tests/test_dashboard.py`다.
+- HTML은 표준 라이브러리로 만든다. CSS와 JavaScript는 파일 안에 넣는다. 외부 URL을 만들지 않는다.
+
+## 입력
+| 절 | 파일 |
+| --- | --- |
+| 측정·Cpk | `reports/gen_measured_seed42_capability.csv` |
+| 측정 시스템 | `reports/msa_lamp_grr.csv`, `reports/msa_lamp_guard.csv` |
+| 이상 검출 | `reports/anomaly_lamp_methods.csv`, `reports/anomaly_lamp_model.csv`, `reports/anomaly_lamp_replay.csv`, `reports/spc_lamp_methods.csv`, `reports/spc_lamp_chart.csv` |
+| PFMEA | `reports/pfmea_lamp_report.csv` |
+| 라인 | `reports/line_lamp_compare.csv`, `reports/line_lamp_layout.svg` |
+| PLC | `reports/plc_station_<scenario>.csv` 8개 |
+| 사건 | `reports/incident_lamp_timeline.csv`, `reports/incident_lamp_compare.csv`, `reports/incident_lamp_suspects.csv` |
+
+파일이나 필요한 열이 없으면 종료 코드 2이고 HTML을 만들지 않는다. 일부만 있는 화면을 내지 않는다. 로지스틱 수렴 상태는 `anomaly_lamp_model.csv`의 `fit, status`와 `fit, gradient_norm` 행에서 읽는다.
+
+## 화면
+맨 위에 고정 문구를 둔다. "모든 값은 합성 데이터와 소프트웨어 모의 결과입니다. 실제 설비, 실제 라인, SL 기준이 아닙니다."
+
+탭 8개다. **HTML은 내용을 먼저 다 담고, JavaScript는 탭 전환과 재생만 더한다.** JavaScript가 꺼져 있으면 모든 절이 세로로 보이고, 그래프와 표도 그대로 보인다. PLC 탭은 시나리오 8개 전부의 요약과, 상태·알람·출력·이벤트가 바뀐 주기의 표를 정적 HTML로 넣는다. 재생 슬라이더만 JavaScript가 필요하다.
+
+| 탭 | 내용 |
+| --- | --- |
+| 개요 | 절마다 핵심 수치 한 줄과 사전 기준 결과. 미충족 항목도 그대로 표시 |
+| 측정 | 설비별 Cpk·Ppk 표, 표본 부족 표시 |
+| 측정 시스템 | 게이지별 %GRR, ndc, 판정, 가드밴드 선택 |
+| 이상 검출 | 방법 비교 표(11·13단계), 이동량별 검출률 막대, 관리도 선 그래프, 로지스틱 수렴 상태, 경보 행의 `b + Σ w_j s_j` 기여값과 임계값 |
+| PFMEA | 행별 근거·관측값·효과 판정. S·O·D 빈칸은 빈칸으로 표시 |
+| 라인 | 조합 표, 레이아웃 SVG |
+| PLC | 시나리오 선택, 주기 슬라이더, 상태 다이어그램, 출력 램프 재생 |
+| 사건 | 사건 ID별 연결(측정값 → 경보 근거 → 정지 코일 → 알람 → 복구 조건 → 격리 제품 → PFMEA 행), 방법별 타임라인, 의심 생산량·포착 표 |
+
+- 그래프는 인라인 SVG로 직접 그린다. 축과 범례를 넣고, 수치 표를 같이 둔다. 색만으로 구분하지 않는다.
+- 밝은·어두운 테마를 `prefers-color-scheme`으로 따른다. 폭 375px에서 가로 스크롤이 생기지 않는다.
+- 보고서의 문자열은 정적 HTML에서 `html.escape(quote=True)`로 이스케이프한다.
+- 재생 자료는 `<script type="application/json">`에 넣는다. `json.dumps(sort_keys=True)` 뒤 `<`, `>`, `&`, U+2028, U+2029를 `\uXXXX`로 바꾼다. `</`만 막으면 `<!--`와 `<script>` 조합이 스크립트 파싱 상태를 바꿀 수 있기 때문이다.
+- JavaScript는 화면에 글자를 넣을 때 `textContent`만 쓴다. `innerHTML`, `eval`, `document.write`를 쓰지 않는다.
+- SVG는 넣기 전에 `xml.etree`로 파싱해 **허용 목록**으로 검사한다. 하나라도 어긋나면 종료 코드 2다.
+  - 원문에 `<!DOCTYPE`, `<!ENTITY`, `<?`(XML 선언 제외)가 있으면 거절한다.
+  - 허용 요소: `svg, defs, marker, line, path, rect, text`. 이름공간은 `http://www.w3.org/2000/svg`만이다. `foreignObject`, `script`, `style`, `image`, `use`, `a`, 애니메이션 요소는 목록에 없으므로 거절된다.
+  - 허용 속성: `class, d, fill, font-family, font-size, height, id, marker-end, markerHeight, markerWidth, orient, refX, refY, stroke, stroke-dasharray, text-anchor, width, x, x1, x2, y, y1, y2, viewBox`. `on*`, `style`, `href`, 이름공간 속성은 목록에 없으므로 거절된다.
+  - 값 안의 참조는 `url(#id)`만 허용하고 `id`가 같은 문서에 있어야 한다. 값에 `:`나 `\`가 있으면 거절한다.
+
+## 실행과 결과
+```powershell
+py -m src.dashboard --out reports/dashboard.html
+```
+- 저장소 뿌리의 보고서를 읽는다. `--root`로 바꿀 수 있다. 다른 인자는 없다.
+- `--out`은 쓰기 전에 검사한다. 확장자가 `.html`이고, 해석한 경로가 `<root>/reports/` 바로 아래여야 한다. 입력 파일과 같은 경로이거나 심볼릭 링크이면 거절한다. 위반은 종료 코드 2이고 아무것도 쓰지 않는다.
+- 같은 입력은 바이트까지 같다. 생성 시각, 절대 경로, 시드 외 실행 정보를 넣지 않는다.
+- 파일은 임시 이름으로 쓴 뒤 교체한다. 실패하면 이전 파일을 건드리지 않는다.
+- 크기는 5MB 이하다. 넘으면 종료 코드 2다.
+
+## 사전 기대표
+| ID | 입력 | 기대 결과 |
+| --- | --- | --- |
+| T237 | 정상 실행 | 종료 0, `html.parser`로 파싱 성공, 태그 짝 일치, 탭 8개 |
+| T238 | 고정 문구 | 첫 절보다 앞에 정확히 포함 |
+| T239 | 수치 대조: 7a Cpk, 8단계 효과 판정, 9단계 선택 UPH, 11·13단계 선택과 지연 비용, 12단계 %GRR, 14단계 정지 위치 | 각 값이 보고서 문자열과 같음. 하드코딩 없음(보고서 값을 바꾼 복사본에서 화면 값도 바뀜) |
+| T240 | 미충족 표시: PF-02, PF-06, `anomaly_lamp_model.csv`의 수렴 미달과 경사 노름 | 화면에 그대로 있음. 모델 보고서 값을 바꾸면 화면도 바뀜 |
+| T241 | S·O·D 빈칸 | 빈칸. 0이나 추정값 없음 |
+| T242 | 필수 파일 하나 없음, 필수 열 없음, SVG: `script`, `foreignObject`, `on*` 속성, `style` 속성, `href`, `animate`, `<!DOCTYPE`, `url(http://…)`, `url(#없는id)`, 깨진 XML | 종료 코드 2, 이전 HTML 불변 |
+| T243 | 보고서 값에 `<script>alert(1)</script>`, `</script>`, `<!--<script>`, `&lt;`, 큰따옴표. 값이 정적 표와 재생 JSON 양쪽에 들어가는 경우 | 실행 태그 없음. `html.parser`로 script 요소 수가 고정 수와 같음. JSON을 `json.loads`로 되읽으면 원문과 같음 |
+| T244 | 외부 참조 검사 | 파일 전체에 `http://`, `https://`, `//` 스킴 참조, `file:`, `data:`, `@import`, 외부 `url(`, `src=`, `<link` 없음. SVG 이름공간 선언은 예외로 허용. 현재 레이아웃의 `url(#arrow)`는 통과 |
+| T245 | 두 폴더에서 반복 | HTML 바이트 동일, 절대 경로 없음 |
+| T246 | PLC 재생 자료 | 시나리오 8개의 주기 수와 마지막 상태가 CSV와 같음 |
+| T247 | 크기 | 5MB 이하 |
+| T248 | 실행 뒤 기존 파일 | 기존 설정·보고서 바이트 불변, 전체 기존 테스트 통과 |
+| T263 | JavaScript 없는 내용: `html.parser`로 `<script>`를 뺀 본문 | 시나리오 8개의 요약과 변화 행 표, 탭 8개의 절 제목, 표, SVG 그래프가 다 있음. 재생 슬라이더 외에 빠지는 내용 없음 |
+| T264 | `--out`: `reports/anomaly_lamp_methods.csv`, `reports/spc_lamp_chart.csv`를 `.html`로 바꾼 입력 경로와 같은 경로, `reports` 밖, `reports/sub/x.html`, 확장자 없음 | 종료 코드 2, 입력 바이트 불변 |
+| T265 | 기여값: `anomaly_lamp_replay.csv`의 `alarm = 1` 행 | `b + Σ w_j s_j`가 `z`와 소수 여덟째 자리까지 맞음. 어긋나게 바꾼 복사본은 종료 코드 2 |
+| T266 | 사건 연결: 사건 탭 | `story`의 사건 ID마다 측정값, 경보 근거, 코일 프레임, 알람, 복구 조건, 격리 제품 수, PFMEA 행이 있음. 값은 보고서 문자열과 같음 |
+
+브라우저 확인은 테스트와 별도로 한다. Claude가 내장 브라우저에서 폭 1280·375, 밝은·어두운 테마, **JavaScript를 끈 상태**를 열어 확인하고, 볼 수 없으면 그대로 밝힌다.
+
+## 구현 순서
+1. **15-1**: 입력 읽기, 검증, 이스케이프, 출력 경로, T242–T244, T264.
+2. **15-2**: 탭·표·그래프·재생, T237–T241, T245–T248, T263, T265–T266.
+3. **15-3**: 브라우저 확인, README.
+
+# v2 14단계 명세 (구현 완료, 2026-10-31, 사용자 승인 전)
 
 상태: **Sol 검토 뒤 진행 확정** (2026-10-31, 사용자 지시). 결정 근거는 `handoff/decisions.md`. 1–13단계(아래 명세)는 완료이며, 그 동작과 테스트는 보존한다.
 
