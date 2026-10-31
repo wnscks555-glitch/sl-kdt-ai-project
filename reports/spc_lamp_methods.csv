@@ -1,9 +1,10 @@
 ﻿section,method,shift,split,name,value,decision_interval,max_wait,detection_rate,early,missed,mean_delay_cost,mean_detected_delay,false_per_1000,false_per_1000_decisions,restricted_mean_run,no_alarm
 notice,,,,,"합성 측정열의 SPC 관리도 비교다. 실제 공정 관리 기록이 아니고 성능은 같은 평균 이동 가정 안에서만 뜻이 있다. 정상 기준에 합성 결함이 섞여 있어 한계가 그만큼 넓고, 깨끗한 기준의 한계는 참고로 따로 낸다.",,,,,,,,,,,
-provenance,,,,spc_lamp.json,f9ef5de4fd50b7560e1b2c5d303125d1e99c1ed3d81dd715409ee859d4abde94,,,,,,,,,,,
+provenance,,,,spc_lamp.json,b06fc23dfd1a2a05c3f2daba1f731a1914473627560b0ca734e10fdb8e5089bf,,,,,,,,,,,
 provenance,,,,anomaly_lamp.json,2410dd77fb4ad9d3a9495700f1d411d7bf2d6244ff3d537d406da113f30143fd,,,,,,,,,,,
 provenance,,,,anomaly_lamp_methods.csv,8a95ad63ba7995a4b6e659e59e7b65e4c961d69be933fe2ef3791276e8e89e75,,,,,,,,,,,
 provenance,,,,anomaly_lamp_model.csv,53ca142c36ffdf374be1d5ee1c1b378d64b826f7b463cc42b5b51f198e4165a3,,,,,,,,,,,
+provenance,,,,anomaly_lamp_replay.csv,635bd656023a8c2c89163ce0445495d765e2295a0ed5da67247c82fcb98e799e,,,,,,,,,,,
 limits,,,,center,10.0,,,,,,,,,,,
 limits,,,,sigma,0.7518796992481203,,,,,,,,,,,
 limits,,,,xbarbar,0.09518934133333334,,,,,,,,,,,

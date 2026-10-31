@@ -2,6 +2,7 @@
   "anomaly": "anomaly_lamp.json",
   "anomaly_report": "../reports/anomaly_lamp_methods.csv",
   "anomaly_model": "../reports/anomaly_lamp_model.csv",
+  "anomaly_replay": "../reports/anomaly_lamp_replay.csv",
   "subgroup": 5,
   "ewma_lambda": 0.2,
   "ewma_l": 3,

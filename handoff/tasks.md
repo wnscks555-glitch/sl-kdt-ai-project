@@ -19,6 +19,7 @@
   "anomaly": "anomaly_lamp.json",
   "anomaly_report": "../reports/anomaly_lamp_methods.csv",
   "anomaly_model": "../reports/anomaly_lamp_model.csv",
+  "anomaly_replay": "../reports/anomaly_lamp_replay.csv",
   "subgroup": 5,
   "ewma_lambda": 0.2,
   "ewma_l": 3,
@@ -28,17 +29,21 @@
 ```
 - 경로는 설정 파일 폴더 기준이다. 없으면 종료 코드 2다.
 - `subgroup`은 5로 고정한다. 상수 표가 이 값이다.
+- EWMA 시변 한계의 `1 − (1−λ)^{2(t+1)}`은 `expm1`·`log1p`로 계산해 작은 λ에서 0이 되지 않게 한다(리뷰 021).
 - `ewma_lambda`는 0 초과 1 이하, `ewma_l`, `cusum_k`, `cusum_h`는 유한한 양수다. `cusum_k`만 0을 허용하지 않는 이유는 기준값 없는 표류를 막기 위해서다.
 - 없는 키, 허용 밖 키, 타입·범위 위반은 종료 코드 3이다. bool은 숫자가 아니다.
 - 네 조정 값은 교과서 기본값이고, 결과를 본 뒤 바꾸지 않는다.
 
 ## 11단계 보고서와의 일치 확인
-파일 해시는 파일을 식별할 뿐 같은 측정열임을 증명하지 못한다. 그래서 두 가지를 확인한다. 어긋나면 비교를 거절하고 종료 코드 2다.
+파일 해시는 파일을 식별할 뿐 같은 측정열임을 증명하지 못한다. 그래서 네 가지를 확인한다. 어긋나면 비교를 거절하고 종료 코드 2다.
 
 1. `anomaly_model`의 `setting` 행(`generator`, `inspection`, `window`, `ewma_lambda`)과 `split` 행이 현재 `anomaly` 설정과 같다.
-2. 현재 설정으로 `rule_3_2`를 다시 계산해 `anomaly_report`의 `validation`·`holdout` 행, 이동량별 행과 문자열이 같다. `rule_3_2`는 학습이 필요 없고 측정열에만 의존하므로 측정열 일치의 증거가 된다.
+2. 현재 설정으로 `rule_3_2`를 다시 계산해 `anomaly_report`의 `validation`·`holdout` 행, 이동량별 행과 문자열이 같다. `rule_3_2`는 학습이 필요 없고 측정열에만 의존한다. 다만 FAIL만 보므로 측정값이 달라도 같은 결과가 나올 수 있다(리뷰 021).
+3. 보고서 임계값으로 `moving_average`를 다시 계산해 `validation`·`holdout` 행과 문자열이 같다. 임계값이 없으면 건너뛴다.
+4. `anomaly_replay`의 시드, `value`, `window_values`가 현재 홀드아웃 위치 1 시나리오의 측정값과 같다. 측정열 자체를 직접 비교한다.
+- 설정·모델 보고서·방법 보고서의 필수 키가 두 번 나오면 값이 같아도 거절한다.
 
-`reports/spc_lamp_methods.csv`의 `provenance` 행에 두 보고서와 두 설정의 SHA-256을 적는다.
+`reports/spc_lamp_methods.csv`의 `provenance` 행에 세 보고서와 두 설정의 SHA-256을 적는다.
 
 ## 1단계 추정 (학습 분할만)
 학습 분할의 **정상 시나리오**만 쓴다. 측정값은 11단계의 정규화 값 `x = (value − c) / σ`다. 각 시나리오를 앞에서부터 5건씩 끊고 남는 값은 버린다.
@@ -110,7 +115,7 @@ py -m src.spc recipes/spc_lamp.json
 | 절 | 행 | 내용 |
 | --- | --- | --- |
 | `notice` | 1 | 합성 경고 문장 |
-| `provenance` | 4 | `name`에 파일 이름, `value`에 SHA-256 |
+| `provenance` | 5 | `name`에 파일 이름, `value`에 SHA-256 |
 | `limits` | 15 | `name`: `center, sigma, xbarbar, rbar, sigma_hat, ucl_x, lcl_x, ucl_r, sigma_xbar, subgroups, ewma_lambda, ewma_l, cusum_k, cusum_h, window`. `value`는 `repr`로 그대로 복원되는 값 |
 | `validation`, `holdout` | 방법마다 1 | 지표 |
 | `validation_shift`, `holdout_shift` | 방법×이동량 | `shift`, `detection_rate` |

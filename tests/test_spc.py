@@ -69,7 +69,7 @@ def cli(module, *arguments, cwd):
 
 def write_spc(folder, **changes):
     data = dict(RAW, anomaly="anomaly.json", anomaly_report="reports/anomaly_methods.csv",
-                anomaly_model="reports/anomaly_model.csv")
+                anomaly_model="reports/anomaly_model.csv", anomaly_replay="reports/anomaly_replay.csv")
     data.update(changes)
     path = Path(folder) / "spc.json"
     path.write_text(json.dumps(data), encoding="utf-8")
@@ -176,6 +176,16 @@ class EwmaCusumTests(unittest.TestCase):
         for _ in range(200):
             chart.update(0)
         self.assertAlmostEqual(chart.limit, 1.0, places=9)
+
+    def test_t212_small_lambda_keeps_positive_limit(self):
+        chart = Ewma(UNIT_LIMITS, Tuning(1e-20, 3, 0.5, 1.5))
+        self.assertEqual([chart.update(0.1) for _ in range(12)], [False] * 12)
+        self.assertGreater(chart.limit, 0)
+
+    def test_t212_lambda_one(self):
+        chart = Ewma(UNIT_LIMITS, Tuning(1.0, 3, 0.5, 1.5))
+        chart.update(1)
+        self.assertEqual((chart.value, chart.limit), (1.0, 3.0))
 
     def test_t213_ewma_start(self):
         later = [0.0] * 3 + [9.0] + [0.0] * 8 + [9.0]
@@ -319,7 +329,7 @@ class ReportTests(unittest.TestCase):
         self.assertEqual(tuple(self.rows("spc_chart.csv")[0]), CHART_COLUMNS)
 
     def test_section_sizes(self):
-        expected = {"notice": 1, "provenance": 4, "limits": 15, "validation": 4, "holdout": 4, "reference": 6,
+        expected = {"notice": 1, "provenance": 5, "limits": 15, "validation": 4, "holdout": 4, "reference": 6,
                     "clean_limits": 8, "clean_holdout": 4, "selection": 2, "triggers": 12}
         for name, size in expected.items():
             self.assertEqual(len(self.section(name)), size, name)
@@ -365,7 +375,8 @@ class ReportTests(unittest.TestCase):
         before = {row["name"]: row["value"] for row in self.section("provenance")}
         path = self.reports / "anomaly_methods.csv"
         self.assertEqual(before["anomaly_methods.csv"], hashlib.sha256(path.read_bytes()).hexdigest())
-        self.assertEqual(set(before), {"spc.json", "anomaly.json", "anomaly_methods.csv", "anomaly_model.csv"})
+        self.assertEqual(set(before), {"spc.json", "anomaly.json", "anomaly_methods.csv", "anomaly_model.csv",
+                                       "anomaly_replay.csv"})
 
     def test_t256_clean_limits_are_narrower(self):
         normal = {row["name"]: float(row["value"]) for row in self.section("limits")}
@@ -410,6 +421,66 @@ class RefusalTests(unittest.TestCase):
             rows[index] = ",".join(cells)
             path.write_bytes("\r\n".join(rows).encode("utf-8-sig"))
         self.refused(change)
+
+    def test_t254_duplicate_row_either_order(self):
+        def duplicate(first):
+            def change(folder):
+                path = folder / "reports" / "anomaly_methods.csv"
+                rows = path.read_bytes().decode("utf-8-sig").split("\r\n")
+                index = next(i for i, line in enumerate(rows) if line.startswith("validation,rule_3_2,,"))
+                cells = rows[index].split(",")
+                cells[8] = "999.0000"
+                pair = [",".join(cells), rows[index]] if first else [rows[index], ",".join(cells)]
+                rows[index:index + 1] = pair
+                path.write_bytes("\r\n".join(rows).encode("utf-8-sig"))
+            return change
+        self.refused(duplicate(True))
+        self.refused(duplicate(False))
+
+    def test_t254_duplicate_model_row(self):
+        self.refused(lambda folder: edit(folder / "reports" / "anomaly_model.csv",
+                                         lambda text: text.replace("setting,window,10", "setting,window,11\r\nsetting,window,10")))
+
+    def test_t254_replay_value_changed(self):
+        def change(folder):
+            path = folder / "reports" / "anomaly_replay.csv"
+            rows = path.read_bytes().decode("utf-8-sig").split("\r\n")
+            cells = rows[1].split(",")
+            cells[5] = "1.234"
+            rows[1] = ",".join(cells)
+            path.write_bytes("\r\n".join(rows).encode("utf-8-sig"))
+        self.refused(change)
+
+    def test_t254_moving_average_changed(self):
+        def change(folder):
+            path = folder / "reports" / "anomaly_methods.csv"
+            rows = path.read_bytes().decode("utf-8-sig").split("\r\n")
+            index = next(i for i, line in enumerate(rows) if line.startswith("holdout,moving_average,,"))
+            cells = rows[index].split(",")
+            if not cells[3]:
+                self.skipTest("작은 설정에 임계값이 없음")
+            cells[8] = "999.0000"
+            rows[index] = ",".join(cells)
+            path.write_bytes("\r\n".join(rows).encode("utf-8-sig"))
+        self.refused(change)
+
+    def test_t254_generator_values_changed_with_same_rule_result(self):
+        with tempfile.TemporaryDirectory() as folder:
+            source = json.loads((ROOT / "recipes" / "generator_measured.json").read_text(encoding="utf-8"))
+            source["defective_product_probability"] = 0.0
+            source["process_cpk"] = 5.0
+            directory = ROOT / "recipes"
+            for key in ("recipe", "equipment"):
+                if key in source and isinstance(source[key], str):
+                    source[key] = str(directory / source[key])
+            generator = Path(folder) / "generator_measured.json"
+            generator.write_text(json.dumps(source), encoding="utf-8")
+            config = prepare(folder, generator=str(generator))
+            source["process_cpk"] = 6.0
+            generator.write_text(json.dumps(source), encoding="utf-8")
+            result = cli("src.spc", config, cwd=folder)
+            self.assertEqual(result.returncode, 2, result.stderr)
+            self.assertFalse((Path(folder) / "reports" / "spc_methods.csv").exists())
 
     def test_t254_length_only_changed(self):
         def change(folder):

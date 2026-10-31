@@ -3,6 +3,7 @@
 import argparse
 import csv
 from dataclasses import dataclass, replace
+from decimal import Decimal
 from fractions import Fraction
 import hashlib
 import json
@@ -15,7 +16,8 @@ from src.anomaly import _integer, _keys, _number, _write_csv, holdout_result, me
 
 NOTICE = ("합성 측정열의 SPC 관리도 비교다. 실제 공정 관리 기록이 아니고 성능은 같은 평균 이동 가정 안에서만 뜻이 있다. "
           "정상 기준에 합성 결함이 섞여 있어 한계가 그만큼 넓고, 깨끗한 기준의 한계는 참고로 따로 낸다.")
-TOP_KEYS = ("anomaly", "anomaly_report", "anomaly_model", "subgroup", "ewma_lambda", "ewma_l", "cusum_k", "cusum_h")
+TOP_KEYS = ("anomaly", "anomaly_report", "anomaly_model", "anomaly_replay", "subgroup", "ewma_lambda", "ewma_l",
+            "cusum_k", "cusum_h")
 METHODS = ("xbar_r", "xbar_we", "ewma_chart", "cusum")
 SUBGROUP_METHODS = ("xbar_r", "xbar_we")
 SUBGROUP = 5
@@ -52,6 +54,7 @@ class Settings:
     anomaly: Path
     anomaly_report: Path
     anomaly_model: Path
+    anomaly_replay: Path
     tuning: Tuning
 
 
@@ -69,7 +72,7 @@ class Limits:
 
 def _check(data):
     errors = []
-    for key in ("anomaly", "anomaly_report", "anomaly_model"):
+    for key in ("anomaly", "anomaly_report", "anomaly_model", "anomaly_replay"):
         if not isinstance(data[key], str) or not data[key].strip():
             errors.append("$." + key + ": 비어 있지 않은 문자열이어야 함")
     if not _integer(data["subgroup"]) or data["subgroup"] != SUBGROUP:
@@ -96,7 +99,7 @@ def load_settings(path):
     if errors:
         raise SpcError(errors)
     return Settings(path.parent / data["anomaly"], path.parent / data["anomaly_report"],
-                    path.parent / data["anomaly_model"],
+                    path.parent / data["anomaly_model"], path.parent / data["anomaly_replay"],
                     Tuning(data["ewma_lambda"], data["ewma_l"], data["cusum_k"], data["cusum_h"]))
 
 
@@ -172,6 +175,13 @@ def subgroup_alarm(x, limits, start, use_runs):
 class Ewma:
     """매 측정 한 번 갱신한다. 14단계는 재가동 때 새로 만들어 구간 인덱스를 다시 센다."""
 
+    def _start_factor(self):
+        """`1 − (1−λ)^{2(t+1)}`이다. 작은 λ에서 1−λ가 1로 반올림되어 한계가 0이 되지 않게 로그로 계산한다."""
+        weight = self.tuning.ewma_lambda
+        if weight == 1:
+            return 1.0
+        return -math.expm1(2 * (self.index + 1) * math.log1p(-weight))
+
     def __init__(self, limits, tuning):
         self.limits = limits
         self.tuning = tuning
@@ -183,7 +193,7 @@ class Ewma:
         weight = self.tuning.ewma_lambda
         self.index += 1
         self.value = weight * x + (1 - weight) * self.value
-        variance = weight / (2 - weight) * (1 - (1 - weight) ** (2 * (self.index + 1)))
+        variance = weight / (2 - weight) * self._start_factor()
         self.limit = self.tuning.ewma_l * self.limits.sigma_hat * math.sqrt(variance)
         return abs(self.value - self.limits.xbarbar) > self.limit
 
@@ -311,9 +321,21 @@ def _read_rows(path):
         return list(csv.DictReader(source))
 
 
+def _unique(rows, key):
+    """같은 키가 두 번이면 어느 행을 믿을지 정할 수 없으므로 거절한다."""
+    table = {}
+    for row in rows:
+        name = key(row)
+        if name in table:
+            raise ValueError("보고서에 같은 행이 두 번 있음: %s" % (name,))
+        table[name] = row
+    return table
+
+
 def load_reference(path):
-    rows = _read_rows(path)
-    table = {(row["section"], row["method"], row["shift"]): row for row in rows if row.get("section")}
+    rows = [row for row in _read_rows(path)
+            if row["section"] in ("validation", "holdout", "validation_shift", "holdout_shift")]
+    table = _unique(rows, lambda row: (row["section"], row["method"], row["shift"]))
     for section in ("validation", "holdout"):
         for method in anomaly.METHODS:
             if (section, method, "") not in table:
@@ -323,7 +345,8 @@ def load_reference(path):
 
 def check_model(path, settings):
     """현재 11단계 설정과 모델 보고서의 설정·분할 행이 같아야 한다."""
-    rows = {(row["section"], row["name"]): row["value"] for row in _read_rows(path)}
+    kept = [row for row in _read_rows(path) if row["section"] in ("setting", "split")]
+    rows = {key: row["value"] for key, row in _unique(kept, lambda row: (row["section"], row["name"])).items()}
     expected = {("setting", "generator"): settings.generator.name, ("setting", "inspection"): settings.inspection,
                 ("setting", "window"): str(settings.window), ("setting", "ewma_lambda"): str(settings.ewma_lambda)}
     for name in anomaly.SPLITS:
@@ -344,6 +367,32 @@ def check_rule(table, section, scenarios, settings):
         reported = table.get((section + "_shift", "rule_3_2", str(shifted["shift"])))
         if reported is None or reported["detection_rate"] != shifted["detection_rate"]:
             raise ValueError("anomaly_report: %s의 이동량별 rule_3_2가 현재 측정열과 다름" % section)
+
+
+def check_values(table, section, scenarios, settings):
+    """이동평균은 측정값 전체의 합에 의존한다. 보고서 임계값으로 다시 계산해 측정열을 확인한다."""
+    row = table[(section, "moving_average", "")]
+    if not row["threshold"]:
+        return
+    threshold = int(Decimal(row["threshold"]) * anomaly.SCALE)
+    metrics = anomaly.evaluate(scenarios, anomaly.mean_scores, threshold, settings)
+    fresh = anomaly.metric_row(section, "moving_average", metrics)
+    if any(str(fresh[name]) != row[name] for name in METRIC_FIELDS):
+        raise ValueError("anomaly_report: %s의 moving_average가 현재 측정열과 다름" % section)
+
+
+def check_replay(path, scenario):
+    """재생 보고서의 원 측정값은 측정열 자체다. 집계가 우연히 같아도 값이 다르면 여기서 걸린다."""
+    rows = _read_rows(path)
+    if not rows:
+        raise ValueError("anomaly_replay: 행이 없음")
+    for row in rows:
+        t = int(row["t"])
+        if int(row["seed"]) != scenario.seed or row["value"] != scenario.values[t]:
+            raise ValueError("anomaly_replay: 현재 측정열과 다름")
+        window = row["window_values"].split(" ")
+        if window != scenario.values[t - len(window) + 1:t + 1]:
+            raise ValueError("anomaly_replay: 현재 측정열과 다름")
 
 
 def reference_rows(table):
@@ -444,11 +493,14 @@ def run(path):
     splits = {name: anomaly.build_split(base.splits[name], base, process) for name in anomaly.SPLITS}
     for section in ("validation", "holdout"):
         check_rule(table, section, splits[section], base)
+        check_values(table, section, splits[section], base)
+    check_replay(settings.anomaly_replay, splits["holdout"][1])
     limits = estimate(training_series(splits["train"], process))
     clean = clean_limits(base, process)
     body, selected, outcome = compare(splits, limits, clean, settings.tuning, process, base, table)
     rows = [_row("notice", value=NOTICE)]
-    rows.extend(provenance_rows((path, settings.anomaly, settings.anomaly_report, settings.anomaly_model)))
+    rows.extend(provenance_rows((path, settings.anomaly, settings.anomaly_report, settings.anomaly_model,
+                                 settings.anomaly_replay)))
     rows.extend(limit_rows("limits", limits, (("center", process.center), ("sigma", process.sigma))))
     rows.extend(tuning_rows(settings.tuning, base.window))
     rows.extend(body)
