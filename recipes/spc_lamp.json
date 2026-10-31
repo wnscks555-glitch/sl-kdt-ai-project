@@ -1,0 +1,10 @@
+{
+  "anomaly": "anomaly_lamp.json",
+  "anomaly_report": "../reports/anomaly_lamp_methods.csv",
+  "anomaly_model": "../reports/anomaly_lamp_model.csv",
+  "subgroup": 5,
+  "ewma_lambda": 0.2,
+  "ewma_l": 3,
+  "cusum_k": 0.5,
+  "cusum_h": 5
+}
