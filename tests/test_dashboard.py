@@ -449,6 +449,17 @@ class RefusalTests(unittest.TestCase):
         self.refused(lambda reports: rewrite(reports / "incident_lamp_suspects.csv", lambda raw: "\n".join(
             line for line in raw.splitlines() if "cusum-3" not in line)))
 
+    def test_t266_partial_scope_refused(self):
+        def drop(text):
+            return lambda reports: rewrite(reports / "incident_lamp_suspects.csv", lambda raw: "\n".join(
+                line for line in raw.splitlines() if text not in line))
+        self.refused(drop("cusum-3,last_50"))
+        self.refused(drop("cusum-3,last_20,195,"))
+
+    def test_t266_scope_size_must_match_rows(self):
+        self.refused(lambda reports: rewrite(reports / "incident_lamp_compare.csv",
+                                             lambda raw: raw.replace("1,8,188,20,11", "1,8,188,21,11")))
+
     def test_t266_pfmea_link_to_other_stop_refused(self):
         self.refused(lambda reports: rewrite(reports / "incident_lamp_pfmea.md",
                                              lambda raw: raw + "| PF-02 | 측정 평균이 위로 이동 | cusum-1 | 임의 |\n"))

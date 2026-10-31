@@ -42,8 +42,8 @@ INPUTS = {
                               "selected", "value"),
     "incident_lamp_timeline.csv": ("method", "incident_id", "cycle", "product", "event", "detail"),
     "incident_lamp_compare.csv": ("section", "method", "scope", "name", "value", "stops", "false_stops", "detection",
-                                  "a", "delay", "suspect_passed", "captured", "captured_parts", "scope_size",
-                                  "over_scope"),
+                                  "a", "delay", "suspect_passed", "captured", "captured_parts", "scope_start",
+                                  "scope_size", "over_scope"),
     "incident_lamp_suspects.csv": ("incident_id", "scope", "product"),
 }
 TEXT_INPUTS = ("line_lamp_layout.svg", "incident_lamp_pfmea.md")
@@ -518,8 +518,19 @@ def pfmea_links(text):
     return rows
 
 
+def scope_plan(rows, method, stop):
+    """`story_scope`가 말하는 범위별 제품 번호다. 시작부터 정지 제품까지이고 범위 크기와 맞아야 한다."""
+    plan = {}
+    for row in section_rows(rows, "story_scope"):
+        if row["method"] == method and row["scope_size"]:
+            plan[row["scope"]] = list(range(int(row["scope_start"]), int(stop) + 1))
+            if len(plan[row["scope"]]) != int(row["scope_size"]):
+                raise DashboardError("%s %s의 범위 크기가 정지 제품과 맞지 않음" % (method, row["scope"]))
+    return plan
+
+
 def chain_rows(reports, links):
-    """PFMEA와 격리 범위는 고장 뒤 첫 정지에만 있다. 그 사건의 연결이 빠지면 빈칸으로 넘기지 않고 멈춘다.
+    """PFMEA와 격리 범위는 고장 뒤 첫 정지에만 있다. 그 사건의 연결이나 제품 행이 빠지면 넘기지 않고 멈춘다.
 
     다른 정지는 격리할 고장이 없으므로 해당 없음과 이유를 적는다.
     """
@@ -531,17 +542,18 @@ def chain_rows(reports, links):
             events.setdefault(row["incident_id"], {})[row["event"]] = row
     suspects = {}
     for row in reports["incident_lamp_suspects.csv"]:
-        suspects.setdefault(row["incident_id"], {}).setdefault(row["scope"], 0)
-        suspects[row["incident_id"]][row["scope"]] += 1
+        suspects.setdefault(row["incident_id"], {}).setdefault(row["scope"], []).append(int(row["product"]))
     rows, real = [], set()
     for incident, table_of in events.items():
         alarm = table_of["alarm"]
         stop = answer[alarm["method"]]
         if alarm["product"] == stop:
             real.add(incident)
-            scope = ", ".join("%s %d" % item for item in suspects.get(incident, {}).items())
+            listed = suspects.get(incident, {})
+            plan = scope_plan(reports["incident_lamp_compare.csv"], alarm["method"], stop)
+            scope = ", ".join("%s %d" % (name, len(products)) for name, products in listed.items())
             pfmea = ", ".join(links.get(incident, ()))
-            if not scope or not required or set(links.get(incident, ())) != required:
+            if not plan or listed != plan or not required or set(links.get(incident, ())) != required:
                 raise DashboardError("사건 %s의 격리 범위나 PFMEA 연결이 모자람" % incident)
         else:
             early = not stop or int(alarm["product"]) < int(stop)
