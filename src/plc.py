@@ -189,6 +189,8 @@ class Plc:
         self.events.append("aborted")
         with self.table.lock:
             self.table.holding[JUDGE_REGISTER:JUDGE_REGISTER + 2] = [0, 0]
+            self.table.input_registers[REG_VALUE_HIGH] = 0
+            self.table.input_registers[REG_VALUE_LOW] = 0
         return self._go(IDLE)
 
     def _transition(self, snap, reset_edge):

@@ -76,6 +76,24 @@ class FrameTests(unittest.TestCase):
             connection.sendall(frame)
             self.assertTrue(self.closed(connection), frame[:8].hex())
 
+    def test_t160_valid_request_before_damage_survives_any_split(self):
+        good = request(1, struct.pack(">BHH", 6, 0, 9))
+        bad = request(2, read_pdu(3, 0, 1), protocol=1)
+        stream = good + bad
+        for pieces in ((stream,), (good, bad), (stream[:len(good) + 5], stream[len(good) + 5:])):
+            self.table.holding[0] = 7
+            connection = self.connect()
+            replies = b""
+            for piece in pieces:
+                connection.sendall(piece)
+            while True:
+                chunk = connection.recv(64)
+                if not chunk:
+                    break
+                replies += chunk
+            self.assertEqual(self.table.holding[0], 9)
+            self.assertEqual(replies, good)
+
     def test_t160_other_unit_is_dropped_silently(self):
         connection = self.connect()
         connection.sendall(request(1, read_pdu(READ_HOLDING, 0, 1), unit=2))

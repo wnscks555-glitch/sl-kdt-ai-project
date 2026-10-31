@@ -109,6 +109,15 @@ class ScenarioTests(unittest.TestCase):
         self.assertEqual(judge["hex"].split()[7:], "10 00 01 00 02 04 00 01 00 01".split())
 
 
+class ValueOrderTests(unittest.TestCase):
+    def test_values_follow_product_number_past_9999(self):
+        station = load_station(CONFIG)
+        rows = [{"inspection": "LEAK", "product_id": name, "value": value}
+                for name, value in (("GEN_10000", "3.000"), ("GEN_1001", "2.000"), ("GEN_0002", "1.000"))]
+        with mock.patch.object(module.Generator, "normal_events", return_value=rows):
+            self.assertEqual(load_values(station, 0, 3)[0], ["1.000", "2.000", "3.000"])
+
+
 class PlantTests(unittest.TestCase):
     def setUp(self):
         self.table = Table()

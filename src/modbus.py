@@ -46,10 +46,6 @@ class ValueConversionError(ValueError):
     """측정값이 정수 천분율 32비트로 정확히 표현되지 않는다."""
 
 
-class FrameError(ValueError):
-    """MBAP 머리가 손상되어 프레임 경계를 믿을 수 없다."""
-
-
 class ModbusResponseError(ConnectionError):
     """응답이 요청과 맞지 않거나 연결이 끊겼다. 클라이언트는 연결을 닫는다."""
 
@@ -215,10 +211,15 @@ def handle_pdu(pdu, table):
 
 
 class FrameBuffer:
-    """길이 기반 수신 버퍼다. 분할·병합 수신을 모두 처리한다."""
+    """길이 기반 수신 버퍼다. 분할·병합 수신을 모두 처리한다.
+
+    손상을 만나도 앞의 완성 프레임은 돌려주고 damaged만 세운다. 호출자는 그 프레임을 처리한 뒤 닫는다.
+    그래서 같은 바이트열의 결과가 수신 분할에 따라 달라지지 않는다.
+    """
 
     def __init__(self):
         self.data = bytearray()
+        self.damaged = False
 
     def feed(self, chunk):
         self.data.extend(chunk)
@@ -226,7 +227,8 @@ class FrameBuffer:
         while len(self.data) >= HEADER_BYTES:
             _, protocol, length = struct.unpack(">HHH", self.data[:HEADER_BYTES])
             if protocol != 0 or not MIN_LENGTH <= length <= MAX_LENGTH:
-                raise FrameError("MBAP 손상")
+                self.damaged = True
+                break
             total = HEADER_BYTES + length
             if len(self.data) < total:
                 break
@@ -280,17 +282,15 @@ class ModbusServer:
                 return
             if not chunk:
                 return
-            try:
-                frames = buffer.feed(chunk)
-            except FrameError:
-                return
-            for frame in frames:
+            for frame in buffer.feed(chunk):
                 reply = respond(frame, self.table)
                 if reply is not None:
                     try:
                         connection.sendall(reply)
                     except OSError:
                         return
+            if buffer.damaged:
+                return
 
     def close(self):
         self.stopping.set()
@@ -336,9 +336,8 @@ class ModbusClient:
             chunk = self._chunk()
             if not chunk:
                 self._fail("연결 끊김")
-            try:
-                frames = self.buffer.feed(chunk)
-            except FrameError:
+            frames = self.buffer.feed(chunk)
+            if self.buffer.damaged:
                 self._fail("응답 MBAP 손상")
         if len(frames) > 1 or self.buffer.data:
             self._fail("요청보다 응답이 많음")
@@ -405,4 +404,3 @@ class ModbusClient:
 
 def _function_with(function, first, second):
     return bytes((function,)) + _words(first, second)
-

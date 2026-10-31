@@ -274,9 +274,10 @@ class ScanTests(unittest.TestCase):
         self.assertFalse(rig.plc.release_latch)
         self.assertIn("aborted", rig.plc.events)
 
-    def test_t158_measure_id_is_kept(self):
+    def test_t158_measure_id_is_kept_and_published_value_is_cleared(self):
         rig = Rig()
         rig.reach(WAIT_JUDGE)
+        self.assertEqual(rig.table.input_registers[REG_VALUE_LOW], 10250)
         for _ in range(31):
             rig.scan()
         self.assertEqual(rig.plc.alarm, 14)
@@ -287,6 +288,9 @@ class ScanTests(unittest.TestCase):
         rig.scan()
         self.assertEqual(rig.plc.state, IDLE)
         self.assertEqual(rig.plc.measure_id, 1)
+        self.assertEqual(rig.table.input_registers[REG_MEASURE_ID], 1)
+        self.assertEqual(rig.table.input_registers[REG_VALUE_HIGH:REG_VALUE_LOW + 1], [0, 0])
+        self.assertTrue(rig.table.coils[RELEASE_COIL])
 
     def test_recovery_needs_living_heartbeat(self):
         rig = self._alarm_12()

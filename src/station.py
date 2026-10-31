@@ -125,7 +125,9 @@ def load_values(station, seed, products):
             first.setdefault(row["product_id"], row["value"])
     if len(first) != products:
         raise ValueError(station.inspection + ": 측정값이 없는 제품이 있음")
-    return [first[key] for key in sorted(first)], next(iter(items.values()))
+    # 문자열로 정렬하면 GEN_10000이 GEN_1001 앞에 온다.
+    ordered = sorted(first, key=lambda product: int(product.rpartition("_")[2]))
+    return [first[product] for product in ordered], next(iter(items.values()))
 
 
 class Plant:
