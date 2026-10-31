@@ -129,10 +129,11 @@ def check_seeds(settings, base):
     for seeds in base.splits.values():
         used.update(seeds)
     errors = []
-    if settings.story_seed in used:
-        errors.append("$.story_seed: 11·13단계 시드와 겹침")
-    if used & set(settings.summary_seeds):
-        errors.append("$.summary_seeds: 11·13단계 시드와 겹침")
+    if {settings.story_seed, settings.story_seed + REPAIR_OFFSET} & used:
+        errors.append("$.story_seed: 고장 열이나 수리 뒤 열이 11·13단계 시드와 겹침")
+    summary = set(settings.summary_seeds)
+    if used & (summary | {seed + REPAIR_OFFSET for seed in summary}):
+        errors.append("$.summary_seeds: 고장 열이나 수리 뒤 열이 11·13단계 시드와 겹침")
     if errors:
         raise IncidentError(errors)
 

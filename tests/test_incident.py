@@ -1,4 +1,5 @@
 import csv
+from dataclasses import replace
 import hashlib
 import json
 import os
@@ -11,7 +12,7 @@ import unittest
 from src import anomaly
 from src.incident import (
     COMPARE_COLUMNS, FRAME_COLUMNS, SUSPECT_COLUMNS, TIMELINE_COLUMNS, Flow, IncidentError, ScopeSummary, Stop, Summary,
-    add_run, detection_of, fault_series, load_settings, read_pfmea, repair_series, run_memory, run_scopes, run_story,
+    add_run, check_seeds, detection_of, fault_series, load_settings, read_pfmea, repair_series, run_memory, run_scopes, run_story,
     scope_result, scope_start, scope_values, suspect_counts, summary_values, true_stop,
 )
 from src.modbus import PC_STOP_COIL, READ_COILS, Table, handle_pdu
@@ -389,6 +390,17 @@ class ConfigTests(unittest.TestCase):
             with self.assertRaises(IncidentError) as caught:
                 load_settings(write_config(folder, onset_product=0))
         self.assertIn("$.onset_product", str(caught.exception))
+
+    def test_t233_repair_series_seed_overlap(self):
+        base = anomaly.load_settings(ROOT / "recipes" / "anomaly_lamp.json")
+        moved = replace(base, splits=dict(base.splits, train=range(1003000, 1003300)))
+        with tempfile.TemporaryDirectory() as folder:
+            settings = load_settings(write_config(folder, story_seed=3000, summary_seeds="3001-3002"))
+            with self.assertRaises(IncidentError):
+                check_seeds(settings, moved)
+            with self.assertRaises(IncidentError):
+                check_seeds(replace(settings, story_seed=9000, summary_seeds=range(3000, 3001)), moved)
+            check_seeds(replace(settings, story_seed=9000, summary_seeds=range(9001, 9002)), moved)
 
     def test_read_pfmea_keeps_order(self):
         links = read_pfmea(ROOT / "data" / "pfmea_lamp.csv", ("PF-06", "PF-02"))

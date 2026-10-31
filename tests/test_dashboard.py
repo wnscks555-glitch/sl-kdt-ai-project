@@ -249,6 +249,23 @@ class PageTests(unittest.TestCase):
             self.assertEqual(run_cli(folder).returncode, 2)
             self.assertFalse((reports / "dashboard.html").exists())
 
+    def test_no_selected_model_is_shown(self):
+        with tempfile.TemporaryDirectory() as folder:
+            reports = copy_inputs(folder)
+            rewrite(reports / "anomaly_lamp_methods.csv",
+                    lambda text: text.replace("selection,logistic,,,,,,,,,,,,,logistic",
+                                              "selection,,,,,,,,,,,,,,기준 충족 방법 없음")
+                    .replace("selection,logistic,,,,,,,,,,,,,홀드아웃 확인", "selection,,,,,,,,,,,,,,홀드아웃 검증할 선택 없음"))
+            result = run_cli(folder)
+            self.assertEqual(result.returncode, 0, result.stderr)
+            self.assertIn("기준 충족 방법 없음", (reports / "dashboard.html").read_text(encoding="utf-8"))
+
+    def test_ewma_graph_uses_actual_limits(self):
+        section = self.text[self.text.index("EWMA 값과 시변 관리 한계"):]
+        self.assertEqual(section[:section.index("</figure>")].count("<polyline"), 3)
+        self.assertIn("상한", section)
+        self.assertIn("하한", section)
+
     def test_all_samples_short_is_shown(self):
         with tempfile.TemporaryDirectory() as folder:
             reports = copy_inputs(folder)
@@ -363,6 +380,15 @@ class RefusalTests(unittest.TestCase):
                      SVG_HEAD + "<?php x?></svg>"):
             with self.subTest(text=text), self.assertRaises(DashboardError):
                 check_svg(text)
+
+    def test_t242_xml_comment_refused(self):
+        for inner in ("<!--><script>alert(1)</script>-->", "<!-- x -->", "<![CDATA[<script>x</script>]]>"):
+            with self.subTest(inner=inner), self.assertRaises(DashboardError):
+                check_svg(SVG_HEAD + inner + "</svg>")
+
+    def test_t242_xml_declaration_is_not_embedded(self):
+        body = SVG_HEAD + "<rect></rect></svg>"
+        self.assertEqual(check_svg("<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n" + body), body)
 
     def test_t244_real_layout_passes(self):
         text = (REPORTS / "line_lamp_layout.svg").read_bytes().decode("utf-8-sig")

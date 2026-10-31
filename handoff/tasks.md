@@ -48,7 +48,7 @@
 - 재생 자료는 `<script type="application/json">`에 넣는다. `json.dumps(sort_keys=True)` 뒤 `<`, `>`, `&`, U+2028, U+2029를 `\uXXXX`로 바꾼다. `</`만 막으면 `<!--`와 `<script>` 조합이 스크립트 파싱 상태를 바꿀 수 있기 때문이다.
 - JavaScript는 화면에 글자를 넣을 때 `textContent`만 쓴다. `innerHTML`, `eval`, `document.write`를 쓰지 않는다.
 - SVG는 넣기 전에 `xml.etree`로 파싱해 **허용 목록**으로 검사한다. 하나라도 어긋나면 종료 코드 2다.
-  - 원문에 `<!DOCTYPE`, `<!ENTITY`, `<?`(XML 선언 제외)가 있으면 거절한다.
+  - 원문에 `<!`(주석, CDATA, DOCTYPE, ENTITY 전부), `<?`(맨 앞 XML 선언 제외)가 있으면 거절한다. XML 선언은 넣기 전에 뗀다. XML이 주석으로 읽는 `<!-->`를 HTML은 바로 닫고 뒤를 실행한다(리뷰 025 반례).
   - 허용 요소: `svg, defs, marker, line, path, rect, text`. 이름공간은 `http://www.w3.org/2000/svg`만이다. `foreignObject`, `script`, `style`, `image`, `use`, `a`, 애니메이션 요소는 목록에 없으므로 거절된다.
   - 허용 속성: `class, d, fill, font-family, font-size, height, id, marker-end, markerHeight, markerWidth, orient, refX, refY, stroke, stroke-dasharray, text-anchor, width, x, x1, x2, y, y1, y2, viewBox`. `on*`, `style`, `href`, 이름공간 속성은 목록에 없으므로 거절된다.
   - 값 안의 참조는 `url(#id)`만 허용하고 `id`가 같은 문서에 있어야 한다. 값에 `:`나 `\`가 있으면 거절한다.
@@ -149,7 +149,7 @@ py -m src.dashboard --out reports/dashboard.html
 | `pfmea_links` | 문자열 목록 | 비어 있지 않고 중복 없음 |
 
 - 없는 키, 허용 밖 키, 타입·범위 위반은 종료 코드 3이다. bool은 숫자가 아니다. `10**400`도 종료 코드 3이다.
-- `story_seed`와 `summary_seeds`는 11·13단계의 학습·검증·홀드아웃 시드와 겹칠 수 없다(종료 코드 3). 사건 평가에 한계 추정 자료를 다시 쓰지 않기 위해서다.
+- `story_seed`와 `summary_seeds`, 그리고 수리 뒤 열의 시드(`시드 + 1000000`)는 11·13단계의 학습·검증·홀드아웃 시드와 겹칠 수 없다(종료 코드 3). 사건 평가에 한계 추정 자료를 다시 쓰지 않기 위해서다.
 
 ## 설정 일치 확인
 어긋나면 종료 코드 2이고 보고서를 쓰지 않는다.

@@ -54,7 +54,6 @@ SVG_ATTRIBUTES = {"class", "d", "fill", "font-family", "font-size", "height", "i
                   "markerWidth", "orient", "refX", "refY", "stroke", "stroke-dasharray", "text-anchor", "width", "x",
                   "x1", "x2", "y", "y1", "y2", "viewBox"}
 SVG_REFERENCE = re.compile(r"url\(#([A-Za-z0-9_-]+)\)")
-SVG_FORBIDDEN = ("<!DOCTYPE", "<!ENTITY")
 
 
 class DashboardError(ValueError):
@@ -96,12 +95,15 @@ def read_text(path):
 
 
 def check_svg(text):
-    """허용 목록으로 검사한다. 금지 목록은 foreignObject나 애니메이션 같은 빈틈을 남긴다."""
+    """허용 목록으로 검사한다. 금지 목록은 foreignObject나 애니메이션 같은 빈틈을 남긴다.
+
+    `<!`는 전부 거절한다. XML이 주석으로 읽는 `<!-->`를 HTML은 바로 닫고 뒤를 실행한다.
+    """
     declaration = text.lstrip()
     if declaration.startswith("<?xml"):
-        declaration = declaration[declaration.index("?>") + 2:]
-    if any(mark in text for mark in SVG_FORBIDDEN) or "<?" in declaration:
-        raise DashboardError("SVG: 선언이나 처리 지시가 있음")
+        declaration = declaration[declaration.index("?>") + 2:].lstrip()
+    if "<!" in declaration or "<?" in declaration:
+        raise DashboardError("SVG: 주석, 선언, 처리 지시가 있음")
     try:
         root = ElementTree.fromstring(text)
     except ElementTree.ParseError as error:
@@ -120,7 +122,7 @@ def check_svg(text):
                 raise DashboardError("SVG: 없는 id 참조")
             if ":" in value or "\\" in value or "url(" in SVG_REFERENCE.sub("", value).lower():
                 raise DashboardError("SVG: 허용 밖 참조")
-    return text
+    return declaration
 
 
 def table(headers, rows, caption=""):
@@ -315,7 +317,9 @@ def overview_section(reports):
     guard = section_rows(reports["msa_lamp_guard.csv"], "holdout")
     model_pick, model_hold = selection_of(reports["anomaly_lamp_methods.csv"])
     chart_pick, chart_hold = selection_of(reports["spc_lamp_methods.csv"])
-    logistic = one(reports["anomaly_lamp_methods.csv"], "holdout", method=model_pick)
+    picked = [row for row in section_rows(reports["anomaly_lamp_methods.csv"], "holdout")
+              if row["method"] == model_pick]
+    model_text = "%s 지연 비용 %s" % (model_pick, picked[0]["mean_delay_cost"]) if picked else model_pick
     items = section_rows(reports["pfmea_lamp_report.csv"], "item")
     judged = [row for row in items if row["effect_result"]]
     line = reports["line_lamp_compare.csv"]
@@ -328,7 +332,7 @@ def overview_section(reports):
         ("측정 시스템", ", ".join("%s %%GRR %s" % (row["gauge"], row["pct_grr"]) for row in grr),
          ", ".join("%s %s" % (row["gauge"], row["verdict"]) for row in grr) + " / 가드밴드 "
          + ", ".join("%s %s" % (row["gauge"], row["value"]) for row in guard)),
-        ("이상 검출", "%s 지연 비용 %s, 관리도 선택 %s" % (model_pick, logistic["mean_delay_cost"], chart_pick),
+        ("이상 검출", "%s, 관리도 선택 %s" % (model_text, chart_pick),
          "%s / %s" % (model_hold, chart_hold)),
         ("PFMEA", ", ".join("%s %s" % (row["id"], row["effect_result"]) for row in judged), "S·O·D는 사용자 입력 전 빈칸"),
         ("라인", "조합 %s, 홀드아웃 UPH %s" % (chosen["combo"], held["pass_uph"]), chosen["value"]),
@@ -381,11 +385,14 @@ def detect_section(reports):
     chart = reports["spc_lamp_chart.csv"]
     xs = [int(row["t"]) for row in chart]
     onset = int(chart[0]["onset"])
-    bound = next(float(row["value"]) * float(next(item["value"] for item in spc if item["name"] == "sigma_hat"))
-                 for row in spc if row["section"] == "limits" and row["name"] == "cusum_h")
-    ewma = line_chart("ewma", "EWMA 값과 시변 한계", xs,
+    limits = {row["name"]: float(row["value"]) for row in section_rows(spc, "limits")}
+    center = limits["xbarbar"]
+    bound = limits["cusum_h"] * limits["sigma_hat"]
+    ewma = line_chart("ewma", "EWMA 값과 시변 관리 한계", xs,
                       [("z", [float(row["z"]) for row in chart], "s1"),
-                       ("한계", [float(row["ewma_limit"]) for row in chart], "s2")], [("고장 시작", onset, "x")])
+                       ("상한", [center + float(row["ewma_limit"]) for row in chart], "s2"),
+                       ("하한", [center - float(row["ewma_limit"]) for row in chart], "s2")],
+                      [("고장 시작", onset, "x"), ("중심", center, "y")])
     cusum = line_chart("cusum", "CUSUM 누적합", xs,
                        [("C+", [float(row["c_plus"]) for row in chart], "s1"),
                         ("C−", [float(row["c_minus"]) for row in chart], "s2")],
@@ -404,7 +411,7 @@ def detect_section(reports):
     headers = ("단계", "방법", "검출률", "조기", "무경보", "평균 지연 비용", "측정 1,000건당 오경보")
     shift_table = table(("방법",) + tuple(shift + "σ" for shift in shifts), [(name,) + tuple(values) for name, values in groups],
                         "이동량별 검출률 수치")
-    series = table(("t", "측정값", "z", "EWMA 한계", "C+", "C−", "X̄", "R"),
+    series = table(("t", "측정값", "z", "EWMA 한계 폭", "C+", "C−", "X̄", "R"),
                    [(row["t"], row["value"], row["z"], row["ewma_limit"], row["c_plus"], row["c_minus"], row["xbar"],
                      row["range"]) for row in chart])
     return (notes + table(headers, combined, "홀드아웃 비교") + shift_chart + shift_table + ewma + cusum
@@ -649,7 +656,7 @@ SCRIPT = """
 
 def chart_data(reports):
     rows = reports["spc_lamp_chart.csv"]
-    return {"ewma": ["t %s · z %s · 한계 %s" % (row["t"], row["z"][:7], row["ewma_limit"][:7]) for row in rows],
+    return {"ewma": ["t %s · z %s · 한계 폭 %s" % (row["t"], row["z"][:7], row["ewma_limit"][:7]) for row in rows],
             "cusum": ["t %s · C+ %s · C− %s" % (row["t"], row["c_plus"][:7], row["c_minus"][:7]) for row in rows]}
 
 
