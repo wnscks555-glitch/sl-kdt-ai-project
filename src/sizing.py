@@ -8,6 +8,7 @@ import hashlib
 from itertools import product
 import json
 from math import floor
+import os
 from pathlib import Path
 import re
 from typing import Tuple
@@ -72,8 +73,11 @@ def _grid(data, key, errors):
 
 def load_settings(path):
     path = Path(path)
-    with path.open(encoding="utf-8-sig") as source:
-        data = json.load(source, parse_constant=_reject_constant)
+    try:
+        with path.open(encoding="utf-8-sig") as source:
+            data = json.load(source, parse_constant=_reject_constant)
+    except (json.JSONDecodeError, UnicodeError) as error:
+        raise SizingError(["$: JSON을 읽을 수 없음: " + str(error)]) from error
     if not isinstance(data, dict):
         raise SizingError(["$: 객체여야 함"])
     errors = ["$: 필요한 키 없음 " + key for key in sorted(KEYS - set(data))]
@@ -186,6 +190,9 @@ def read_gauges(path):
     for row in rows:
         if not all(row[name] for name in GUARD_FIELDS) or int(row["true_good"]) <= 0 or int(row["true_defects"]) <= 0:
             raise ValueError("12단계 holdout 값이 비어 있음: " + row["gauge"])
+        if not (0 <= int(row["false_rejects"]) <= int(row["true_good"])
+                and 0 <= int(row["false_accepts"]) <= int(row["true_defects"])):
+            raise ValueError("12단계 holdout 건수가 분모 범위 밖임: " + row["gauge"])
     return [(row["gauge"], row["multiplier"], Fraction(int(row["false_rejects"]), int(row["true_good"])),
              Fraction(int(row["false_accepts"]), int(row["true_defects"]))) for row in rows]
 
@@ -208,6 +215,21 @@ def balance_of(line, config):
 
 def combo_of(names, label):
     return dict(zip(names, map(int, label.split("-"))))
+
+
+def output_paths(stem):
+    directory = Path("reports")
+    return [directory / (stem + suffix) for suffix in ("_curve.csv", "_spec.csv", "_sheet.md")]
+
+
+def check_outputs(outputs, inputs):
+    """쓰기 전에 검사한다. 입력 보고서를 결과로 덮어쓰면 다음 실행의 근거를 잃는다."""
+    for output in outputs:
+        for source in inputs:
+            same = output.resolve() == source.resolve() or (output.exists() and source.exists()
+                                                            and os.path.samefile(output, source))
+            if same:
+                raise ValueError("출력이 입력과 같은 파일임: " + output.as_posix())
 
 
 def _row(columns, section=None, **fields):
@@ -275,6 +297,8 @@ def _write_csv(path, columns, rows):
 def run(path):
     path = Path(path)
     settings = load_settings(path)
+    written = output_paths(path.stem)
+    check_outputs(written, [path, settings.line, settings.line_report, settings.balance_report, settings.guard_report])
     raw = lines.read_line_file(settings.line)
     _, _, recipe, _ = lines.load_setup(settings.line.parent / raw["generator"])
     line = lines.load_line(settings.line, recipe.models)
@@ -353,10 +377,7 @@ def run(path):
         combo_rows.append(_row(SPEC_COLUMNS, "combo", combo=row["combo"], good_uph=row["good_uph"],
                                f_allow="" if value is None else show(value), area_mm2=row["area_mm2"]))
     rows += test_rows + [repair_row, joint_row] + gauge_rows + combo_rows
-    directory = Path("reports")
-    directory.mkdir(exist_ok=True)
-    stem = path.stem
-    written = [directory / (stem + suffix) for suffix in ("_curve.csv", "_spec.csv", "_sheet.md")]
+    written[0].parent.mkdir(exist_ok=True)
     _write_csv(written[0], CURVE_COLUMNS, curve)
     _write_csv(written[1], SPEC_COLUMNS, rows)
     text = sheet_text((label, show(target), show(rates[label]), show(hold_rate)), test_rows, repair_row, joint_row, gauge_rows)

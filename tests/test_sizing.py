@@ -9,10 +9,11 @@ import sys
 import tempfile
 import unittest
 
-from src.line import Route, SimStation, show, simulate
+from src import line as lines
+from src.line import Route, SimStation, machine_order, show, simulate, target_uph
 from src.sizing import (
-    FIRST_FAIL, NO_FAIL, OVER, WITHIN, SizingError, allowed_reject, extra_time, first_limit, gauge_status, load_settings,
-    read_gauges, repair_time, route_digest, stretch,
+    FIRST_FAIL, NO_FAIL, OVER, WITHIN, SizingError, allowed_reject, balance_of, combo_of, extra_time, first_limit,
+    gauge_status, good_rate, load_routes, load_settings, read_gauges, repair_time, route_digest, stretch,
 )
 
 
@@ -144,6 +145,11 @@ class SettingsTests(unittest.TestCase):
         self.refused(json.dumps(GRIDS).replace('"1.5"', "NaN"))
         self.refused(json.dumps(GRIDS).replace('"line_lamp.json"', "NaN"))
 
+    def test_t275_broken_json(self):
+        for text in ('{"line":', '{"line": "a",}', ""):
+            with self.subTest(text=text):
+                self.refused(text)
+
     def test_shipped_settings_load(self):
         settings = load_settings(ROOT / "recipes" / "sizing_lamp.json")
         self.assertEqual(settings.test_multipliers[0], "1")
@@ -269,6 +275,42 @@ class RunTests(unittest.TestCase):
                 self.change("msa_lamp_guard.csv", edit)
                 self.refused()
 
+    def test_t282_output_cannot_replace_an_input(self):
+        path = self.copy / "recipes" / "sizing_lamp.json"
+        original = path.read_text(encoding="utf-8")
+        cases = (("guard_report", "msa_lamp_guard.csv", "sizing_lamp_spec.csv"),
+                 ("line_report", "line_lamp_compare.csv", "sizing_lamp_curve.csv"),
+                 ("balance_report", "line_lamp_balance.csv", "sizing_lamp_sheet.md"))
+        for key, source, name in cases:
+            with self.subTest(key=key):
+                target = self.copy / "reports" / name
+                shutil.copyfile(self.copy / "reports" / source, target)
+                data = target.read_bytes()
+                path.write_text(json.dumps(dict(json.loads(original), **{key: "../reports/" + name})), encoding="utf-8")
+                result = run_module(self.copy, "src.sizing", "recipes/sizing_lamp.json")
+                self.assertEqual(result.returncode, 2, result.stderr)
+                self.assertEqual(target.read_bytes(), data)
+                target.unlink()
+
+    def test_t283_counts_stay_inside_their_denominator(self):
+        original = (self.copy / "reports" / "msa_lamp_guard.csv").read_bytes()
+
+        def set_field(name, value):
+            def edit(rows):
+                row = next(item for item in rows if item["section"] == "holdout")
+                row[name] = value(row)
+                return rows
+            return edit
+        cases = (set_field("false_rejects", lambda row: "-1"),
+                 set_field("false_rejects", lambda row: str(int(row["true_good"]) + 1)),
+                 set_field("false_accepts", lambda row: "-1"),
+                 set_field("false_accepts", lambda row: str(int(row["true_defects"]) + 1)))
+        for index, edit in enumerate(cases):
+            with self.subTest(index=index):
+                (self.copy / "reports" / "msa_lamp_guard.csv").write_bytes(original)
+                self.change("msa_lamp_guard.csv", edit)
+                self.refused()
+
     def test_t278_repeat_is_identical(self):
         inputs = {path.name: path.read_bytes() for path in (self.copy / "reports").iterdir()}
         result = run_module(self.copy, "src.sizing", "recipes/sizing_lamp.json", seed="7")
@@ -286,11 +328,42 @@ class RunTests(unittest.TestCase):
         for phrase in ("구매 사양", "설비 선정"):
             self.assertNotIn(phrase, text)
 
-    def test_t281_joint_is_worse_than_each_limit(self):
+    def test_t281_joint_matches_a_direct_run(self):
+        os.chdir(self.root)
+        self.addCleanup(os.chdir, ROOT)
+        path = self.root / "recipes" / "line_lamp.json"
+        raw = lines.read_line_file(path)
+        _, _, recipe, _ = lines.load_setup(path.parent / raw["generator"])
+        line = lines.load_line(path, recipe.models)
+        config, _, dev_routes = load_routes(path, "0-1", 200)
+        _, _, hold_routes = load_routes(path, "1000-1001", 200)
         joint = next(row for row in self.rows if row["section"] == "joint")
-        limits = [Fraction(row["good_uph"]) for row in self.rows if row["section"] in ("test", "repair")]
-        self.assertLessEqual(Fraction(joint["good_uph"]), min(limits))
-        self.assertIn(joint["value"], ("동시 충족", "동시 미충족"))
+        tests = [row for row in self.rows if row["section"] == "test"]
+        repair_row = next(row for row in self.rows if row["section"] == "repair")
+        repair = int(Fraction(repair_row["limit_seconds"]) * 1000)
+        combo = combo_of(machine_order(line), joint["combo"])
+        base = lines.build_stations(line, balance_of(line, config), combo)
+        extras = {row["machine"]: int(Fraction(row["limit_seconds"]) * 1000) - line.machines[row["machine"]].test
+                  for row in tests}
+
+        def stations(skip=None):
+            current = base
+            for name, extra in extras.items():
+                if name != skip:
+                    current = stretch(current, name, extra)
+            return current
+
+        dev = good_rate(stations(), dev_routes, line.buffer_units, repair)
+        held = good_rate(stations(), hold_routes, line.buffer_units, repair)
+        self.assertEqual(joint["good_uph"], show(dev))
+        self.assertEqual(joint["holdout_good_uph"], show(held))
+        target = target_uph(line)
+        self.assertEqual(joint["value"], "동시 충족" if dev >= target and held >= target else "동시 미충족")
+        for name, extra in extras.items():
+            if extra:
+                self.assertNotEqual(good_rate(stations(name), dev_routes, line.buffer_units, repair), dev, name)
+        if repair != line.repair:
+            self.assertNotEqual(good_rate(stations(), dev_routes, line.buffer_units, line.repair), dev)
 
     def test_curve_covers_the_grid_and_limit_is_before_first_failure(self):
         curve = read_csv(self.root / "reports" / "sizing_lamp_curve.csv")
