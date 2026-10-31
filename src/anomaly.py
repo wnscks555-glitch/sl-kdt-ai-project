@@ -11,6 +11,7 @@ import math
 from operator import mul
 from pathlib import Path
 import random
+import sys
 
 from src.equipment import EquipmentState
 from src.generate import confirm_value, load_setup
@@ -27,6 +28,8 @@ SPLITS = ("train", "validation", "holdout")
 FEATURES = ("mean", "sd", "max", "slope", "ewma", "fail_share")
 METHODS = ("rule_3_2", "moving_average", "logistic")
 SCALE = 10000
+RULE_WINDOW = 3
+RULE_FAILS = 2
 GRADIENT_LIMIT = 1e-3
 NO_THRESHOLD = "임계값 없음"
 NO_METHOD = "기준 충족 방법 없음"
@@ -74,8 +77,6 @@ class Process:
     sigma: float
     defect_probability: float
     defect_shift: float
-    rule_window: int
-    rule_fails: int
 
 
 @dataclass
@@ -90,7 +91,10 @@ class Scenario:
 
 
 def _number(value):
-    return isinstance(value, (int, float)) and not isinstance(value, bool) and math.isfinite(value)
+    """큰 정수는 float로 바꾸면 넘치므로 비교만 한다."""
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        return False
+    return abs(value) <= sys.float_info.max
 
 
 def _integer(value):
@@ -198,7 +202,7 @@ def load_process(settings):
     item = next(iter(items.values()))
     lsl, usl = float(item.lsl), float(item.usl)
     return Process(item, (lsl + usl) / 2, (usl - lsl) / (6 * config["process_cpk"]),
-                   config["defective_product_probability"], config["defect_shift_sigma"], book.window, book.fails)
+                   config["defective_product_probability"], config["defect_shift_sigma"])
 
 
 def measure(rng, process, fault_shift):
@@ -535,15 +539,15 @@ def logistic_scores(scenario, model):
     return [quantize(sigmoid(model.z(row))) for row in scenario.features]
 
 
-def rule_outcomes(scenarios, process, settings):
+def rule_outcomes(scenarios, settings):
+    """비교 대상은 명세의 3:2로 고정한다. 생성 설정이 참조하는 설비 규칙을 따르지 않는다."""
     start = settings.window - 1
-    return [(scenario.shift, scenario.onset,
-             first_rule_alarm(scenario.fails, process.rule_window, process.rule_fails, start))
+    return [(scenario.shift, scenario.onset, first_rule_alarm(scenario.fails, RULE_WINDOW, RULE_FAILS, start))
             for scenario in scenarios]
 
 
 def replay_range(onset, alarm, window, length):
-    """재생 구간이다. 조기 경보면 경보 행 하나, 경보가 없으면 onset + 20까지다."""
+    """재생 구간이다. 경보가 없으면 onset + 20까지다. 경보가 onset − 5보다 앞서면 경보 행 하나만 남는다."""
     if alarm is None:
         return max(window - 1, onset - 5), min(onset + 20, length - 1)
     return max(window - 1, min(onset - 5, alarm)), alarm
@@ -625,19 +629,19 @@ def evaluate(scenarios, score, threshold, settings):
     return measure_alarms(outcomes, settings.length, settings.window)
 
 
-def compare(splits, model, process, settings):
+def compare(splits, model, settings):
     """검증에서 임계값과 방법을 고르고, 홀드아웃은 확인만 한다."""
     validation, holdout = splits["validation"], splits["holdout"]
     length, window = settings.length, settings.window
     scorers = {"moving_average": mean_scores, "logistic": lambda scenario: logistic_scores(scenario, model)}
-    chosen = {"rule_3_2": (None, measure_alarms(rule_outcomes(validation, process, settings), length, window))}
+    chosen = {"rule_3_2": (None, measure_alarms(rule_outcomes(validation, settings), length, window))}
     counts = {}
     for name, score in scorers.items():
         traces = [trace_of(scenario, score(scenario), window) for scenario in validation]
         best, counts[name] = choose_threshold(traces, settings)
         chosen[name] = best
     rows = [_blank(METHOD_COLUMNS, "notice", value=NOTICE)]
-    final = {"rule_3_2": measure_alarms(rule_outcomes(holdout, process, settings), length, window)}
+    final = {"rule_3_2": measure_alarms(rule_outcomes(holdout, settings), length, window)}
     for name, score in scorers.items():
         final[name] = None if chosen[name] is None else evaluate(holdout, score, chosen[name][0], settings)
     candidates = [(name, chosen[name][1] if chosen[name] else None) for name in METHODS]
@@ -703,7 +707,7 @@ def run(path):
     process = load_process(settings)
     splits = {name: build_split(settings.splits[name], settings, process) for name in SPLITS}
     model = fit_model(splits["train"], settings)
-    rows, selected, outcome, threshold, counts = compare(splits, model, process, settings)
+    rows, selected, outcome, threshold, counts = compare(splits, model, settings)
     replay = replay_rows(splits["holdout"][1], model, threshold, settings)
     directory = Path("reports")
     directory.mkdir(exist_ok=True)

@@ -14,7 +14,7 @@ import unittest
 from src.anomaly import (
     AnomalyError, Metrics, Process, Scenario, add_outcome, assignment, build_scenario, build_split, choose_threshold,
     ewma_of, first_rule_alarm, fit_logistic, fit_model, holdout_result, linear_score, load_process, load_settings,
-    logistic_scores,
+    logistic_scores, rule_outcomes,
     measure, measure_alarms, policy_row, quantize, replay_range, replay_rows, reproduce_stops, sample_loss,
     select_method, select_threshold, sigmoid, standardizer, stop_flags, trace_of, window_features,
 )
@@ -119,14 +119,22 @@ class SeriesTests(unittest.TestCase):
         after = window_features(changed, fails[:16] + [True] * 14, ewma_of(changed, 0.2), 10, 15)
         self.assertEqual(before, after)
 
-    def test_t177_standardizer_uses_training_rows_only(self):
-        with tempfile.TemporaryDirectory() as folder:
-            settings = load_settings(small_config(folder))
-            train = build_split(settings.splits["train"], settings, PROCESS)
-            first = fit_model(train, settings)
-            build_split(settings.splits["validation"], settings, PROCESS)[0].values[0] = "99.000"
-            second = fit_model(train, settings)
-        self.assertEqual((first.means, first.scales, first.weights), (second.means, second.scales, second.weights))
+    def test_t177_validation_change_reaches_evaluation_but_not_the_model(self):
+        moved = {"train": {"seed_start": 0, "count": 12}, "validation": {"seed_start": 300, "count": 12},
+                 "holdout": {"seed_start": 200, "count": 12}}
+        reports = []
+        for changes in ({}, {"splits": moved}):
+            with tempfile.TemporaryDirectory() as folder:
+                self.assertEqual(run_cli(small_config(folder, **changes), cwd=folder).returncode, 0)
+                directory = Path(folder) / "reports"
+                with (directory / "anomaly_model.csv").open(encoding="utf-8-sig", newline="") as source:
+                    model = [row for row in csv.DictReader(source)
+                             if row["section"] in ("mean", "scale", "weight", "bias", "windows")]
+                with (directory / "anomaly_methods.csv").open(encoding="utf-8-sig", newline="") as source:
+                    validation = [row for row in csv.DictReader(source) if row["section"] == "validation"]
+                reports.append((model, validation))
+        self.assertEqual(reports[0][0], reports[1][0])
+        self.assertNotEqual(reports[0][1], reports[1][1])
 
     def test_t177_zero_variance_divides_by_one(self):
         means, scales = standardizer([(1.0, 5.0), (3.0, 5.0)])
@@ -254,6 +262,11 @@ class MetricTests(unittest.TestCase):
         self.assertEqual(reproduce_stops(series, book), expected)
         self.assertEqual(stop_flags(series, book.window, book.fails), expected)
 
+    def test_t183_comparison_rule_ignores_generator_stop_rule(self):
+        scenario = Scenario(0, 1.0, 10, [], [False] * 9 + [True, True] + [False] * 9, [], [])
+        settings = load_settings(CONFIG)
+        self.assertEqual(rule_outcomes([scenario], settings), [(1.0, 10, 10)])
+
     def test_t184_policy(self):
         metrics = measure_alarms([(1.0, 200, 200), (1.0, 200, 205), (1.0, 200, None), (1.0, 200, 150)], 400, 10)
         self.assertEqual([metrics.suspect], [1 + 6 + 200 + 200])
@@ -283,6 +296,9 @@ class ReplayTests(unittest.TestCase):
     def test_t189_ranges(self):
         self.assertEqual(replay_range(200, 203, 10, 400), (195, 203))
         self.assertEqual(replay_range(200, 150, 10, 400), (150, 150))
+        self.assertEqual(replay_range(200, 199, 10, 400), (195, 199))
+        self.assertEqual(replay_range(200, 195, 10, 400), (195, 195))
+        self.assertEqual(replay_range(200, 194, 10, 400), (194, 194))
         self.assertEqual(replay_range(200, None, 10, 400), (195, 220))
         self.assertEqual(replay_range(390, None, 10, 400), (385, 399))
         self.assertEqual(replay_range(10, None, 10, 400), (9, 30))
@@ -379,6 +395,14 @@ class CliTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as folder:
             self.assertEqual(run_cli(small_config(folder), cwd=folder).returncode, 0)
         self.assertEqual({path: path.read_bytes() for path in tracked}, before)
+
+    def test_t187_huge_integers_exit_3(self):
+        for changes in (dict(min_detection=10 ** 400), dict(learning_rate=10 ** 400), dict(shifts=[10 ** 400])):
+            with tempfile.TemporaryDirectory() as folder:
+                result = run_cli(small_config(folder, **changes), cwd=folder)
+                self.assertEqual(result.returncode, 3, result.stderr)
+                self.assertNotIn("Traceback", result.stderr)
+                self.assertFalse((Path(folder) / "reports").exists())
 
     def test_load_settings_reports_location(self):
         with tempfile.TemporaryDirectory() as folder:
