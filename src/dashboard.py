@@ -30,8 +30,8 @@ INPUTS = {
     "anomaly_lamp_methods.csv": ("section", "method", "shift", "threshold", "detection_rate", "early", "missed",
                                  "mean_delay_cost", "false_per_1000", "value"),
     "anomaly_lamp_model.csv": ("section", "name", "value"),
-    "anomaly_lamp_replay.csv": ("t", "z", "threshold", "alarm", "s_mean", "s_sd", "s_max", "s_slope", "s_ewma",
-                                "s_fail_share"),
+    "anomaly_lamp_replay.csv": ("t", "z", "threshold", "alarm", "status", "s_mean", "s_sd", "s_max", "s_slope",
+                                "s_ewma", "s_fail_share"),
     "spc_lamp_methods.csv": ("section", "method", "shift", "name", "value", "detection_rate", "early", "missed",
                              "mean_delay_cost", "false_per_1000", "decision_interval"),
     "spc_lamp_chart.csv": ("onset", "t", "value", "z", "ewma_limit", "c_plus", "c_minus", "xbar", "range"),
@@ -214,6 +214,8 @@ def bar_chart(title, groups, labels, styles, top_value, marks=()):
         center = left + slot * (index + 0.5)
         begin = center - (bar + 2) * len(values) / 2
         for position, value in enumerate(values):
+            if value == "":
+                continue
             x = begin + position * (bar + 2)
             base = py(0)
             y = py(float(value))
@@ -290,12 +292,15 @@ def _finite(text):
 
 
 def contribution_rows(reports):
-    """`b + Σ w_j s_j`를 모든 경보 행에서 펼친다. 이 곱셈이 화면의 유일한 계산이고 보고서 z와 맞아야 한다."""
+    """`b + Σ w_j s_j`를 모든 경보 행에서 펼친다. 이 곱셈이 화면의 유일한 계산이고 보고서 z와 맞아야 한다.
+
+    경보가 없는 재생 자료는 11단계의 정상 결과다. 모델 행이 모자란 경우와 구분한다.
+    """
     model = reports["anomaly_lamp_model.csv"]
     weights = {row["name"]: _finite(row["value"]) for row in model if row["section"] == "weight"}
     bias = next((_finite(row["value"]) for row in model if row["section"] == "bias"), None)
     alarms = [row for row in reports["anomaly_lamp_replay.csv"] if row["alarm"] == "1"]
-    if not alarms or bias is None or set(weights) != set(FEATURES):
+    if bias is None or set(weights) != set(FEATURES):
         raise DashboardError("로지스틱 기여값 입력이 모자람")
     result = []
     for alarm in alarms:
@@ -324,18 +329,19 @@ def overview_section(reports):
     judged = [row for row in items if row["effect_result"]]
     line = reports["line_lamp_compare.csv"]
     chosen = section_rows(line, "selection")[0]
-    held = section_rows(line, "holdout")[0]
+    held = section_rows(line, "holdout")
     stories = section_rows(reports["incident_lamp_compare.csv"], "story")
     rows = [
         ("측정", "가장 낮은 Cpk %s %s" % (lowest["equipment"], lowest["cpk"]) if lowest else "유효한 Cpk 없음",
          lowest["status"] if lowest else "표본 부족"),
-        ("측정 시스템", ", ".join("%s %%GRR %s" % (row["gauge"], row["pct_grr"]) for row in grr),
+        ("측정 시스템", ", ".join("%s %%GRR %s" % (row["gauge"], row["pct_grr"] or "계산 불가") for row in grr),
          ", ".join("%s %s" % (row["gauge"], row["verdict"]) for row in grr) + " / 가드밴드 "
          + ", ".join("%s %s" % (row["gauge"], row["value"]) for row in guard)),
         ("이상 검출", "%s, 관리도 선택 %s" % (model_text, chart_pick),
          "%s / %s" % (model_hold, chart_hold)),
         ("PFMEA", ", ".join("%s %s" % (row["id"], row["effect_result"]) for row in judged), "S·O·D는 사용자 입력 전 빈칸"),
-        ("라인", "조합 %s, 홀드아웃 UPH %s" % (chosen["combo"], held["pass_uph"]), chosen["value"]),
+        ("라인", "조합 %s, 홀드아웃 UPH %s" % (chosen["combo"], held[0]["pass_uph"]) if held else "선택 조합 없음",
+         chosen["value"]),
         ("PLC", "시나리오 %d개 소켓 재생" % len(SCENARIOS), "실제 PLC 프로그램이 아니라 Python 스캔 모의"),
         ("사건", ", ".join("%s 정지 %s" % (row["method"], row["a"] or "없음") for row in stories),
          ", ".join("%s %s" % (row["method"], row["detection"]) for row in stories)),
@@ -352,9 +358,13 @@ def measure_section(reports):
 def msa_section(reports):
     grr = reports["msa_lamp_grr.csv"]
     guard = reports["msa_lamp_guard.csv"]
-    groups = [(row["gauge"], [row["pct_grr"]]) for row in grr]
-    top = max(40, 10 * math.ceil(max(float(row["pct_grr"]) for row in grr) * 1.1 / 10))
-    chart = bar_chart("게이지별 %GRR (10·30은 빌린 관행 값)", groups, ["%GRR"], ["s1"], top, (("10", 10), ("30", 30)))
+    values = [float(row["pct_grr"]) for row in grr if row["pct_grr"]]
+    if values:
+        groups = [(row["gauge"], [row["pct_grr"]]) for row in grr]
+        top = max(40, 10 * math.ceil(max(values) * 1.1 / 10))
+        chart = bar_chart("게이지별 %GRR (10·30은 빌린 관행 값)", groups, ["%GRR"], ["s1"], top, (("10", 10), ("30", 30)))
+    else:
+        chart = "<p>계산 가능한 %GRR이 없어 막대를 그리지 않습니다. 판정은 아래 표에 있습니다.</p>"
     table_grr = table(("게이지", "%GRR", "%공차", "ndc", "판정", "관측 Cpk"),
                       [(row["gauge"], row["pct_grr"], row["pct_tolerance"], row["ndc"], row["verdict"], row["cpk_obs"])
                        for row in grr])
@@ -379,8 +389,9 @@ def detect_section(reports):
     groups = []
     for method in methods:
         source = anomaly if any(row["method"] == method for row in section_rows(anomaly, "holdout")) else spc
+        scored = one(source, "holdout", method=method)["detection_rate"]
         groups.append((method, [one(source, "holdout_shift", method=method, shift=shift)["detection_rate"]
-                                for shift in shifts]))
+                                if scored else "" for shift in shifts]))
     shift_chart = bar_chart("홀드아웃 이동량별 검출률", groups, [shift + "σ" for shift in shifts], ["s1", "s2", "s3"], 1.0)
     chart = reports["spc_lamp_chart.csv"]
     xs = [int(row["t"]) for row in chart]
@@ -403,7 +414,13 @@ def detect_section(reports):
     notes = ("<p>11단계 선택: %s, %s. 13단계 선택: %s, %s.</p><p>로지스틱 학습: %s, 경사 노름 %s.</p>"
              % (e(picks[0][0]), e(picks[0][1]), e(picks[1][0]), e(picks[1][1]), status(model["status"]),
                 e(model["gradient_norm"])))
+    unscored = [row[1] for row in combined if not row[2]]
+    if unscored:
+        notes += "<p>임계값이 없어 수치가 빈칸인 방법: %s.</p>" % e(", ".join(unscored))
     terms = ""
+    if not alarms:
+        states = sorted({row["status"] for row in reports["anomaly_lamp_replay.csv"]})
+        terms = "<p>재생 상태 %s, 경보가 없어 기여값 표를 만들지 않습니다.</p>" % e(", ".join(states))
     for alarm, parts in alarms:
         rows = [("bias", "%.4f" % bias)] + [(name, "%.4f" % value) for name, value in parts]
         rows.append(("합 z", alarm["z"]))
@@ -432,13 +449,16 @@ def pfmea_section(reports):
 def line_section(reports, layout):
     rows = reports["line_lamp_compare.csv"]
     picked = section_rows(rows, "selection")[0]
-    held = section_rows(rows, "holdout")[0]
+    held = section_rows(rows, "holdout")
     body = table(("조합", "면적(mm²)", "통과 UPH", "양품 UPH", "병목", "탈락 사유", "선택"),
                  [(row["combo"], row["area_mm2"], row["pass_uph"], row["good_uph"], row["bottleneck"],
                    row["reject_reason"], row["selected"]) for row in section_rows(rows, "development")],
                  "개발 시드 비교")
-    summary = "<p>선택 %s, 홀드아웃 UPH %s, %s.</p>" % (e(picked["combo"]), e(held["pass_uph"]), e(picked["value"]))
-    return summary + body + "<div class=\"scroll plate\" tabindex=\"0\">%s</div>" % layout
+    if held:
+        summary = "<p>선택 %s, 홀드아웃 UPH %s, %s.</p>" % (e(picked["combo"]), e(held[0]["pass_uph"]), e(picked["value"]))
+    else:
+        summary = "<p>%s.</p>" % e(picked["value"])
+    return summary + body + ("<div class=\"scroll plate\" tabindex=\"0\">%s</div>" % layout if layout else "")
 
 
 def change_rows(rows):
@@ -489,15 +509,22 @@ def plc_section(reports):
 
 
 def pfmea_links(text):
+    """사건 ID별 PFMEA 행이다. 고장 뒤 정지가 없는 방법의 행은 빈 ID로 모은다. 고장 모드 칸의 `|`는 뒤에서 세어 피한다."""
     rows = {}
     for line in text.splitlines():
-        cells = [cell.strip() for cell in line.strip("|").split("|")]
-        if len(cells) == 4 and cells[0].startswith("PF-") and cells[2]:
-            rows.setdefault(cells[2], []).append(cells[0])
+        cells = [cell.strip() for cell in line.strip().strip("|").split("|")]
+        if len(cells) >= 4 and cells[0].startswith("PF-"):
+            rows.setdefault(cells[-2], []).append(cells[0])
     return rows
 
 
 def chain_rows(reports, links):
+    """PFMEA와 격리 범위는 고장 뒤 첫 정지에만 있다. 그 사건의 연결이 빠지면 빈칸으로 넘기지 않고 멈춘다.
+
+    다른 정지는 격리할 고장이 없으므로 해당 없음과 이유를 적는다.
+    """
+    answer = {row["method"]: row["a"] for row in section_rows(reports["incident_lamp_compare.csv"], "story")}
+    required = {item for ids in links.values() for item in ids}
     events = {}
     for row in reports["incident_lamp_timeline.csv"]:
         if row["incident_id"]:
@@ -506,12 +533,23 @@ def chain_rows(reports, links):
     for row in reports["incident_lamp_suspects.csv"]:
         suspects.setdefault(row["incident_id"], {}).setdefault(row["scope"], 0)
         suspects[row["incident_id"]][row["scope"]] += 1
-    rows = []
+    rows, real = [], set()
     for incident, table_of in events.items():
-        scope = ", ".join("%s %d" % item for item in suspects.get(incident, {}).items())
-        rows.append((incident, table_of["alarm"]["product"], table_of["alarm"]["detail"], table_of["pc_stop"]["detail"],
-                     table_of["alarm_26"]["cycle"], table_of["reset"]["detail"], scope,
-                     ", ".join(links.get(incident, ()))))
+        alarm = table_of["alarm"]
+        stop = answer[alarm["method"]]
+        if alarm["product"] == stop:
+            real.add(incident)
+            scope = ", ".join("%s %d" % item for item in suspects.get(incident, {}).items())
+            pfmea = ", ".join(links.get(incident, ()))
+            if not scope or not required or set(links.get(incident, ())) != required:
+                raise DashboardError("사건 %s의 격리 범위나 PFMEA 연결이 모자람" % incident)
+        else:
+            early = not stop or int(alarm["product"]) < int(stop)
+            scope, pfmea = "해당 없음", "해당 없음: %s 오경보" % ("고장 전" if early else "수리 뒤")
+        rows.append((incident, alarm["product"], alarm["detail"], table_of["pc_stop"]["detail"],
+                     table_of["alarm_26"]["cycle"], table_of["reset"]["detail"], scope, pfmea))
+    if len(real) != sum(1 for stop in answer.values() if stop) or set(links) - real - {""}:
+        raise DashboardError("고장 뒤 첫 정지와 사건 연결이 맞지 않음")
     return rows
 
 
@@ -673,7 +711,9 @@ def load_reports(root):
 
 def build(root):
     reports = load_reports(root)
-    layout = check_svg(read_text(root / "reports" / "line_lamp_layout.svg"))
+    # 균형 해가 없으면 9단계는 배치도를 쓰지 않는다. 이전 실행의 배치도가 남아 있어도 싣지 않는다.
+    balanced = section_rows(reports["line_lamp_compare.csv"], "development")
+    layout = check_svg(read_text(root / "reports" / "line_lamp_layout.svg")) if balanced else ""
     links = pfmea_links(read_text(root / "reports" / "incident_lamp_pfmea.md"))
     bodies = {"overview": overview_section(reports), "measure": measure_section(reports), "msa": msa_section(reports),
               "detect": detect_section(reports), "pfmea": pfmea_section(reports), "line": line_section(reports, layout),

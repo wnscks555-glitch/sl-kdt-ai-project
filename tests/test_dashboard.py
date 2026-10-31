@@ -85,6 +85,10 @@ def rows_of(path):
         return list(csv.DictReader(source))
 
 
+def section(path, name):
+    return [row for row in rows_of(path) if row["section"] == name]
+
+
 def rewrite(path, change):
     raw = path.read_bytes().decode("utf-8-sig")
     updated = change(raw)
@@ -332,6 +336,9 @@ class PageTests(unittest.TestCase):
         for row in alarms:
             self.assertIn(row["incident_id"], decoded)
             self.assertIn(row["detail"], decoded)
+            line = next(item for item in re.findall(r"<tr>.*?</tr>", decoded) if "<td>%s</td>" % row["incident_id"] in item)
+            if row["product"] != stories[row["method"]]["a"]:
+                self.assertIn("해당 없음: %s 오경보" % ("고장 전" if int(row["product"]) < 199 else "수리 뒤"), line)
         chain = [row for row in alarms if row["product"] == stories[row["method"]]["a"]]
         self.assertTrue(chain)
         for row in chain:
@@ -339,6 +346,85 @@ class PageTests(unittest.TestCase):
                         and "PF-02" in item)
             self.assertIn("PF-06", line)
             self.assertIn("last_20", line)
+
+
+class UpstreamResultTests(unittest.TestCase):
+    """앞 단계가 실제로 만든 빈 결과를 잇는다. 보고서를 손으로 고치지 않고 해당 CLI를 돌린다."""
+
+    def setUp(self):
+        self.folder = tempfile.TemporaryDirectory()
+        self.addCleanup(self.folder.cleanup)
+        self.root = Path(self.folder.name)
+        self.reports = copy_inputs(self.folder.name)
+        shutil.copytree(ROOT / "recipes", self.root / "recipes")
+
+    def edit(self, name, **changes):
+        path = self.root / "recipes" / name
+        data = json.loads(path.read_text(encoding="utf-8"))
+        data.update(changes)
+        path.write_text(json.dumps(data, ensure_ascii=False), encoding="utf-8")
+
+    def upstream(self, *arguments):
+        environment = dict(os.environ, PYTHONPATH=str(ROOT), PYTHONIOENCODING="utf-8")
+        result = subprocess.run([sys.executable, "-m", *arguments], cwd=str(self.root), env=environment,
+                                capture_output=True, text=True, encoding="utf-8")
+        self.assertEqual(result.returncode, 0, result.stderr)
+
+    def shown(self):
+        result = run_cli(self.folder.name)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        return (self.reports / "dashboard.html").read_text(encoding="utf-8")
+
+    def test_uncomputable_grr_is_shown(self):
+        self.edit("generator_measured.json", process_cpk=1e6)
+        self.edit("msa_lamp.json", products=12, dev_seeds="7-7", holdout_seeds="1007-1007")
+        self.upstream("src.msa", "recipes/msa_lamp.json")
+        self.assertEqual({row["pct_grr"] for row in rows_of(self.reports / "msa_lamp_grr.csv")}, {""})
+        text = self.shown()
+        self.assertIn("판정 불가", text)
+        self.assertIn("계산 불가", text)
+        self.assertIn("계산 가능한 %GRR이 없어", text)
+
+    def test_no_threshold_replay_is_shown(self):
+        self.edit("anomaly_lamp.json", shifts=[0.01, 0.02, 0.03], false_limit=1e-9, min_detection=1.0, min_shift_detection=1.0,
+                  splits={"train": {"seed_start": 0, "count": 30}, "validation": {"seed_start": 1000, "count": 12},
+                          "holdout": {"seed_start": 2000, "count": 12}}, iterations=50)
+        self.upstream("src.anomaly", "recipes/anomaly_lamp.json")
+        self.upstream("src.spc", "recipes/spc_lamp.json")
+        replay = rows_of(self.reports / "anomaly_lamp_replay.csv")
+        self.assertEqual({row["status"] for row in replay}, {"임계값 없음"})
+        text = self.shown()
+        self.assertIn("경보가 없어 기여값 표를 만들지 않습니다", text)
+        self.assertIn("임계값이 없어 수치가 빈칸인 방법", text)
+
+    def test_missed_replay_is_shown(self):
+        path = self.reports / "anomaly_lamp_replay.csv"
+        replay = rows_of(path)
+        for row in replay:
+            row.update(alarm="0", status="missed")
+        with path.open("w", encoding="utf-8-sig", newline="") as target:
+            writer = csv.DictWriter(target, fieldnames=list(replay[0]))
+            writer.writeheader()
+            writer.writerows(replay)
+        self.assertIn("재생 상태 missed", self.shown())
+
+    def test_no_line_selection_is_shown(self):
+        self.edit("line_lamp.json", floor={"length_mm": 1000, "width_mm": 7000, "aisle_mm": 1000, "pitch_mm": 300,
+                                           "gap_mm": 200})
+        self.upstream("src.line", "recipes/line_lamp.json", "--seeds", "0-0", "--holdout-seeds", "1000-1000",
+                      "--products", "20")
+        self.assertFalse(section(self.reports / "line_lamp_compare.csv", "holdout"))
+        self.assertIn("기준 충족 조합 없음", self.shown())
+
+    def test_no_balance_ignores_old_layout(self):
+        self.edit("line_lamp.json", demand_units=100000000)
+        self.upstream("src.line", "recipes/line_lamp.json", "--seeds", "0-0", "--holdout-seeds", "1000-1000",
+                      "--products", "20")
+        self.assertFalse(section(self.reports / "line_lamp_compare.csv", "development"))
+        (self.reports / "line_lamp_layout.svg").write_text("<svg><script>x</script></svg>", encoding="utf-8")
+        text = self.shown()
+        self.assertIn("선택 조합 없음", text)
+        self.assertNotIn("class=\"scroll plate\"", text)
 
 
 class RefusalTests(unittest.TestCase):
@@ -351,6 +437,21 @@ class RefusalTests(unittest.TestCase):
             result = run_cli(folder)
             self.assertEqual(result.returncode, 2, result.stderr)
             self.assertEqual(old.read_bytes(), b"previous")
+
+    def test_t266_true_stop_needs_pfmea_link(self):
+        def drop(text):
+            return lambda reports: rewrite(reports / "incident_lamp_pfmea.md", lambda raw: "\n".join(
+                line for line in raw.splitlines() if text not in line))
+        self.refused(drop("cusum-3"))
+        self.refused(drop("| PF-06 | 유출품이 후보 목록에서 누락 | cusum-3"))
+
+    def test_t266_true_stop_needs_scope(self):
+        self.refused(lambda reports: rewrite(reports / "incident_lamp_suspects.csv", lambda raw: "\n".join(
+            line for line in raw.splitlines() if "cusum-3" not in line)))
+
+    def test_t266_pfmea_link_to_other_stop_refused(self):
+        self.refused(lambda reports: rewrite(reports / "incident_lamp_pfmea.md",
+                                             lambda raw: raw + "| PF-02 | 측정 평균이 위로 이동 | cusum-1 | 임의 |\n"))
 
     def test_t242_missing_file(self):
         self.refused(lambda reports: (reports / "spc_lamp_chart.csv").unlink())
