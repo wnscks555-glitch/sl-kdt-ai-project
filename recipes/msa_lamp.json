@@ -1,0 +1,18 @@
+{
+  "generator": "generator_measured.json",
+  "inspection": "LEAK",
+  "parts": 10,
+  "operators": 3,
+  "trials": 3,
+  "study_seed": 42,
+  "gauges": {
+    "good": {"repeatability": 0.08, "operator": 0.05, "interaction": 0.0},
+    "marginal": {"repeatability": 0.25, "operator": 0.15, "interaction": 0.05},
+    "poor": {"repeatability": 0.50, "operator": 0.30, "interaction": 0.15}
+  },
+  "guard_multipliers": ["0", "0.5", "1", "1.5", "2", "2.5", "3"],
+  "products": 5000,
+  "dev_seeds": "0-29",
+  "holdout_seeds": "1000-1029",
+  "max_false_accept": 0.05
+}
