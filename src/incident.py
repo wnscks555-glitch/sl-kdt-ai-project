@@ -31,6 +31,7 @@ METHODS = ("rule_3_2", "ewma_chart", "cusum")
 SCOPES = ("last_20", "last_50", "change_point")
 SCOPE_SPANS = {"last_20": 20, "last_50": 50}
 REPAIR_OFFSET = 1000000
+MAX_PRODUCTS = 65535
 MAX_SEED = 2 ** 31 - 1 - REPAIR_OFFSET
 FRAME_WINDOW = 20
 RUN, WAIT_ALARM, WAIT_CLAMP, REPAIR, RESET, WAIT_IDLE = range(6)
@@ -82,7 +83,7 @@ def _check(data):
     for key in ("station", "spc", "spc_report", "pfmea"):
         if not isinstance(data[key], str) or not data[key].strip():
             errors.append("$." + key + ": 비어 있지 않은 문자열이어야 함")
-    for key, high in (("products", 100000), ("repair_cycles", 100000), ("max_cycles", 10000000)):
+    for key, high in (("products", MAX_PRODUCTS), ("repair_cycles", 100000), ("max_cycles", 10000000)):
         if not _integer(data[key]) or not 1 <= data[key] <= high:
             errors.append("$.%s: 1–%d의 정수여야 함" % (key, high))
     products = data["products"] if _integer(data["products"]) else 0

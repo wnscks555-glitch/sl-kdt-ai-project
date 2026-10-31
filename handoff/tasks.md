@@ -46,7 +46,7 @@
 | 키 | 타입 | 범위 |
 | --- | --- | --- |
 | `station`, `spc`, `spc_report`, `pfmea` | 문자열 | 비어 있지 않음 |
-| `products` | 정수 | 1–100000 |
+| `products` | 정수 | 1–65535. `measure_id`가 65535 뒤 순환하므로 `제품 번호 = measure_id − 1`이 성립하는 범위다(리뷰 022) |
 | `onset_product` | 정수 | 1 이상 `products` 이하. 1부터 센다 |
 | `shift_sigma` | 유한한 수 | 0 초과 100 이하 |
 | `repair_cycles` | 정수 | 1–100000 |

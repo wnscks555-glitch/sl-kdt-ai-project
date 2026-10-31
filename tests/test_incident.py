@@ -368,7 +368,7 @@ class ConfigTests(unittest.TestCase):
             self.assertFalse((Path(folder) / "reports").exists())
 
     def test_t233_invalid_values(self):
-        for changes in ({"onset_product": 0}, {"onset_product": 41}, {"methods": ["xbar_r"]}, {"methods": []},
+        for changes in ({"onset_product": 0}, {"onset_product": 41}, {"products": 65536}, {"methods": ["xbar_r"]}, {"methods": []},
                         {"scopes": ["last_20", "last_20"]}, {"pfmea_links": ["PF-99"]}, {"pfmea_links": []},
                         {"products": 10 ** 400}, {"shift_sigma": float("nan")}, {"shift_sigma": True},
                         {"story_seed": 42}, {"summary_seeds": "0-29"}, {"summary_seeds": "abc"}, {"story_seed": True},

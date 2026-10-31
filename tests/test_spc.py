@@ -182,6 +182,12 @@ class EwmaCusumTests(unittest.TestCase):
         self.assertEqual([chart.update(0.1) for _ in range(12)], [False] * 12)
         self.assertGreater(chart.limit, 0)
 
+    def test_t212_smallest_lambda_keeps_positive_limit(self):
+        for weight in (1e-200, 5e-324):
+            chart = Ewma(UNIT_LIMITS, Tuning(weight, 3, 0.5, 1.5))
+            self.assertEqual([chart.update(0.1) for _ in range(12)], [False] * 12)
+            self.assertGreater(chart.limit, 0)
+
     def test_t212_lambda_one(self):
         chart = Ewma(UNIT_LIMITS, Tuning(1.0, 3, 0.5, 1.5))
         chart.update(1)
@@ -355,6 +361,18 @@ class ReportTests(unittest.TestCase):
                                      "window"})
         self.assertEqual(float(rows["ewma_lambda"]), 0.2)
 
+    def test_duplicate_limit_refused(self):
+        text = (self.reports / "spc_methods.csv").read_bytes().decode("utf-8-sig")
+        rows = text.split("\r\n")
+        index = next(i for i, row in enumerate(rows) if row.startswith("limits,,,,sigma_hat,"))
+        for pair in ((rows[index], "limits,,,,sigma_hat,999.0,,,,,,,,,,,"), ("limits,,,,sigma_hat,999.0,,,,,,,,,,,",
+                                                                              rows[index])):
+            with tempfile.TemporaryDirectory() as folder:
+                path = Path(folder) / "copy.csv"
+                path.write_bytes("\r\n".join(rows[:index] + list(pair) + rows[index + 1:]).encode("utf-8-sig"))
+                with self.assertRaises(ValueError):
+                    load_limits(path)
+
     def test_chart_rows(self):
         rows = self.rows("spc_chart.csv")
         self.assertEqual(len(rows), 120)
@@ -447,6 +465,16 @@ class RefusalTests(unittest.TestCase):
             rows = path.read_bytes().decode("utf-8-sig").split("\r\n")
             cells = rows[1].split(",")
             cells[5] = "1.234"
+            rows[1] = ",".join(cells)
+            path.write_bytes("\r\n".join(rows).encode("utf-8-sig"))
+        self.refused(change)
+
+    def test_t254_replay_t_out_of_range(self):
+        def change(folder):
+            path = folder / "reports" / "anomaly_replay.csv"
+            rows = path.read_bytes().decode("utf-8-sig").split("\r\n")
+            cells = rows[1].split(",")
+            cells[4] = "120"
             rows[1] = ",".join(cells)
             path.write_bytes("\r\n".join(rows).encode("utf-8-sig"))
         self.refused(change)

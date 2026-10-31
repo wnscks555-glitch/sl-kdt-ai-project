@@ -193,8 +193,9 @@ class Ewma:
         weight = self.tuning.ewma_lambda
         self.index += 1
         self.value = weight * x + (1 - weight) * self.value
-        variance = weight / (2 - weight) * self._start_factor()
-        self.limit = self.tuning.ewma_l * self.limits.sigma_hat * math.sqrt(variance)
+        # 분산을 먼저 곱하면 작은 λ에서 제곱근 전에 언더플로하므로 제곱근을 나눠서 곱한다.
+        self.limit = (self.tuning.ewma_l * self.limits.sigma_hat * math.sqrt(weight) / math.sqrt(2 - weight)
+                      * math.sqrt(self._start_factor()))
         return abs(self.value - self.limits.xbarbar) > self.limit
 
 
@@ -388,10 +389,13 @@ def check_replay(path, scenario):
         raise ValueError("anomaly_replay: 행이 없음")
     for row in rows:
         t = int(row["t"])
+        window = row["window_values"].split(" ")
+        first = t - len(window) + 1
+        if first < 0 or t >= len(scenario.values):
+            raise ValueError("anomaly_replay: t가 측정열 범위 밖")
         if int(row["seed"]) != scenario.seed or row["value"] != scenario.values[t]:
             raise ValueError("anomaly_replay: 현재 측정열과 다름")
-        window = row["window_values"].split(" ")
-        if window != scenario.values[t - len(window) + 1:t + 1]:
+        if window != scenario.values[first:t + 1]:
             raise ValueError("anomaly_replay: 현재 측정열과 다름")
 
 
@@ -477,10 +481,10 @@ def compare(splits, limits, clean, tuning, process, settings, table):
 
 def load_limits(path):
     """14단계가 읽는 한계와 정규화 기준이다. 행이 없으면 ValueError다."""
-    rows = {row["name"]: row["value"] for row in _read_rows(path) if row["section"] == "limits"}
+    rows = [row for row in _read_rows(path) if row["section"] == "limits"]
     if not rows:
         raise ValueError("limits 행이 없음")
-    return rows
+    return {name: row["value"] for name, row in _unique(rows, lambda row: row["name"]).items()}
 
 
 def run(path):
