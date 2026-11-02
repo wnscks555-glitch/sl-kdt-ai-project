@@ -504,8 +504,11 @@ def heuristic_balance(elements, ratios, net, demand):
                    len(manual), cost)
 
 
-def simulate(stations, routes, buffer_units, repair):
-    """사건 기반 시뮬레이션이다. 같은 시각의 이동은 변화가 없을 때까지 반복한다."""
+def simulate(stations, routes, buffer_units, repair, on_event=None):
+    """사건 기반 시뮬레이션이다. 같은 시각의 이동은 변화가 없을 때까지 반복한다.
+
+    `on_event(clock, kind, station, server, route)`는 재생 화면용 기록이다. 결과에는 영향을 주지 않는다.
+    """
     buffers = [deque() for _ in stations]
     # 서버 상태: [상태, 경로, 시작 시각]. 상태는 idle, busy, done, down이다.
     servers = [[["idle", None, 0] for _ in range(station.servers)] for station in stations]
@@ -513,6 +516,10 @@ def simulate(stations, routes, buffer_units, repair):
     events, result, repairs, remaining = [], SimResult(), [], len(routes)
     clock = 0
     order = 0
+
+    def note(kind, index, number, route):
+        if on_event is not None:
+            on_event(clock, kind, index, number, route)
 
     def service(route, index):
         station = stations[index]
@@ -538,6 +545,7 @@ def simulate(stations, routes, buffer_units, repair):
                 order += 1
                 heapq.heappush(events, (clock + duration, order, index, number))
                 result.work[stations[index].id] += duration
+                note("begin", index, number, route)
                 return True
         return False
 
@@ -552,16 +560,19 @@ def simulate(stations, routes, buffer_units, repair):
         result.good += route.good
         result.escaped += route.completed and route.defective
         result.end = clock
+        note("leave", -1, -1, route)
 
     def release(index, number, route):
         nonlocal order
         server = servers[index][number]
         result.blocked[stations[index].id] += clock - server[2]
+        note("release", index, number, route)
         if stations[index].inspection in route.stops and repair > 0:
             server[:] = ["down", None, clock]
             order += 1
             heapq.heappush(events, (clock + repair, order, index, number))
             repairs.append((stations[index].id, clock))
+            note("down", index, number, route)
         else:
             server[:] = ["idle", None, 0]
 
@@ -581,6 +592,7 @@ def simulate(stations, routes, buffer_units, repair):
                         begin(route, target)
                     elif len(buffers[target]) < buffer_units:
                         buffers[target].append((route, clock))
+                        note("queue", target, -1, route)
                     else:
                         continue
                     release(index, number, route)
@@ -589,6 +601,7 @@ def simulate(stations, routes, buffer_units, repair):
                 while buffers[index] and free(index):
                     route, arrived = buffers[index].popleft()
                     result.wait += clock - arrived
+                    note("dequeue", index, -1, route)
                     begin(route, index)
                     changed = True
             while waiting:
@@ -614,8 +627,10 @@ def simulate(stations, routes, buffer_units, repair):
             server = servers[index][number]
             if server[0] == "busy":
                 server[0], server[2] = "done", clock
+                note("done", index, number, server[1])
             else:
                 server[:] = ["idle", None, 0]
+                note("up", index, number, None)
         settle()
     for name, start in repairs:
         result.repair[name] += max(0, min(start + repair, result.end) - start)

@@ -1,0 +1,15 @@
+{
+  "data": "../data/external/secom/secom.data",
+  "labels": "../data/external/secom/secom_labels.data",
+  "data_sha256": "20f0e7ee434f7dcbae0eea9ffff009a2b57f42d6b0dc9a5bd4f00782c0a3374c",
+  "labels_sha256": "126884cf453705c9e61a903fe906f0665a3b45ce3639e621edc5c93c89627e03",
+  "anomaly": "anomaly_lamp.json",
+  "max_missing": "0.05",
+  "phase1_share": "0.5",
+  "ewma_lambda": 0.2,
+  "ewma_l": 3,
+  "skew_limit": 1,
+  "kurtosis_limit": 3,
+  "autocorr_limit": "0.2",
+  "rate_limit": "0.01"
+}

@@ -1,0 +1,6 @@
+{
+  "line": "line_lamp.json",
+  "line_report": "../reports/line_lamp_compare.csv",
+  "seed": 0,
+  "products": 60
+}

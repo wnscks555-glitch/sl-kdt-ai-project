@@ -1,0 +1,27 @@
+﻿section,name,value,text
+notice,,,"공개 반도체 공정 실측 자료(UCI SECOM)로 합성 가정을 점검한 연습이다. 자동차·조립·램프 자료가 아니다. 합격은 공정이 관리 상태라는 정답이 아니므로, 비율은 합격 행에 조건부인 한계 초과 비율이고 오경보율이나 검출률이 아니다."
+notice,,,"McCann, M. & Johnston, A. (2008). SECOM [Dataset]. UCI Machine Learning Repository. https://doi.org/10.24432/C54305. 라이선스 CC BY 4.0."
+data,rows,1567,
+data,features,590,
+data,phase1_rows,783,
+data,phase2_rows,784,
+data,fail_rate,0.0664,104/1567
+data,fail_rate_phase1,0.0856,67/783
+data,fail_rate_phase2,0.0472,37/784
+data,data_sha256,20f0e7ee434f7dcbae0eea9ffff009a2b57f42d6b0dc9a5bd4f00782c0a3374c,
+data,labels_sha256,126884cf453705c9e61a903fe906f0665a3b45ce3639e621edc5c93c89627e03,
+excluded,1단계 결측 초과,52,
+excluded,상수,122,
+summary,selected,416,
+summary,skew_over,0.6010,250/416
+summary,kurtosis_over,0.5962,248/416
+summary,autocorr_over,0.1755,73/416
+summary,i_rate_over,0.5192,216/416
+summary,i_rate_median,0.0108,
+summary,i_rate_p90,0.0926,
+summary,i_rate_expected,0.0027,모수를 아는 이상적 정규·독립 조건의 ±3σ 밖 비율. 추정 한계의 기대값이 아니라 참고값
+summary,ewma_rate_median,0.0482,
+synthetic_pure,i_rate,0.0020,"순수 정규·독립열, 시드 1000–1029의 30회 중앙값, 1단계 715·2단계 745점(선택 특징의 n 중앙값)"
+synthetic_pure,ewma_rate,0.0013,"순수 정규·독립열, 시드 1000–1029의 30회 중앙값, 1단계 715·2단계 745점(선택 특징의 n 중앙값)"
+synthetic_mixed,i_rate,0.0201,"11단계 생성기 고장 이동 없는 열(2% 결함 혼합), 시드 1000–1029의 30회 중앙값, 1단계 715·2단계 745점(선택 특징의 n 중앙값)"
+synthetic_mixed,ewma_rate,0.0141,"11단계 생성기 고장 이동 없는 열(2% 결함 혼합), 시드 1000–1029의 30회 중앙값, 1단계 715·2단계 745점(선택 특징의 n 중앙값)"
