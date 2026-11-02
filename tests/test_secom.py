@@ -186,6 +186,34 @@ class RunTests(unittest.TestCase):
         self.refused(data.replace(" 5 ", " ", 1), labels)
         self.refused("", "")
 
+    def test_review028_no_pass_rows_is_reported(self):
+        data, labels = fixture()
+        for mode in ("all", "first", "second"):
+            changed = []
+            for index, line in enumerate(labels.splitlines()):
+                fail = mode == "all" or (mode == "first" and index < 40) or (mode == "second" and index >= 40)
+                changed.append(("1" if fail else "-1") + line[line.index(" "):])
+            with self.subTest(mode=mode), tempfile.TemporaryDirectory() as folder:
+                write_case(folder, data, "\n".join(changed) + "\n")
+                result = run_cli(folder)
+                self.assertEqual(result.returncode, 0, result.stderr)
+                text = (Path(folder) / "reports" / "secom_check_summary.csv").read_text(encoding="utf-8-sig")
+                self.assertIn("합성 비교를 계산하지 않음", text)
+
+    def test_review028_hard_link_to_data_is_refused(self):
+        with tempfile.TemporaryDirectory() as folder:
+            config = write_case(folder, *fixture())
+            (Path(folder) / "reports").mkdir()
+            source = Path(folder) / "recipes" / "secom.data"
+            before = source.read_bytes()
+            try:
+                os.link(source, Path(folder) / "reports" / "secom_check_features.csv")
+            except OSError:
+                self.skipTest("하드링크를 만들 수 없음")
+            result = run_cli(folder)
+            self.assertEqual(result.returncode, 2, result.stderr)
+            self.assertEqual(source.read_bytes(), before)
+
     def test_t294_repeat_is_identical_and_t295_text(self):
         with tempfile.TemporaryDirectory() as folder:
             write_case(folder, *fixture())

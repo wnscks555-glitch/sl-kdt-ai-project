@@ -12,7 +12,7 @@ from pathlib import Path
 from . import line as lines
 from .dashboard import DashboardError, output_path, safe_json, write_atomic
 from .line import machine_order, show, target_uph, uph
-from .sizing import balance_of, combo_of, load_routes, read_compare
+from .sizing import balance_of, check_outputs, combo_of, load_routes, read_compare, setup_inputs
 
 
 NOTICE = ("가상 라인 시뮬레이션 재생이다. 9단계 모의가 실제로 낸 사건을 그대로 그리며, 시간과 설비는 가상이고 "
@@ -345,9 +345,8 @@ def run(config, root, target):
     root = Path(root).resolve()
     path = output_path(root, Path(target))
     raw = lines.read_line_file(settings.line)
-    inputs = [Path(config), settings.line, settings.line_report, settings.line.parent / raw["generator"]]
-    if any(path == item.resolve() for item in inputs):
-        raise ValueError("--out: 입력과 같은 파일임")
+    check_outputs([path], [Path(config), settings.line, settings.line_report]
+                  + setup_inputs(settings.line.parent / raw["generator"]))
     data = build(settings).encode("utf-8")
     if len(data) > MAX_BYTES:
         raise ValueError("HTML이 2MB를 넘음")

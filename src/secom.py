@@ -15,6 +15,7 @@ from statistics import median
 
 from . import anomaly
 from .line import show
+from .sizing import check_outputs, setup_inputs
 from .spc import Ewma
 
 
@@ -332,12 +333,12 @@ def summary_rows(rows, n1, features, settings):
         out.append({"section": "summary", "name": "i_rate_expected", "value": show(EXPECTED_I_RATE),
                     "text": "모수를 아는 이상적 정규·독립 조건의 ±3σ 밖 비율. 추정 한계의 기대값이 아니라 참고값"})
         out.append({"section": "summary", "name": "ewma_rate_median", "value": show(median(e_rates))})
-    if total:
-        n1_size = int(median(row["n1"] for row in chosen))
-        n2_size = int(median(row["n2"] for row in chosen))
-    else:
-        n1_size = sum(1 for row in rows[:n1] if row[2])
-        n2_size = sum(1 for row in rows[n1:] if row[2])
+    if not total:
+        out.append({"section": "synthetic", "name": "skipped",
+                    "text": "분석한 특징이 없어 같은 길이의 합성 비교를 계산하지 않음"})
+        return out
+    n1_size = int(median(row["n1"] for row in chosen))
+    n2_size = int(median(row["n2"] for row in chosen))
     seeds, rates = synthetic_rates(settings, n1_size, n2_size)
     label = {"pure": "순수 정규·독립열", "mixed": "11단계 생성기 고장 이동 없는 열(2% 결함 혼합)"}
     for name in ("pure", "mixed"):
@@ -417,10 +418,8 @@ def run(path):
     path = Path(path)
     settings = load_settings(path)
     outputs = [Path("reports") / (path.stem + suffix) for suffix in ("_features.csv", "_summary.csv", ".md")]
-    for output in outputs:
-        for source in (path, settings.data, settings.labels, settings.anomaly):
-            if output.resolve() == source.resolve():
-                raise ValueError("출력이 입력과 같은 파일임: " + output.as_posix())
+    base = anomaly.load_settings(settings.anomaly)
+    check_outputs(outputs, [path, settings.data, settings.labels, settings.anomaly] + setup_inputs(base.generator))
     rows = read_rows(checked_bytes(settings.data, settings.data_sha256),
                      checked_bytes(settings.labels, settings.labels_sha256))
     n1, features = feature_rows(rows, settings)

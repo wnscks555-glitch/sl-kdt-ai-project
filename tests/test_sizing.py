@@ -292,6 +292,19 @@ class RunTests(unittest.TestCase):
                 self.assertEqual(target.read_bytes(), data)
                 target.unlink()
 
+    def test_review028_generator_cannot_be_an_output(self):
+        line = json.loads((self.copy / "recipes" / "line_lamp.json").read_text(encoding="utf-8"))
+        generator = json.loads((self.copy / "recipes" / line["generator"]).read_text(encoding="utf-8"))
+        moved = dict(generator, recipe="../recipes/" + generator["recipe"], equipment="../recipes/" + generator["equipment"])
+        target = self.copy / "reports" / "sizing_lamp_sheet.md"
+        target.write_text(json.dumps(moved), encoding="utf-8")
+        (self.copy / "recipes" / "line_lamp.json").write_text(
+            json.dumps(dict(line, generator="../reports/sizing_lamp_sheet.md")), encoding="utf-8")
+        data = target.read_bytes()
+        result = run_module(self.copy, "src.sizing", "recipes/sizing_lamp.json")
+        self.assertEqual(result.returncode, 2, result.stderr)
+        self.assertEqual(target.read_bytes(), data)
+
     def test_t283_counts_stay_inside_their_denominator(self):
         original = (self.copy / "reports" / "msa_lamp_guard.csv").read_bytes()
 

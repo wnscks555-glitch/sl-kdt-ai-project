@@ -222,6 +222,14 @@ def output_paths(stem):
     return [directory / (stem + suffix) for suffix in ("_curve.csv", "_spec.csv", "_sheet.md")]
 
 
+def setup_inputs(generator):
+    """생성기 설정과 그 설정이 읽는 레시피·설비 파일이다. 출력 충돌 검사에 간접 입력까지 넣기 위해서다."""
+    generator = Path(generator)
+    config = json.loads(generator.read_bytes().decode("utf-8-sig"))
+    return [generator] + [generator.parent / config[key] for key in ("recipe", "equipment")
+                          if isinstance(config.get(key), str)]
+
+
 def check_outputs(outputs, inputs):
     """쓰기 전에 검사한다. 입력 보고서를 결과로 덮어쓰면 다음 실행의 근거를 잃는다."""
     for output in outputs:
@@ -298,8 +306,9 @@ def run(path):
     path = Path(path)
     settings = load_settings(path)
     written = output_paths(path.stem)
-    check_outputs(written, [path, settings.line, settings.line_report, settings.balance_report, settings.guard_report])
     raw = lines.read_line_file(settings.line)
+    check_outputs(written, [path, settings.line, settings.line_report, settings.balance_report, settings.guard_report]
+                  + setup_inputs(settings.line.parent / raw["generator"]))
     _, _, recipe, _ = lines.load_setup(settings.line.parent / raw["generator"])
     line = lines.load_line(settings.line, recipe.models)
     label, development, held = read_compare(settings.line_report, line)
